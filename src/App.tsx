@@ -1,0 +1,750 @@
+import React, { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
+import {
+  Download,
+  Pause,
+  Play,
+  X,
+  FolderOpen,
+  Link,
+  Clipboard,
+  Search,
+  Merge,
+  RefreshCw,
+  Settings,
+  History,
+  Files,
+} from "lucide-react";
+import {
+  Button,
+  Input,
+  ProgressBar,
+  EpisodeSelector,
+  SeriesCard,
+  LogPanel,
+  SettingsPanel,
+  HistoryPanel,
+  SpeedGraph,
+  FileBrowser,
+  DownloadQueue,
+} from "./components";
+import { useLogger } from "./hooks/useLogger";
+import { useSettings } from "./hooks/useSettings";
+import { useHistory } from "./hooks/useHistory";
+import { useSpeedGraph } from "./hooks/useSpeedGraph";
+import { SeriesInfo, DownloadState, DownloadProgress } from "./types";
+import { QueueItem } from "./components/DownloadQueue";
+
+interface DownloadResult {
+  episode: number;
+  success: boolean;
+  filePath?: string;
+  error?: string;
+}
+
+interface FileInfo {
+  name: string;
+  path: string;
+  size: number;
+  isEpisode: boolean;
+  isMerged: boolean;
+}
+
+type TabType = "download" | "files" | "history" | "settings" | "logs";
+
+function App() {
+  // State
+  const [url, setUrl] = useState("");
+  const [series, setSeries] = useState<SeriesInfo | null>(null);
+  const [selectedEpisodes, setSelectedEpisodes] = useState<Set<number>>(new Set());
+  const [isFetching, setIsFetching] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>("download");
+  const [ffmpegAvailable, setFfmpegAvailable] = useState(false);
+  const [files, setFiles] = useState<FileInfo[]>([]);
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [mergeState, setMergeState] = useState<{
+    isMerging: boolean;
+    mergedFile: string | null;
+    mergeError: string | null;
+  }>({ isMerging: false, mergedFile: null, mergeError: null });
+
+  const [downloadState, setDownloadState] = useState<DownloadState>({
+    isDownloading: false,
+    isPaused: false,
+    currentEpisode: 0,
+    completedEpisodes: [],
+    failedEpisodes: [],
+    totalSelected: 0,
+  });
+
+  const [progress, setProgress] = useState<DownloadProgress>({
+    episode: 0,
+    downloaded: 0,
+    total: 0,
+    speed: 0,
+    percentage: 0,
+  });
+
+  // Hooks
+  const { logs, log, success, warning, error, clearLogs } = useLogger();
+  const { settings, updateSetting, resetSettings } = useSettings();
+  const { history, addRecord, updateRecord, deleteRecord, clearHistory, getStats } = useHistory();
+  const { speedData, currentSpeed, avgSpeed, peakSpeed, addDataPoint, reset: resetSpeedGraph } = useSpeedGraph();
+
+  // Initialize - use ref to prevent double execution in StrictMode
+  const initialized = React.useRef(false);
+  useEffect(() => {
+    if (initialized.current) return;
+    initialized.current = true;
+
+    log("Application started");
+    checkFFmpeg();
+    setupEventListeners();
+  }, []);
+
+  // Apply theme
+  useEffect(() => {
+    const root = document.documentElement;
+    if (settings.theme === "dark") {
+      root.classList.add("dark");
+      root.classList.remove("light");
+    } else if (settings.theme === "light") {
+      root.classList.remove("dark");
+      root.classList.add("light");
+    } else {
+      // System theme
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      if (prefersDark) {
+        root.classList.add("dark");
+        root.classList.remove("light");
+      } else {
+        root.classList.remove("dark");
+        root.classList.add("light");
+      }
+    }
+  }, [settings.theme]);
+
+  // Refresh files when switching to Files tab
+  useEffect(() => {
+    if (activeTab === "files") {
+      refreshFiles();
+    }
+  }, [activeTab]);
+
+  const setupEventListeners = async () => {
+    await listen<DownloadProgress>("download-progress", (event) => {
+      setProgress(event.payload);
+      addDataPoint(event.payload.speed);
+      setDownloadState((prev) => ({
+        ...prev,
+        currentEpisode: event.payload.episode,
+      }));
+    });
+
+    await listen<DownloadResult>("download-result", (event) => {
+      const result = event.payload;
+      if (result.success) {
+        setDownloadState((prev) => ({
+          ...prev,
+          completedEpisodes: [...prev.completedEpisodes, result.episode],
+        }));
+        success(`Episode ${result.episode} downloaded`);
+      } else {
+        setDownloadState((prev) => ({
+          ...prev,
+          failedEpisodes: [...prev.failedEpisodes, result.episode],
+        }));
+        error(`Episode ${result.episode} failed: ${result.error}`);
+      }
+
+      // Update queue
+      setQueue((prev) =>
+        prev.map((q) =>
+          q.episode === result.episode
+            ? { ...q, status: result.success ? "completed" : "failed", progress: 100 }
+            : q
+        )
+      );
+    });
+
+    await listen("merge-started", () => {
+      log("Merging videos...");
+      setMergeState({ isMerging: true, mergedFile: null, mergeError: null });
+    });
+
+    await listen<string>("merge-complete", (event) => {
+      success(`Merged to: ${event.payload}`);
+      setMergeState({ isMerging: false, mergedFile: event.payload, mergeError: null });
+      playNotificationSound();
+      showNotification("Merge Complete", "Videos merged successfully!");
+      refreshFiles();
+    });
+
+    await listen<string>("merge-error", (event) => {
+      error(`Merge failed: ${event.payload}`);
+      setMergeState({ isMerging: false, mergedFile: null, mergeError: event.payload });
+    });
+
+    await listen<string>("log-info", (event) => {
+      log(event.payload);
+    });
+  };
+
+  const checkFFmpeg = async () => {
+    try {
+      const available = await invoke<boolean>("check_ffmpeg_available");
+      setFfmpegAvailable(available);
+      if (available) {
+        success("FFmpeg is available");
+      } else {
+        warning("FFmpeg not found - video merging will be disabled");
+      }
+    } catch (e) {
+      warning("Could not check FFmpeg status");
+    }
+  };
+
+  const playNotificationSound = () => {
+    if (settings.soundEnabled) {
+      const audio = new Audio("/notification.mp3");
+      audio.play().catch(() => {});
+    }
+  };
+
+  const showNotification = (title: string, body: string) => {
+    if (settings.notificationsEnabled && "Notification" in window) {
+      if (Notification.permission === "granted") {
+        new Notification(title, { body });
+      } else if (Notification.permission !== "denied") {
+        Notification.requestPermission().then((permission) => {
+          if (permission === "granted") {
+            new Notification(title, { body });
+          }
+        });
+      }
+    }
+  };
+
+  // Handlers
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      setUrl(text);
+      log(`Pasted URL: ${text}`);
+    } catch (e) {
+      error("Failed to read clipboard");
+    }
+  };
+
+  const handleFetch = async () => {
+    if (!url.trim()) {
+      error("Please enter a URL");
+      return;
+    }
+
+    setIsFetching(true);
+    log(`Fetching: ${url}`);
+
+    try {
+      const result = await invoke<SeriesInfo>("fetch_series", { url });
+      setSeries(result);
+
+      const allEpisodes = new Set(
+        Array.from({ length: result.totalEpisodes }, (_, i) => i + 1)
+      );
+      setSelectedEpisodes(allEpisodes);
+
+      success(`Loaded: ${result.title} (${result.totalEpisodes} episodes)`);
+      log(`Cached ${Object.keys(result.episodeUrls).length} video URLs`);
+    } catch (e) {
+      error(`Failed to fetch: ${e}`);
+    } finally {
+      setIsFetching(false);
+    }
+  };
+
+  const toggleEpisode = (ep: number) => {
+    setSelectedEpisodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(ep)) {
+        next.delete(ep);
+      } else {
+        next.add(ep);
+      }
+      return next;
+    });
+  };
+
+  const selectAllEpisodes = () => {
+    if (series) {
+      setSelectedEpisodes(
+        new Set(Array.from({ length: series.totalEpisodes }, (_, i) => i + 1))
+      );
+    }
+  };
+
+  const deselectAllEpisodes = () => {
+    setSelectedEpisodes(new Set());
+  };
+
+  const handleStartDownload = async () => {
+    if (!series || selectedEpisodes.size === 0) {
+      error("Please select at least one episode");
+      return;
+    }
+
+    const episodes = Array.from(selectedEpisodes).sort((a, b) => a - b);
+    log(`Starting download of ${episodes.length} episodes`);
+
+    // Add to history
+    const recordId = addRecord({
+      seriesId: series.seriesId,
+      seriesTitle: series.title,
+      episodes,
+      completedEpisodes: [],
+      failedEpisodes: [],
+      startTime: new Date().toISOString(),
+      totalSize: 0,
+      status: "partial",
+    });
+
+    // Create queue
+    setQueue(
+      episodes.map((ep, i) => ({
+        id: `${series.seriesId}-${ep}`,
+        seriesId: series.seriesId,
+        seriesTitle: series.title,
+        episode: ep,
+        status: i === 0 ? "downloading" : "pending",
+        progress: 0,
+        priority: i,
+      }))
+    );
+
+    setDownloadState({
+      isDownloading: true,
+      isPaused: false,
+      currentEpisode: 0,
+      completedEpisodes: [],
+      failedEpisodes: [],
+      totalSelected: episodes.length,
+    });
+
+    resetSpeedGraph();
+
+    try {
+      const results = await invoke<DownloadResult[]>("start_download", {
+        request: {
+          seriesId: series.seriesId,
+          episodes,
+          outputDir: settings.outputDir,
+          autoMerge: settings.autoMerge && ffmpegAvailable,
+          concurrentDownloads: settings.concurrentDownloads,
+          speedLimit: settings.speedLimit,
+          fileNaming: settings.fileNaming,
+          seriesTitle: series.title,
+        },
+      });
+
+      const successCount = results.filter((r) => r.success).length;
+      const failCount = results.filter((r) => !r.success).length;
+      const totalSize = 100 * 1024 * 1024 * successCount; // Estimate
+
+      // Update history record
+      updateRecord(recordId, {
+        completedEpisodes: results.filter((r) => r.success).map((r) => r.episode),
+        failedEpisodes: results.filter((r) => !r.success).map((r) => r.episode),
+        endTime: new Date().toISOString(),
+        totalSize,
+        status: failCount === 0 ? "completed" : failCount === episodes.length ? "failed" : "partial",
+      });
+
+      if (failCount === 0) {
+        success(`All ${successCount} episodes downloaded successfully!`);
+        showNotification("Download Complete", `${successCount} episodes downloaded`);
+        playNotificationSound();
+      } else {
+        warning(`Downloaded ${successCount}/${episodes.length} episodes (${failCount} failed)`);
+      }
+
+      // Refresh files
+      refreshFiles();
+    } catch (e) {
+      error(`Download failed: ${e}`);
+    } finally {
+      setDownloadState((prev) => ({ ...prev, isDownloading: false }));
+      setQueue([]);
+    }
+  };
+
+  const handlePause = () => {
+    setDownloadState((prev) => ({ ...prev, isPaused: true }));
+    warning("Pause not yet implemented");
+  };
+
+  const handleResume = () => {
+    setDownloadState((prev) => ({ ...prev, isPaused: false }));
+    log("Resume not yet implemented");
+  };
+
+  const handleCancel = () => {
+    setDownloadState((prev) => ({ ...prev, isDownloading: false }));
+    warning("Cancel requested");
+  };
+
+  const refreshFiles = async () => {
+    try {
+      const fileList = await invoke<FileInfo[]>("list_files", { dir: settings.outputDir });
+      setFiles(fileList);
+      log(`Found ${fileList.length} files`);
+    } catch (e) {
+      warning("Could not list files");
+    }
+  };
+
+  const handleDeleteFiles = async (paths: string[]) => {
+    try {
+      const deleted = await invoke<number>("delete_files", { paths });
+      setFiles((prev) => prev.filter((f) => !paths.includes(f.path)));
+      success(`Deleted ${deleted} file${deleted !== 1 ? "s" : ""}`);
+    } catch (e) {
+      error("Failed to delete files");
+    }
+  };
+
+  const handlePlayFile = async (path: string) => {
+    try {
+      await invoke("play_file", { path });
+      log(`Playing: ${path}`);
+    } catch (e) {
+      warning("Could not open file");
+    }
+  };
+
+  const handleSelectOutputFolder = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Select Output Folder",
+      });
+      if (selected && typeof selected === "string") {
+        updateSetting("outputDir", selected);
+        success(`Output folder set to: ${selected}`);
+      }
+    } catch (e) {
+      warning("Could not select folder");
+    }
+  };
+
+  const handleOpenOutputFolder = async () => {
+    try {
+      await invoke("open_folder", { path: settings.outputDir });
+    } catch (e) {
+      warning("Could not open folder");
+    }
+  };
+
+  const overallProgress =
+    downloadState.totalSelected > 0
+      ? (downloadState.completedEpisodes.length / downloadState.totalSelected) * 100
+      : 0;
+
+  const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
+    { id: "download", label: "Download", icon: <Download size={16} /> },
+    { id: "files", label: "Files", icon: <Files size={16} /> },
+    { id: "history", label: "History", icon: <History size={16} /> },
+    { id: "settings", label: "Settings", icon: <Settings size={16} /> },
+    { id: "logs", label: `Logs (${logs.length})`, icon: null },
+  ];
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
+      {/* Header */}
+      <header className="sticky top-0 z-50 glass border-b border-slate-800/50 animate-fade-in">
+        <div className="container-responsive py-3 sm:py-4">
+          <div className="flex items-center justify-between gap-2 sm:gap-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-violet-500/20 hover-scale animate-pulse-glow">
+                <Download size={18} className="sm:w-5 sm:h-5" />
+              </div>
+              <div>
+                <h1 className="text-base sm:text-lg font-bold">Rongyok</h1>
+                <p className="text-[10px] sm:text-xs text-slate-500 flex flex-wrap items-center gap-1">
+                  <span className="hidden xs:inline">Video Downloader</span>
+                  {ffmpegAvailable && (
+                    <span className="text-emerald-400 animate-fade-in">• FFmpeg ✓</span>
+                  )}
+                  {downloadState.isDownloading && currentSpeed > 0 && (
+                    <span className="text-violet-400 animate-bounce-subtle">
+                      • {(currentSpeed / 1024 / 1024).toFixed(1)} MB/s
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex bg-slate-800/70 rounded-xl p-0.5 sm:p-1 overflow-x-auto scrollbar-hide">
+              {tabs.map((tab, index) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium rounded-lg transition-all flex items-center gap-1 sm:gap-1.5 whitespace-nowrap btn-ripple ${
+                    activeTab === tab.id
+                      ? "bg-violet-600 text-white shadow-lg animate-scale-in"
+                      : "text-slate-400 hover:text-white hover:bg-slate-700/50"
+                  } stagger-${index + 1}`}
+                >
+                  {tab.icon}
+                  <span className="hidden sm:inline">{tab.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="container-responsive py-4 sm:py-6 space-y-4 sm:space-y-6">
+        {activeTab === "download" && (
+          <div className="page-transition space-y-4 sm:space-y-6">
+            {/* URL Input */}
+            <div className="space-y-3 sm:space-y-4 animate-fade-in">
+              <Input
+                label="Series URL"
+                placeholder="https://rongyok.com/watch/?series_id=XXX"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                leftIcon={<Link size={16} className="sm:w-[18px] sm:h-[18px]" />}
+                rightElement={
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={handlePaste}
+                      leftIcon={<Clipboard size={14} />}
+                      className="hover-scale"
+                    >
+                      <span className="hidden sm:inline">Paste</span>
+                      <span className="sm:hidden">📋</span>
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleFetch}
+                      isLoading={isFetching}
+                      leftIcon={<Search size={14} />}
+                      className="hover-glow"
+                    >
+                      <span className="hidden sm:inline">Fetch</span>
+                      <span className="sm:hidden">🔍</span>
+                    </Button>
+                  </div>
+                }
+              />
+
+              <Input
+                label="Output Directory"
+                placeholder="~/Downloads/rongyok"
+                value={settings.outputDir}
+                onChange={(e) => updateSetting("outputDir", e.target.value)}
+                leftIcon={<FolderOpen size={16} className="sm:w-[18px] sm:h-[18px]" />}
+                rightElement={
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="ghost" onClick={handleSelectOutputFolder} className="hover-scale">
+                      <span className="hidden sm:inline">Browse</span>
+                      <span className="sm:hidden">📂</span>
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={handleOpenOutputFolder} className="hover-scale">
+                      <span className="hidden sm:inline">Open</span>
+                      <span className="sm:hidden">↗</span>
+                    </Button>
+                  </div>
+                }
+              />
+            </div>
+
+            {/* Series Info */}
+            <div className="animate-fade-in stagger-1">
+              <SeriesCard series={series} isLoading={isFetching} />
+            </div>
+
+            {/* Episode Selector */}
+            {series && (
+              <div className="animate-slide-in stagger-2">
+                <EpisodeSelector
+                  totalEpisodes={series.totalEpisodes}
+                  selectedEpisodes={selectedEpisodes}
+                  onToggle={toggleEpisode}
+                  onSelectAll={selectAllEpisodes}
+                  onDeselectAll={deselectAllEpisodes}
+                  disabled={downloadState.isDownloading}
+                />
+              </div>
+            )}
+
+            {/* Speed Graph & Progress - show when downloading or has data */}
+            {(downloadState.isDownloading || speedData.length > 0) && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 animate-fade-in">
+                <div className="hover-lift">
+                  <SpeedGraph
+                    data={speedData}
+                    currentSpeed={currentSpeed}
+                    avgSpeed={avgSpeed}
+                    peakSpeed={peakSpeed}
+                  />
+                </div>
+                <div className="glass rounded-xl p-3 sm:p-4 border border-slate-700/50 space-y-3 sm:space-y-4 hover-lift">
+                  <ProgressBar
+                    percentage={progress.percentage}
+                    label={`Episode ${progress.episode}`}
+                    sublabel={`${(progress.speed / 1024 / 1024).toFixed(1)} MB/s`}
+                  />
+                  <ProgressBar
+                    percentage={overallProgress}
+                    label="Overall Progress"
+                    sublabel={`${downloadState.completedEpisodes.length}/${downloadState.totalSelected} episodes`}
+                    variant="success"
+                  />
+                  {/* Merge Status */}
+                  {mergeState.isMerging && (
+                    <div className="flex items-center gap-3 p-3 bg-violet-500/20 rounded-lg border border-violet-500/30 animate-pulse-glow">
+                      <div className="w-5 h-5 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
+                      <span className="text-violet-300 text-sm font-medium">Merging videos...</span>
+                    </div>
+                  )}
+                  {mergeState.mergedFile && !mergeState.isMerging && (
+                    <div className="p-3 bg-emerald-500/20 rounded-lg border border-emerald-500/30 animate-scale-in">
+                      <div className="text-emerald-300 text-sm font-medium flex items-center gap-2">
+                        <span className="animate-bounce-subtle">✅</span> Merge Complete!
+                      </div>
+                      <div className="text-emerald-400/70 text-xs mt-1 truncate">{mergeState.mergedFile}</div>
+                    </div>
+                  )}
+                  {mergeState.mergeError && (
+                    <div className="p-3 bg-red-500/20 rounded-lg border border-red-500/30 animate-scale-in">
+                      <div className="text-red-300 text-sm font-medium">Merge Failed</div>
+                      <div className="text-red-400/70 text-xs mt-1">{mergeState.mergeError}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Queue */}
+            {queue.length > 0 && (
+              <div className="animate-slide-in">
+                <DownloadQueue
+                  queue={queue}
+                  onMoveUp={() => {}}
+                  onMoveDown={() => {}}
+                  onRemove={(id) => setQueue((prev) => prev.filter((q) => q.id !== id))}
+                  onPause={() => {}}
+                />
+              </div>
+            )}
+
+            {/* Options */}
+            <div className="flex flex-wrap items-center gap-3 sm:gap-4 animate-fade-in stagger-3">
+              <label className="flex items-center gap-2 cursor-pointer hover-scale p-2 -m-2 rounded-lg">
+                <input
+                  type="checkbox"
+                  checked={settings.autoMerge}
+                  onChange={(e) => updateSetting("autoMerge", e.target.checked)}
+                  disabled={!ffmpegAvailable}
+                  className="w-4 h-4 rounded bg-slate-700 border-slate-600 text-violet-600 focus:ring-violet-500 focus-ring disabled:opacity-50"
+                />
+                <span className={`text-xs sm:text-sm flex items-center gap-1 ${ffmpegAvailable ? "text-slate-300" : "text-slate-500"}`}>
+                  <Merge size={14} />
+                  <span className="hidden sm:inline">Merge videos after download</span>
+                  <span className="sm:hidden">Auto merge</span>
+                </span>
+              </label>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-wrap gap-2 sm:gap-3 animate-fade-in stagger-4">
+              {!downloadState.isDownloading ? (
+                <>
+                  <Button
+                    size="lg"
+                    onClick={handleStartDownload}
+                    disabled={!series || selectedEpisodes.size === 0}
+                    leftIcon={<Download size={18} />}
+                    className="flex-1 sm:flex-none hover-glow btn-ripple"
+                  >
+                    Download ({selectedEpisodes.size})
+                  </Button>
+                  <Button size="lg" variant="secondary" leftIcon={<RefreshCw size={18} />} disabled className="flex-1 sm:flex-none hover-lift">
+                    <span className="hidden sm:inline">Resume Previous</span>
+                    <span className="sm:hidden">Resume</span>
+                  </Button>
+                </>
+              ) : (
+                <>
+                  {!downloadState.isPaused ? (
+                    <Button size="lg" variant="secondary" onClick={handlePause} leftIcon={<Pause size={18} />} className="flex-1 sm:flex-none hover-lift btn-ripple">
+                      Pause
+                    </Button>
+                  ) : (
+                    <Button size="lg" variant="success" onClick={handleResume} leftIcon={<Play size={18} />} className="flex-1 sm:flex-none hover-glow btn-ripple">
+                      Resume
+                    </Button>
+                  )}
+                  <Button size="lg" variant="danger" onClick={handleCancel} leftIcon={<X size={18} />} className="flex-1 sm:flex-none hover-lift btn-ripple">
+                    Cancel
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "files" && (
+          <div className="page-transition animate-fade-in">
+            <FileBrowser
+              outputDir={settings.outputDir}
+              files={files}
+              onRefresh={refreshFiles}
+              onOpenFolder={handleOpenOutputFolder}
+              onDelete={handleDeleteFiles}
+              onPlay={handlePlayFile}
+            />
+          </div>
+        )}
+
+        {activeTab === "history" && (
+          <div className="page-transition animate-slide-in">
+            <HistoryPanel
+              history={history}
+              stats={getStats()}
+              onDelete={deleteRecord}
+              onClear={clearHistory}
+            />
+          </div>
+        )}
+
+        {activeTab === "settings" && (
+          <div className="page-transition animate-fade-in">
+            <SettingsPanel
+              settings={settings}
+              onUpdate={updateSetting}
+              onReset={resetSettings}
+              onOpenFolder={handleOpenOutputFolder}
+            />
+          </div>
+        )}
+
+        {activeTab === "logs" && (
+          <div className="h-[calc(100vh-140px)] sm:h-[calc(100vh-180px)] page-transition animate-fade-in">
+            <LogPanel logs={logs} onClear={clearLogs} />
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+export default App;
