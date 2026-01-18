@@ -9,6 +9,8 @@ import {
   FolderOpen,
   Gauge,
   RotateCcw,
+  RefreshCw,
+  Sparkles,
 } from "lucide-react";
 import { Settings as SettingsType } from "../hooks/useSettings";
 import { Button } from "./Button";
@@ -18,6 +20,8 @@ interface SettingsPanelProps {
   onUpdate: <K extends keyof SettingsType>(key: K, value: SettingsType[K]) => void;
   onReset: () => void;
   onOpenFolder: () => void;
+  onCheckUpdates?: () => void;
+  isCheckingUpdates?: boolean;
 }
 
 export function SettingsPanel({
@@ -25,6 +29,8 @@ export function SettingsPanel({
   onUpdate,
   onReset,
   onOpenFolder,
+  onCheckUpdates,
+  isCheckingUpdates,
 }: SettingsPanelProps) {
   return (
     <div className="space-y-6">
@@ -237,6 +243,34 @@ export function SettingsPanel({
             <Monitor size={18} />
             System
           </button>
+        </div>
+      </section>
+
+      {/* Updates */}
+      <section className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+        <h3 className="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
+          <Sparkles size={16} />
+          Updates
+        </h3>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm text-white">Check for Updates</label>
+            <p className="text-xs text-slate-500">
+              Current version: 1.0.0
+            </p>
+          </div>
+          {onCheckUpdates && (
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<RefreshCw size={14} className={isCheckingUpdates ? "animate-spin" : ""} />}
+              onClick={onCheckUpdates}
+              disabled={isCheckingUpdates}
+            >
+              {isCheckingUpdates ? "Checking..." : "Check Now"}
+            </Button>
+          )}
         </div>
       </section>
 

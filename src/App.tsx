@@ -14,8 +14,12 @@ import {
   Merge,
   RefreshCw,
   Settings,
-  History,
-  Files,
+  Film,
+  Zap,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  HardDrive,
 } from "lucide-react";
 import {
   Button,
@@ -29,11 +33,14 @@ import {
   SpeedGraph,
   FileBrowser,
   DownloadQueue,
+  Logo,
+  UpdateDialog,
 } from "./components";
 import { useLogger } from "./hooks/useLogger";
 import { useSettings } from "./hooks/useSettings";
 import { useHistory } from "./hooks/useHistory";
 import { useSpeedGraph } from "./hooks/useSpeedGraph";
+import { useUpdater } from "./hooks/useUpdater";
 import { SeriesInfo, DownloadState, DownloadProgress } from "./types";
 import { QueueItem } from "./components/DownloadQueue";
 
@@ -92,6 +99,17 @@ function App() {
   const { settings, updateSetting, resetSettings } = useSettings();
   const { history, addRecord, updateRecord, deleteRecord, clearHistory, getStats } = useHistory();
   const { speedData, currentSpeed, avgSpeed, peakSpeed, addDataPoint, reset: resetSpeedGraph } = useSpeedGraph();
+  const {
+    checking: isCheckingUpdates,
+    available: updateAvailable,
+    downloading: updateDownloading,
+    progress: updateProgress,
+    error: updateError,
+    updateInfo,
+    checkForUpdates,
+    downloadAndInstall,
+    dismissUpdate,
+  } = useUpdater();
 
   // Initialize - use ref to prevent double execution in StrictMode
   const initialized = React.useRef(false);
@@ -454,10 +472,10 @@ function App() {
 
   const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
     { id: "download", label: "Download", icon: <Download size={16} /> },
-    { id: "files", label: "Files", icon: <Files size={16} /> },
-    { id: "history", label: "History", icon: <History size={16} /> },
+    { id: "files", label: "Files", icon: <HardDrive size={16} /> },
+    { id: "history", label: "History", icon: <Clock size={16} /> },
     { id: "settings", label: "Settings", icon: <Settings size={16} /> },
-    { id: "logs", label: `Logs (${logs.length})`, icon: null },
+    { id: "logs", label: `Logs (${logs.length})`, icon: <AlertCircle size={16} /> },
   ];
 
   return (
@@ -467,19 +485,26 @@ function App() {
         <div className="container-responsive py-3 sm:py-4">
           <div className="flex items-center justify-between gap-2 sm:gap-4">
             <div className="flex items-center gap-2 sm:gap-3">
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-violet-500/20 hover-scale animate-pulse-glow">
-                <Download size={18} className="sm:w-5 sm:h-5" />
+              <div className="hover-scale animate-pulse-glow">
+                <Logo size={40} className="sm:w-11 sm:h-11" />
               </div>
               <div>
-                <h1 className="text-base sm:text-lg font-bold">Rongyok</h1>
+                <h1 className="text-base sm:text-lg font-bold flex items-center gap-2">
+                  <span className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
+                    Rongyok
+                  </span>
+                  <Film size={16} className="text-fuchsia-400" />
+                </h1>
                 <p className="text-[10px] sm:text-xs text-slate-500 flex flex-wrap items-center gap-1">
                   <span className="hidden xs:inline">Video Downloader</span>
                   {ffmpegAvailable && (
-                    <span className="text-emerald-400 animate-fade-in">• FFmpeg ✓</span>
+                    <span className="text-emerald-400 animate-fade-in flex items-center gap-0.5">
+                      <CheckCircle2 size={10} /> FFmpeg
+                    </span>
                   )}
                   {downloadState.isDownloading && currentSpeed > 0 && (
-                    <span className="text-violet-400 animate-bounce-subtle">
-                      • {(currentSpeed / 1024 / 1024).toFixed(1)} MB/s
+                    <span className="text-violet-400 animate-bounce-subtle flex items-center gap-0.5">
+                      <Zap size={10} /> {(currentSpeed / 1024 / 1024).toFixed(1)} MB/s
                     </span>
                   )}
                 </p>
@@ -520,22 +545,22 @@ function App() {
                 onChange={(e) => setUrl(e.target.value)}
                 leftIcon={<Link size={16} className="sm:w-[18px] sm:h-[18px]" />}
                 rightElement={
-                  <div className="flex gap-1">
-                    {url && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setUrl("");
-                          setSeries(null);
-                          setSelectedEpisodes(new Set());
-                          log("URL cleared");
-                        }}
-                        className="hover-scale text-slate-400 hover:text-red-400"
-                      >
-                        <X size={14} />
-                      </Button>
-                    )}
+                  <div className="flex gap-1 items-center">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setUrl("");
+                        setSeries(null);
+                        setSelectedEpisodes(new Set());
+                        log("URL cleared");
+                      }}
+                      disabled={!url}
+                      className={`hover-scale ${url ? "text-red-400 hover:text-red-300 hover:bg-red-500/20" : "text-slate-600"}`}
+                      title="Clear URL"
+                    >
+                      <X size={16} />
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -748,6 +773,8 @@ function App() {
               onUpdate={updateSetting}
               onReset={resetSettings}
               onOpenFolder={handleOpenOutputFolder}
+              onCheckUpdates={checkForUpdates}
+              isCheckingUpdates={isCheckingUpdates}
             />
           </div>
         )}
@@ -758,6 +785,17 @@ function App() {
           </div>
         )}
       </main>
+
+      {/* Update Dialog */}
+      <UpdateDialog
+        isOpen={updateAvailable}
+        updateInfo={updateInfo}
+        downloading={updateDownloading}
+        progress={updateProgress}
+        error={updateError}
+        onDownload={downloadAndInstall}
+        onDismiss={dismissUpdate}
+      />
     </div>
   );
 }

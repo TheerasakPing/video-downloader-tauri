@@ -9,3 +9,5 @@ export { HistoryPanel } from "./HistoryPanel";
 export { SpeedGraph } from "./SpeedGraph";
 export { FileBrowser } from "./FileBrowser";
 export { DownloadQueue } from "./DownloadQueue";
+export { Logo } from "./Logo";
+export { UpdateDialog } from "./UpdateDialog";
