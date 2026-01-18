@@ -36,11 +36,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "createUpdaterArtifacts": false
+    "createUpdaterArtifacts": "v2"
   },
   "plugins": {
     "updater": {
-      "pubkey": "",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNGOUU0OENDQjYzNURDRTIKUldUaTNEVzJ6RWllUHdHWkdyOUcwdC9XWWRua1JFR0dCOUQ0MlNVbURrQ3V3SEdzYU9xR2JVV2gK",
       "endpoints": [
         "https://github.com/TheerasakPing/video-downloader-tauri/releases/latest/download/latest.json"
       ],

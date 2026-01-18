@@ -557,7 +557,8 @@ function App() {
 
   return (
     <div
-      className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white"
+      className="min-h-screen text-white"
+      style={{ background: 'var(--bg-primary, linear-gradient(to bottom right, #0f172a, #1e293b, #0f172a))' }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}

@@ -339,7 +339,7 @@ export function SettingsPanel({
           <div>
             <label className="text-sm text-white">Check for Updates</label>
             <p className="text-xs text-slate-500">
-              Current version: 1.2.0
+              Current version: 1.3.0
             </p>
           </div>
           {onCheckUpdates && (

@@ -159,6 +159,13 @@ export function useCustomTheme() {
         `${theme.colors.primary}4D` // 30% opacity
       );
 
+      // Update background gradient
+      root.style.setProperty("--bg-primary", theme.colors.background);
+      root.style.setProperty("--bg-secondary", theme.colors.surface);
+
+      // Apply background color to body
+      document.body.style.background = `linear-gradient(to bottom right, ${theme.colors.background}, ${theme.colors.surface}, ${theme.colors.background})`;
+
       localStorage.setItem(ACTIVE_THEME_KEY, activeThemeId);
     }
   }, [activeThemeId, themes]);
