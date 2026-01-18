@@ -43,32 +43,50 @@ export function DownloadQueue({
   const getStatusIcon = (status: QueueItem["status"]) => {
     switch (status) {
       case "pending":
-        return <Clock size={16} className="text-slate-400" />;
+        return (
+          <span className="icon-glow icon-glow-sm icon-glow-slate">
+            <Clock size={14} />
+          </span>
+        );
       case "downloading":
-        return <Loader2 size={16} className="text-violet-400 animate-spin" />;
+        return (
+          <span className="icon-glow icon-glow-sm icon-glow-violet icon-glow-animated">
+            <Loader2 size={14} className="animate-spin" />
+          </span>
+        );
       case "completed":
-        return <CheckCircle size={16} className="text-emerald-400" />;
+        return (
+          <span className="icon-glow icon-glow-sm icon-glow-emerald">
+            <CheckCircle size={14} />
+          </span>
+        );
       case "failed":
-        return <XCircle size={16} className="text-red-400" />;
+        return (
+          <span className="icon-glow icon-glow-sm icon-glow-red">
+            <XCircle size={14} />
+          </span>
+        );
     }
   };
 
   return (
-    <div className="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 bg-slate-800/50 border-b border-slate-700">
+    <div className="panel-glow overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 bg-slate-800/30 border-b border-slate-700/50">
         <h3 className="text-sm font-medium text-slate-300 flex items-center gap-2">
-          <ListOrdered size={16} />
+          <span className="icon-glow icon-glow-sm icon-glow-amber">
+            <ListOrdered size={16} />
+          </span>
           Download Queue
         </h3>
         <div className="flex items-center gap-3 text-xs">
           <span className="text-slate-500">
-            Pending: <span className="text-white">{pendingCount}</span>
+            Pending: <span className="text-white font-medium">{pendingCount}</span>
           </span>
           <span className="text-slate-500">
-            Active: <span className="text-violet-400">{downloadingCount}</span>
+            Active: <span className="text-violet-400 font-medium">{downloadingCount}</span>
           </span>
           <span className="text-slate-500">
-            Done: <span className="text-emerald-400">{completedCount}</span>
+            Done: <span className="text-emerald-400 font-medium">{completedCount}</span>
           </span>
         </div>
       </div>
@@ -76,17 +94,20 @@ export function DownloadQueue({
       <div className="max-h-64 overflow-y-auto">
         {queue.length === 0 ? (
           <div className="p-8 text-center text-slate-500">
+            <div className="icon-glow icon-glow-lg icon-glow-slate mx-auto mb-3">
+              <ListOrdered size={24} />
+            </div>
             Download queue is empty
           </div>
         ) : (
-          <div className="divide-y divide-slate-700/50">
+          <div className="divide-y divide-slate-700/30">
             {queue.map((item, index) => (
               <div
                 key={item.id}
-                className="flex items-center gap-3 px-4 py-2 hover:bg-slate-700/30 transition-colors"
+                className="flex items-center gap-3 px-4 py-2 hover:bg-slate-700/20 transition-all group"
               >
                 {/* Priority/Status */}
-                <div className="w-8 text-center">
+                <div className="w-8 flex justify-center">
                   {getStatusIcon(item.status)}
                 </div>
 
@@ -97,9 +118,9 @@ export function DownloadQueue({
                   </div>
                   {item.status === "downloading" && (
                     <div className="mt-1">
-                      <div className="h-1 bg-slate-700 rounded-full overflow-hidden">
+                      <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-violet-500 rounded-full transition-all"
+                          className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full transition-all shadow-lg shadow-violet-500/30"
                           style={{ width: `${item.progress}%` }}
                         />
                       </div>
@@ -108,7 +129,7 @@ export function DownloadQueue({
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   {item.status === "pending" && (
                     <>
                       <button
@@ -130,7 +151,7 @@ export function DownloadQueue({
                   {item.status === "downloading" && (
                     <button
                       onClick={() => onPause(item.id)}
-                      className="p-1 text-slate-500 hover:text-amber-400 hover:bg-slate-700 rounded"
+                      className="p-1 text-slate-500 hover:text-amber-400 hover:bg-amber-500/10 rounded"
                     >
                       <Pause size={14} />
                     </button>
@@ -138,7 +159,7 @@ export function DownloadQueue({
                   {item.status === "pending" && (
                     <button
                       onClick={() => onRemove(item.id)}
-                      className="p-1 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded"
+                      className="p-1 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded"
                     >
                       <Trash2 size={14} />
                     </button>

@@ -51,9 +51,11 @@ export function HistoryPanel({
     <div className="space-y-6">
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-gradient-to-br from-violet-600/20 to-violet-900/20 rounded-xl p-4 border border-violet-500/30">
+        <div className="stats-card-glow stats-card-violet rounded-xl p-4">
           <div className="flex items-center gap-2 text-violet-400 mb-2">
-            <Film size={18} />
+            <span className="icon-glow icon-glow-sm icon-glow-violet">
+              <Film size={16} />
+            </span>
             <span className="text-xs font-medium">Total Downloads</span>
           </div>
           <div className="text-2xl font-bold text-white">
@@ -61,9 +63,11 @@ export function HistoryPanel({
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-emerald-600/20 to-emerald-900/20 rounded-xl p-4 border border-emerald-500/30">
+        <div className="stats-card-glow stats-card-emerald rounded-xl p-4">
           <div className="flex items-center gap-2 text-emerald-400 mb-2">
-            <CheckCircle size={18} />
+            <span className="icon-glow icon-glow-sm icon-glow-emerald">
+              <CheckCircle size={16} />
+            </span>
             <span className="text-xs font-medium">Episodes</span>
           </div>
           <div className="text-2xl font-bold text-white">
@@ -71,9 +75,11 @@ export function HistoryPanel({
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-blue-600/20 to-blue-900/20 rounded-xl p-4 border border-blue-500/30">
+        <div className="stats-card-glow stats-card-blue rounded-xl p-4">
           <div className="flex items-center gap-2 text-blue-400 mb-2">
-            <HardDrive size={18} />
+            <span className="icon-glow icon-glow-sm icon-glow-blue">
+              <HardDrive size={16} />
+            </span>
             <span className="text-xs font-medium">Total Size</span>
           </div>
           <div className="text-2xl font-bold text-white">
@@ -81,9 +87,11 @@ export function HistoryPanel({
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-amber-600/20 to-amber-900/20 rounded-xl p-4 border border-amber-500/30">
+        <div className="stats-card-glow stats-card-amber rounded-xl p-4">
           <div className="flex items-center gap-2 text-amber-400 mb-2">
-            <TrendingUp size={18} />
+            <span className="icon-glow icon-glow-sm icon-glow-amber">
+              <TrendingUp size={16} />
+            </span>
             <span className="text-xs font-medium">Success Rate</span>
           </div>
           <div className="text-2xl font-bold text-white">
@@ -93,10 +101,12 @@ export function HistoryPanel({
       </div>
 
       {/* History List */}
-      <div className="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 bg-slate-800/50 border-b border-slate-700">
+      <div className="panel-glow overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 bg-slate-800/30 border-b border-slate-700/50">
           <h3 className="text-sm font-medium text-slate-300 flex items-center gap-2">
-            <Clock size={16} />
+            <span className="icon-glow icon-glow-sm icon-glow-cyan">
+              <Clock size={16} />
+            </span>
             Download History
           </h3>
           {history.length > 0 && (
@@ -114,26 +124,36 @@ export function HistoryPanel({
         <div className="max-h-96 overflow-y-auto">
           {history.length === 0 ? (
             <div className="p-8 text-center text-slate-500">
+              <div className="icon-glow icon-glow-lg icon-glow-slate mx-auto mb-3">
+                <Clock size={24} />
+              </div>
               No download history yet
             </div>
           ) : (
-            <div className="divide-y divide-slate-700/50">
-              {history.map((record) => (
+            <div className="divide-y divide-slate-700/30">
+              {history.map((record, index) => (
                 <div
                   key={record.id}
-                  className="px-4 py-3 hover:bg-slate-700/30 transition-colors"
+                  className="px-4 py-3 hover:bg-slate-700/20 transition-all group"
+                  style={{ animationDelay: `${index * 50}ms` }}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         {record.status === "completed" && (
-                          <CheckCircle size={16} className="text-emerald-400 shrink-0" />
+                          <span className="icon-glow icon-glow-sm icon-glow-emerald">
+                            <CheckCircle size={14} />
+                          </span>
                         )}
                         {record.status === "failed" && (
-                          <XCircle size={16} className="text-red-400 shrink-0" />
+                          <span className="icon-glow icon-glow-sm icon-glow-red">
+                            <XCircle size={14} />
+                          </span>
                         )}
                         {record.status === "partial" && (
-                          <AlertCircle size={16} className="text-amber-400 shrink-0" />
+                          <span className="icon-glow icon-glow-sm icon-glow-amber">
+                            <AlertCircle size={14} />
+                          </span>
                         )}
                         <span className="text-sm font-medium text-white truncate">
                           {record.seriesTitle}
@@ -154,7 +174,7 @@ export function HistoryPanel({
                     </div>
                     <button
                       onClick={() => onDelete(record.id)}
-                      className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors"
+                      className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
                     >
                       <Trash2 size={14} />
                     </button>

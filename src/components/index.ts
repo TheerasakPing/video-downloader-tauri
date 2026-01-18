@@ -11,3 +11,8 @@ export { FileBrowser } from "./FileBrowser";
 export { DownloadQueue } from "./DownloadQueue";
 export { Logo } from "./Logo";
 export { UpdateDialog } from "./UpdateDialog";
+export { MiniMode } from "./MiniMode";
+export { VideoPreview } from "./VideoPreview";
+export { ShortcutsHelp } from "./ShortcutsHelp";
+export { PresetSelector } from "./PresetSelector";
+export { ThemeSelector } from "./ThemeSelector";

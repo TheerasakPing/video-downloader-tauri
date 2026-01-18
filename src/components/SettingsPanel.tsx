@@ -11,9 +11,13 @@ import {
   RotateCcw,
   RefreshCw,
   Sparkles,
+  Languages,
 } from "lucide-react";
 import { Settings as SettingsType } from "../hooks/useSettings";
+import { CustomTheme } from "../hooks/useCustomTheme";
+import { Language } from "../hooks/useI18n";
 import { Button } from "./Button";
+import { ThemeSelector } from "./ThemeSelector";
 
 interface SettingsPanelProps {
   settings: SettingsType;
@@ -22,6 +26,14 @@ interface SettingsPanelProps {
   onOpenFolder: () => void;
   onCheckUpdates?: () => void;
   isCheckingUpdates?: boolean;
+  // i18n
+  language: Language;
+  onLanguageChange: (lang: Language) => void;
+  t: (key: string) => string;
+  // Custom themes
+  themes: CustomTheme[];
+  activeThemeId: string;
+  onThemeSelect: (themeId: string) => void;
 }
 
 export function SettingsPanel({
@@ -31,6 +43,12 @@ export function SettingsPanel({
   onOpenFolder,
   onCheckUpdates,
   isCheckingUpdates,
+  language,
+  onLanguageChange,
+  t,
+  themes,
+  activeThemeId,
+  onThemeSelect,
 }: SettingsPanelProps) {
   return (
     <div className="space-y-6">
@@ -262,6 +280,50 @@ export function SettingsPanel({
             System
           </button>
         </div>
+      </section>
+
+      {/* Language */}
+      <section className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+        <h3 className="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
+          <span className="icon-glow icon-glow-sm icon-glow-emerald">
+            <Languages size={16} />
+          </span>
+          {t("settings.language")}
+        </h3>
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => onLanguageChange("en")}
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all ${
+              language === "en"
+                ? "bg-violet-600 text-white tab-glow-active"
+                : "bg-slate-700 text-slate-400 hover:bg-slate-600"
+            }`}
+          >
+            <span className="text-lg">🇬🇧</span>
+            English
+          </button>
+          <button
+            onClick={() => onLanguageChange("th")}
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all ${
+              language === "th"
+                ? "bg-violet-600 text-white tab-glow-active"
+                : "bg-slate-700 text-slate-400 hover:bg-slate-600"
+            }`}
+          >
+            <span className="text-lg">🇹🇭</span>
+            ไทย
+          </button>
+        </div>
+      </section>
+
+      {/* Color Themes */}
+      <section className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+        <ThemeSelector
+          themes={themes}
+          activeThemeId={activeThemeId}
+          onSelect={onThemeSelect}
+        />
       </section>
 
       {/* Updates */}

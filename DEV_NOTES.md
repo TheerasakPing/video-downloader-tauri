@@ -3,7 +3,7 @@
 ## Current State
 - **Version**: 1.2.0
 - **Last Updated**: 2026-01-18
-- **Status**: Released
+- **Status**: Development (v1.3.0 in progress)
 
 ## Tech Stack
 - **Frontend**: React 19 + TypeScript + Vite
@@ -15,6 +15,7 @@
 ```
 src/
 ├── App.tsx                 # Main application component
+├── main.tsx               # App entry with I18nProvider
 ├── index.css              # Global styles including glowing effects
 ├── components/
 │   ├── Button.tsx         # Reusable button component
@@ -29,13 +30,23 @@ src/
 │   ├── SpeedGraph.tsx     # Download speed visualization
 │   ├── FileBrowser.tsx    # File management
 │   ├── DownloadQueue.tsx  # Queue management
-│   └── UpdateDialog.tsx   # OTA update dialog
+│   ├── UpdateDialog.tsx   # OTA update dialog
+│   ├── MiniMode.tsx       # NEW: Floating mini progress window
+│   ├── VideoPreview.tsx   # NEW: Video preview modal
+│   ├── ShortcutsHelp.tsx  # NEW: Keyboard shortcuts dialog
+│   ├── PresetSelector.tsx # NEW: Download preset selector
+│   └── ThemeSelector.tsx  # NEW: Color theme selector
 ├── hooks/
 │   ├── useLogger.ts       # Logging hook
 │   ├── useSettings.ts     # Settings management
 │   ├── useHistory.ts      # Download history
 │   ├── useSpeedGraph.ts   # Speed data tracking
-│   └── useUpdater.ts      # OTA update functionality
+│   ├── useUpdater.ts      # OTA update functionality
+│   ├── useKeyboardShortcuts.ts  # NEW: Keyboard shortcuts
+│   ├── useDownloadPresets.ts    # NEW: Download presets
+│   ├── useSpeedSchedule.ts      # NEW: Speed limiting schedule
+│   ├── useI18n.tsx              # NEW: Multi-language (Thai/English)
+│   └── useCustomTheme.ts        # NEW: Custom color themes
 └── types/
     └── index.ts           # TypeScript type definitions
 
@@ -51,6 +62,22 @@ src-tauri/
 ```
 
 ## Key Features Implemented
+
+### v1.3.0 (In Progress) - New Features
+- **Drag & Drop URL**: Drag URL text directly onto app to start download
+- **Keyboard Shortcuts**:
+  - `Ctrl+V` - Paste URL
+  - `Ctrl+D` - Start download
+  - `Space` - Pause/Resume
+  - `Escape` - Cancel
+  - `Ctrl+M` - Toggle Mini Mode
+  - `Ctrl+Tab/Shift+Tab` - Navigate tabs
+- **Download Presets**: Quick preset buttons (High Quality, Save Bandwidth, Fast Download, Night Mode)
+- **Mini Mode**: Floating mini window showing only download progress
+- **Multi-language**: Thai/English interface (useI18n hook)
+- **Custom Themes**: 5 color themes (Violet, Ocean Blue, Emerald, Rose, Amber)
+- **Video Preview**: Component ready for video preview before download
+- **Speed Schedule**: Hook ready for time-based speed limiting
 
 ### v1.2.0 - Glowing Icons
 - Added CSS classes in `index.css`:
@@ -109,6 +136,7 @@ npm run tauri build    # Full app build
 
 ## Future Improvements
 - [ ] Add signing keys for auto-update functionality
-- [ ] Implement pause/resume downloads
-- [ ] Add more video sources
-- [ ] Improve error handling
+- [ ] Implement actual pause/resume downloads (Rust backend)
+- [ ] Video quality selection
+- [ ] System tray integration (requires tauri-plugin-system-tray)
+- [ ] Speed schedule integration with download logic

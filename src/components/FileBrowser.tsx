@@ -115,9 +115,11 @@ export function FileBrowser({
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        <div className="glass rounded-lg p-2 sm:p-3 border border-slate-700/50 hover-lift animate-fade-in stagger-1">
-          <div className="flex items-center gap-1 sm:gap-2 text-slate-400 text-[10px] sm:text-xs mb-0.5 sm:mb-1">
-            <Film size={12} className="sm:w-3.5 sm:h-3.5" />
+        <div className="stats-card-glow stats-card-violet rounded-lg p-2 sm:p-3">
+          <div className="flex items-center gap-1 sm:gap-2 text-violet-400 text-[10px] sm:text-xs mb-0.5 sm:mb-1">
+            <span className="icon-glow icon-glow-sm icon-glow-violet">
+              <Film size={12} />
+            </span>
             <span className="hidden sm:inline">Episodes</span>
             <span className="sm:hidden">Eps</span>
           </div>
@@ -125,18 +127,22 @@ export function FileBrowser({
             {episodeFiles.length}
           </div>
         </div>
-        <div className="glass rounded-lg p-2 sm:p-3 border border-slate-700/50 hover-lift animate-fade-in stagger-2">
-          <div className="flex items-center gap-1 sm:gap-2 text-slate-400 text-[10px] sm:text-xs mb-0.5 sm:mb-1">
-            <FileVideo size={12} className="sm:w-3.5 sm:h-3.5" />
+        <div className="stats-card-glow stats-card-emerald rounded-lg p-2 sm:p-3">
+          <div className="flex items-center gap-1 sm:gap-2 text-emerald-400 text-[10px] sm:text-xs mb-0.5 sm:mb-1">
+            <span className="icon-glow icon-glow-sm icon-glow-emerald">
+              <FileVideo size={12} />
+            </span>
             Merged
           </div>
           <div className="text-sm sm:text-lg font-bold text-white">
             {mergedFiles.length}
           </div>
         </div>
-        <div className="glass rounded-lg p-2 sm:p-3 border border-slate-700/50 hover-lift animate-fade-in stagger-3">
-          <div className="flex items-center gap-1 sm:gap-2 text-slate-400 text-[10px] sm:text-xs mb-0.5 sm:mb-1">
-            <HardDrive size={12} className="sm:w-3.5 sm:h-3.5" />
+        <div className="stats-card-glow stats-card-blue rounded-lg p-2 sm:p-3">
+          <div className="flex items-center gap-1 sm:gap-2 text-blue-400 text-[10px] sm:text-xs mb-0.5 sm:mb-1">
+            <span className="icon-glow icon-glow-sm icon-glow-blue">
+              <HardDrive size={12} />
+            </span>
             <span className="hidden sm:inline">Total Size</span>
             <span className="sm:hidden">Size</span>
           </div>
@@ -170,10 +176,12 @@ export function FileBrowser({
       )}
 
       {/* File List */}
-      <div className="glass rounded-xl border border-slate-700/50 overflow-hidden">
+      <div className="panel-glow overflow-hidden">
         {files.length === 0 ? (
           <div className="p-6 sm:p-8 text-center text-slate-500 text-sm animate-fade-in">
-            <FolderOpen className="mx-auto mb-2 opacity-50" size={32} />
+            <div className="icon-glow icon-glow-lg icon-glow-slate mx-auto mb-3">
+              <FolderOpen size={28} />
+            </div>
             No files in output directory
           </div>
         ) : (

@@ -2,6 +2,39 @@
 
 All notable changes to Rongyok Video Downloader will be documented in this file.
 
+## [Unreleased] - v1.3.0
+
+### Added
+- **Drag & Drop URL**: Drag URL text directly onto the app window to add it
+- **Keyboard Shortcuts**:
+  - `Ctrl+V` - Paste URL from clipboard
+  - `Ctrl+D` - Start download
+  - `Space` - Pause/Resume download
+  - `Escape` - Cancel download
+  - `Ctrl+M` - Toggle Mini Mode
+  - `Ctrl+Tab/Shift+Tab` - Navigate between tabs
+- **Keyboard Shortcuts Help**: Press `?` or click icon to see all shortcuts
+- **Download Presets**: Quick preset buttons for common settings
+  - High Quality (max concurrent, no speed limit)
+  - Save Bandwidth (limited concurrent, 500 KB/s limit)
+  - Fast Download (max concurrent, no limit)
+  - Night Mode (limited speed, quiet)
+- **Mini Mode**: Floating mini window showing only download progress
+- **Multi-language Support**: Switch between English and Thai
+  - Language selector in Settings
+  - Full translation for all UI elements
+- **Custom Color Themes**: 5 built-in color themes
+  - Violet (default)
+  - Ocean Blue
+  - Emerald
+  - Rose
+  - Amber
+- **Video Preview Component**: Ready for video preview before download
+
+### Changed
+- Settings panel now includes Language and Color Theme sections
+- App entry wrapped with I18nProvider for translation support
+
 ## [1.2.0] - 2026-01-18
 
 ### Added

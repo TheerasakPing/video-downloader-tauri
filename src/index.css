@@ -657,3 +657,293 @@ html {
   color: #dc2626;
   box-shadow: 0 0 10px rgba(239, 68, 68, 0.2), inset 0 0 6px rgba(239, 68, 68, 0.08);
 }
+
+/* ========================================
+   GLOWING CARD EFFECTS
+   ======================================== */
+
+/* Base glowing card */
+.card-glow {
+  position: relative;
+  border-radius: 0.75rem;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  box-shadow:
+    0 0 20px rgba(139, 92, 246, 0.15),
+    0 4px 20px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: all 0.3s ease;
+}
+
+.card-glow::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg,
+    rgba(139, 92, 246, 0.5),
+    rgba(217, 70, 239, 0.3),
+    rgba(236, 72, 153, 0.3),
+    rgba(139, 92, 246, 0.5)
+  );
+  opacity: 0;
+  z-index: -1;
+  transition: opacity 0.3s ease;
+}
+
+.card-glow:hover {
+  border-color: rgba(139, 92, 246, 0.5);
+  box-shadow:
+    0 0 30px rgba(139, 92, 246, 0.25),
+    0 8px 30px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
+}
+
+.card-glow:hover::before {
+  opacity: 0.1;
+}
+
+/* Card glow color variants */
+.card-glow-violet {
+  border-color: rgba(139, 92, 246, 0.3);
+  box-shadow:
+    0 0 20px rgba(139, 92, 246, 0.15),
+    0 4px 20px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(139, 92, 246, 0.1);
+}
+
+.card-glow-violet:hover {
+  border-color: rgba(139, 92, 246, 0.6);
+  box-shadow:
+    0 0 40px rgba(139, 92, 246, 0.3),
+    0 8px 30px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(139, 92, 246, 0.2);
+}
+
+.card-glow-emerald {
+  border-color: rgba(16, 185, 129, 0.3);
+  box-shadow:
+    0 0 20px rgba(16, 185, 129, 0.15),
+    0 4px 20px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(16, 185, 129, 0.1);
+}
+
+.card-glow-emerald:hover {
+  border-color: rgba(16, 185, 129, 0.6);
+  box-shadow:
+    0 0 40px rgba(16, 185, 129, 0.3),
+    0 8px 30px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(16, 185, 129, 0.2);
+}
+
+.card-glow-blue {
+  border-color: rgba(59, 130, 246, 0.3);
+  box-shadow:
+    0 0 20px rgba(59, 130, 246, 0.15),
+    0 4px 20px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(59, 130, 246, 0.1);
+}
+
+.card-glow-blue:hover {
+  border-color: rgba(59, 130, 246, 0.6);
+  box-shadow:
+    0 0 40px rgba(59, 130, 246, 0.3),
+    0 8px 30px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(59, 130, 246, 0.2);
+}
+
+.card-glow-amber {
+  border-color: rgba(245, 158, 11, 0.3);
+  box-shadow:
+    0 0 20px rgba(245, 158, 11, 0.15),
+    0 4px 20px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(245, 158, 11, 0.1);
+}
+
+.card-glow-amber:hover {
+  border-color: rgba(245, 158, 11, 0.6);
+  box-shadow:
+    0 0 40px rgba(245, 158, 11, 0.3),
+    0 8px 30px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(245, 158, 11, 0.2);
+}
+
+.card-glow-rose {
+  border-color: rgba(244, 63, 94, 0.3);
+  box-shadow:
+    0 0 20px rgba(244, 63, 94, 0.15),
+    0 4px 20px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(244, 63, 94, 0.1);
+}
+
+.card-glow-rose:hover {
+  border-color: rgba(244, 63, 94, 0.6);
+  box-shadow:
+    0 0 40px rgba(244, 63, 94, 0.3),
+    0 8px 30px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(244, 63, 94, 0.2);
+}
+
+.card-glow-fuchsia {
+  border-color: rgba(217, 70, 239, 0.3);
+  box-shadow:
+    0 0 20px rgba(217, 70, 239, 0.15),
+    0 4px 20px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(217, 70, 239, 0.1);
+}
+
+.card-glow-fuchsia:hover {
+  border-color: rgba(217, 70, 239, 0.6);
+  box-shadow:
+    0 0 40px rgba(217, 70, 239, 0.3),
+    0 8px 30px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(217, 70, 239, 0.2);
+}
+
+.card-glow-cyan {
+  border-color: rgba(6, 182, 212, 0.3);
+  box-shadow:
+    0 0 20px rgba(6, 182, 212, 0.15),
+    0 4px 20px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(6, 182, 212, 0.1);
+}
+
+.card-glow-cyan:hover {
+  border-color: rgba(6, 182, 212, 0.6);
+  box-shadow:
+    0 0 40px rgba(6, 182, 212, 0.3),
+    0 8px 30px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(6, 182, 212, 0.2);
+}
+
+/* Animated glowing card */
+.card-glow-animated {
+  animation: card-pulse 3s ease-in-out infinite;
+}
+
+@keyframes card-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 20px rgba(139, 92, 246, 0.15),
+      0 4px 20px rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+  50% {
+    box-shadow:
+      0 0 35px rgba(139, 92, 246, 0.25),
+      0 4px 25px rgba(0, 0, 0, 0.25),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+}
+
+/* Stats card with glowing border only */
+.stats-card-glow {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  background: rgba(30, 41, 59, 0.5);
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+.stats-card-glow:hover {
+  transform: translateY(-2px);
+}
+
+/* Stats card color variants - border glow only */
+.stats-card-violet {
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  box-shadow: 0 0 15px rgba(139, 92, 246, 0.15), inset 0 1px 0 rgba(139, 92, 246, 0.1);
+}
+
+.stats-card-violet:hover {
+  border-color: rgba(139, 92, 246, 0.6);
+  box-shadow: 0 0 25px rgba(139, 92, 246, 0.25), inset 0 1px 0 rgba(139, 92, 246, 0.15);
+}
+
+.stats-card-emerald {
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.15), inset 0 1px 0 rgba(16, 185, 129, 0.1);
+}
+
+.stats-card-emerald:hover {
+  border-color: rgba(16, 185, 129, 0.6);
+  box-shadow: 0 0 25px rgba(16, 185, 129, 0.25), inset 0 1px 0 rgba(16, 185, 129, 0.15);
+}
+
+.stats-card-blue {
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.15), inset 0 1px 0 rgba(59, 130, 246, 0.1);
+}
+
+.stats-card-blue:hover {
+  border-color: rgba(59, 130, 246, 0.6);
+  box-shadow: 0 0 25px rgba(59, 130, 246, 0.25), inset 0 1px 0 rgba(59, 130, 246, 0.15);
+}
+
+.stats-card-amber {
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.15), inset 0 1px 0 rgba(245, 158, 11, 0.1);
+}
+
+.stats-card-amber:hover {
+  border-color: rgba(245, 158, 11, 0.6);
+  box-shadow: 0 0 25px rgba(245, 158, 11, 0.25), inset 0 1px 0 rgba(245, 158, 11, 0.15);
+}
+
+.stats-card-rose {
+  border: 1px solid rgba(244, 63, 94, 0.4);
+  box-shadow: 0 0 15px rgba(244, 63, 94, 0.15), inset 0 1px 0 rgba(244, 63, 94, 0.1);
+}
+
+.stats-card-rose:hover {
+  border-color: rgba(244, 63, 94, 0.6);
+  box-shadow: 0 0 25px rgba(244, 63, 94, 0.25), inset 0 1px 0 rgba(244, 63, 94, 0.15);
+}
+
+/* Panel with glow border */
+.panel-glow {
+  position: relative;
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(12px);
+  border-radius: 0.75rem;
+  border: 1px solid rgba(100, 116, 139, 0.3);
+  box-shadow:
+    0 0 30px rgba(139, 92, 246, 0.08),
+    0 4px 20px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease;
+}
+
+.panel-glow:hover {
+  border-color: rgba(139, 92, 246, 0.4);
+  box-shadow:
+    0 0 40px rgba(139, 92, 246, 0.12),
+    0 8px 30px rgba(0, 0, 0, 0.2);
+}
+
+/* Light theme adjustments for glowing cards */
+.light .card-glow {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(139, 92, 246, 0.2);
+  box-shadow:
+    0 0 20px rgba(139, 92, 246, 0.08),
+    0 4px 20px rgba(0, 0, 0, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.light .card-glow:hover {
+  box-shadow:
+    0 0 30px rgba(139, 92, 246, 0.15),
+    0 8px 30px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.light .stats-card-glow {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.light .panel-glow {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(100, 116, 139, 0.2);
+}

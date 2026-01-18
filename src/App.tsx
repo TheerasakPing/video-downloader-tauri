@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -20,6 +20,8 @@ import {
   AlertCircle,
   Clock,
   HardDrive,
+  Minimize2,
+  Keyboard,
 } from "lucide-react";
 import {
   Button,
@@ -35,12 +37,19 @@ import {
   DownloadQueue,
   Logo,
   UpdateDialog,
+  MiniMode,
+  ShortcutsHelp,
+  PresetSelector,
 } from "./components";
 import { useLogger } from "./hooks/useLogger";
 import { useSettings } from "./hooks/useSettings";
 import { useHistory } from "./hooks/useHistory";
 import { useSpeedGraph } from "./hooks/useSpeedGraph";
 import { useUpdater } from "./hooks/useUpdater";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { useDownloadPresets } from "./hooks/useDownloadPresets";
+import { useI18n } from "./hooks/useI18n";
+import { useCustomTheme } from "./hooks/useCustomTheme";
 import { SeriesInfo, DownloadState, DownloadProgress } from "./types";
 import { QueueItem } from "./components/DownloadQueue";
 
@@ -77,6 +86,11 @@ function App() {
     mergeError: string | null;
   }>({ isMerging: false, mergedFile: null, mergeError: null });
 
+  // New UI states
+  const [isDragging, setIsDragging] = useState(false);
+  const [showMiniMode, setShowMiniMode] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
   const [downloadState, setDownloadState] = useState<DownloadState>({
     isDownloading: false,
     isPaused: false,
@@ -110,8 +124,158 @@ function App() {
     downloadAndInstall,
     dismissUpdate,
   } = useUpdater();
+  const { presets, activePresetId, applyPreset } = useDownloadPresets();
+  const { language, setLanguage, t } = useI18n();
+  const { themes, activeThemeId, setActiveTheme } = useCustomTheme();
 
-  // Initialize - use ref to prevent double execution in StrictMode
+  // Tab navigation
+  const tabs: TabType[] = ["download", "files", "history", "settings", "logs"];
+  const handleNextTab = useCallback(() => {
+    const currentIndex = tabs.indexOf(activeTab);
+    const nextIndex = (currentIndex + 1) % tabs.length;
+    setActiveTab(tabs[nextIndex]);
+  }, [activeTab]);
+
+  const handlePrevTab = useCallback(() => {
+    const currentIndex = tabs.indexOf(activeTab);
+    const prevIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    setActiveTab(tabs[prevIndex]);
+  }, [activeTab]);
+
+  // Handlers
+  const handlePaste = useCallback(async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      setUrl(text);
+      log(`Pasted URL: ${text}`);
+    } catch (e) {
+      error("Failed to read clipboard");
+    }
+  }, [log, error]);
+
+  const handleStartDownload = useCallback(async () => {
+    if (!series || selectedEpisodes.size === 0) {
+      error("Please select at least one episode");
+      return;
+    }
+
+    const episodes = Array.from(selectedEpisodes).sort((a, b) => a - b);
+    log(`Starting download of ${episodes.length} episodes`);
+
+    const recordId = addRecord({
+      seriesId: series.seriesId,
+      seriesTitle: series.title,
+      episodes,
+      completedEpisodes: [],
+      failedEpisodes: [],
+      startTime: new Date().toISOString(),
+      totalSize: 0,
+      status: "partial",
+    });
+
+    setQueue(
+      episodes.map((ep, i) => ({
+        id: `${series.seriesId}-${ep}`,
+        seriesId: series.seriesId,
+        seriesTitle: series.title,
+        episode: ep,
+        status: i === 0 ? "downloading" : "pending",
+        progress: 0,
+        priority: i,
+      }))
+    );
+
+    setDownloadState({
+      isDownloading: true,
+      isPaused: false,
+      currentEpisode: 0,
+      completedEpisodes: [],
+      failedEpisodes: [],
+      totalSelected: episodes.length,
+    });
+
+    resetSpeedGraph();
+
+    try {
+      const results = await invoke<DownloadResult[]>("start_download", {
+        request: {
+          seriesId: series.seriesId,
+          episodes,
+          outputDir: settings.outputDir,
+          autoMerge: settings.autoMerge && ffmpegAvailable,
+          concurrentDownloads: settings.concurrentDownloads,
+          speedLimit: settings.speedLimit,
+          fileNaming: settings.fileNaming,
+          seriesTitle: series.title,
+        },
+      });
+
+      const successCount = results.filter((r) => r.success).length;
+      const failCount = results.filter((r) => !r.success).length;
+      const totalSize = 100 * 1024 * 1024 * successCount;
+
+      updateRecord(recordId, {
+        completedEpisodes: results.filter((r) => r.success).map((r) => r.episode),
+        failedEpisodes: results.filter((r) => !r.success).map((r) => r.episode),
+        endTime: new Date().toISOString(),
+        totalSize,
+        status: failCount === 0 ? "completed" : failCount === episodes.length ? "failed" : "partial",
+      });
+
+      if (failCount === 0) {
+        success(`All ${successCount} episodes downloaded successfully!`);
+        showNotification("Download Complete", `${successCount} episodes downloaded`);
+        playNotificationSound();
+      } else {
+        warning(`Downloaded ${successCount}/${episodes.length} episodes (${failCount} failed)`);
+      }
+
+      refreshFiles();
+    } catch (e) {
+      error(`Download failed: ${e}`);
+    } finally {
+      setDownloadState((prev) => ({ ...prev, isDownloading: false }));
+      setQueue([]);
+    }
+  }, [series, selectedEpisodes, settings, ffmpegAvailable, addRecord, updateRecord, log, success, warning, error, resetSpeedGraph]);
+
+  const handlePause = useCallback(() => {
+    setDownloadState((prev) => ({ ...prev, isPaused: true }));
+    warning("Pause not yet implemented");
+  }, [warning]);
+
+  const handleResume = useCallback(() => {
+    setDownloadState((prev) => ({ ...prev, isPaused: false }));
+    log("Resume not yet implemented");
+  }, [log]);
+
+  const handleCancel = useCallback(() => {
+    setDownloadState((prev) => ({ ...prev, isDownloading: false }));
+    warning("Cancel requested");
+  }, [warning]);
+
+  const handlePauseResume = useCallback(() => {
+    if (downloadState.isPaused) {
+      handleResume();
+    } else {
+      handlePause();
+    }
+  }, [downloadState.isPaused, handlePause, handleResume]);
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onPaste: handlePaste,
+    onDownload: handleStartDownload,
+    onPauseResume: handlePauseResume,
+    onCancel: handleCancel,
+    onToggleMiniMode: () => setShowMiniMode((prev) => !prev),
+    onNextTab: handleNextTab,
+    onPrevTab: handlePrevTab,
+    isDownloading: downloadState.isDownloading,
+    isPaused: downloadState.isPaused,
+  });
+
+  // Initialize
   const initialized = React.useRef(false);
   useEffect(() => {
     if (initialized.current) return;
@@ -132,7 +296,6 @@ function App() {
       root.classList.remove("dark");
       root.classList.add("light");
     } else {
-      // System theme
       const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
       if (prefersDark) {
         root.classList.add("dark");
@@ -177,7 +340,6 @@ function App() {
         error(`Episode ${result.episode} failed: ${result.error}`);
       }
 
-      // Update queue
       setQueue((prev) =>
         prev.map((q) =>
           q.episode === result.episode
@@ -245,17 +407,6 @@ function App() {
     }
   };
 
-  // Handlers
-  const handlePaste = async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      setUrl(text);
-      log(`Pasted URL: ${text}`);
-    } catch (e) {
-      error("Failed to read clipboard");
-    }
-  };
-
   const handleFetch = async () => {
     if (!url.trim()) {
       error("Please enter a URL");
@@ -305,111 +456,6 @@ function App() {
 
   const deselectAllEpisodes = () => {
     setSelectedEpisodes(new Set());
-  };
-
-  const handleStartDownload = async () => {
-    if (!series || selectedEpisodes.size === 0) {
-      error("Please select at least one episode");
-      return;
-    }
-
-    const episodes = Array.from(selectedEpisodes).sort((a, b) => a - b);
-    log(`Starting download of ${episodes.length} episodes`);
-
-    // Add to history
-    const recordId = addRecord({
-      seriesId: series.seriesId,
-      seriesTitle: series.title,
-      episodes,
-      completedEpisodes: [],
-      failedEpisodes: [],
-      startTime: new Date().toISOString(),
-      totalSize: 0,
-      status: "partial",
-    });
-
-    // Create queue
-    setQueue(
-      episodes.map((ep, i) => ({
-        id: `${series.seriesId}-${ep}`,
-        seriesId: series.seriesId,
-        seriesTitle: series.title,
-        episode: ep,
-        status: i === 0 ? "downloading" : "pending",
-        progress: 0,
-        priority: i,
-      }))
-    );
-
-    setDownloadState({
-      isDownloading: true,
-      isPaused: false,
-      currentEpisode: 0,
-      completedEpisodes: [],
-      failedEpisodes: [],
-      totalSelected: episodes.length,
-    });
-
-    resetSpeedGraph();
-
-    try {
-      const results = await invoke<DownloadResult[]>("start_download", {
-        request: {
-          seriesId: series.seriesId,
-          episodes,
-          outputDir: settings.outputDir,
-          autoMerge: settings.autoMerge && ffmpegAvailable,
-          concurrentDownloads: settings.concurrentDownloads,
-          speedLimit: settings.speedLimit,
-          fileNaming: settings.fileNaming,
-          seriesTitle: series.title,
-        },
-      });
-
-      const successCount = results.filter((r) => r.success).length;
-      const failCount = results.filter((r) => !r.success).length;
-      const totalSize = 100 * 1024 * 1024 * successCount; // Estimate
-
-      // Update history record
-      updateRecord(recordId, {
-        completedEpisodes: results.filter((r) => r.success).map((r) => r.episode),
-        failedEpisodes: results.filter((r) => !r.success).map((r) => r.episode),
-        endTime: new Date().toISOString(),
-        totalSize,
-        status: failCount === 0 ? "completed" : failCount === episodes.length ? "failed" : "partial",
-      });
-
-      if (failCount === 0) {
-        success(`All ${successCount} episodes downloaded successfully!`);
-        showNotification("Download Complete", `${successCount} episodes downloaded`);
-        playNotificationSound();
-      } else {
-        warning(`Downloaded ${successCount}/${episodes.length} episodes (${failCount} failed)`);
-      }
-
-      // Refresh files
-      refreshFiles();
-    } catch (e) {
-      error(`Download failed: ${e}`);
-    } finally {
-      setDownloadState((prev) => ({ ...prev, isDownloading: false }));
-      setQueue([]);
-    }
-  };
-
-  const handlePause = () => {
-    setDownloadState((prev) => ({ ...prev, isPaused: true }));
-    warning("Pause not yet implemented");
-  };
-
-  const handleResume = () => {
-    setDownloadState((prev) => ({ ...prev, isPaused: false }));
-    log("Resume not yet implemented");
-  };
-
-  const handleCancel = () => {
-    setDownloadState((prev) => ({ ...prev, isDownloading: false }));
-    warning("Cancel requested");
   };
 
   const refreshFiles = async () => {
@@ -465,12 +511,43 @@ function App() {
     }
   };
 
+  // Drag and drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+
+    const text = e.dataTransfer.getData("text/plain");
+    if (text && text.includes("rongyok.com")) {
+      setUrl(text);
+      log(`Dropped URL: ${text}`);
+      success("URL added from drop");
+    } else if (text) {
+      setUrl(text);
+      log(`Dropped text: ${text}`);
+    }
+  };
+
+  const handlePresetSelect = (presetId: string) => {
+    applyPreset(presetId, updateSetting);
+    success(`Preset "${presets.find(p => p.id === presetId)?.name}" applied`);
+  };
+
   const overallProgress =
     downloadState.totalSelected > 0
       ? (downloadState.completedEpisodes.length / downloadState.totalSelected) * 100
       : 0;
 
-  const tabs: { id: TabType; label: string; icon: React.ReactNode; glowColor: string }[] = [
+  const tabsConfig: { id: TabType; label: string; icon: React.ReactNode; glowColor: string }[] = [
     { id: "download", label: "Download", icon: <Download size={16} />, glowColor: "violet" },
     { id: "files", label: "Files", icon: <HardDrive size={16} />, glowColor: "blue" },
     { id: "history", label: "History", icon: <Clock size={16} />, glowColor: "amber" },
@@ -479,7 +556,26 @@ function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
+    <div
+      className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Drag overlay */}
+      {isDragging && (
+        <div className="fixed inset-0 z-[100] bg-violet-500/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+          <div className="bg-slate-800/90 rounded-2xl p-8 border-2 border-dashed border-violet-400 animate-pulse-glow">
+            <div className="flex flex-col items-center gap-3">
+              <span className="icon-glow icon-glow-lg icon-glow-violet icon-glow-animated">
+                <Download size={48} />
+              </span>
+              <span className="text-xl font-medium text-violet-300">Drop URL here</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="sticky top-0 z-50 glass border-b border-slate-800/50 animate-fade-in">
         <div className="container-responsive py-3 sm:py-4">
@@ -513,24 +609,47 @@ function App() {
               </div>
             </div>
 
-            {/* Tabs */}
-            <div className="flex bg-slate-800/70 rounded-xl p-0.5 sm:p-1 overflow-x-auto scrollbar-hide">
-              {tabs.map((tab, index) => (
+            {/* Header Actions */}
+            <div className="flex items-center gap-2">
+              {/* Mini Mode Toggle */}
+              {downloadState.isDownloading && (
                 <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium rounded-lg transition-all flex items-center gap-1 sm:gap-1.5 whitespace-nowrap btn-ripple ${
-                    activeTab === tab.id
-                      ? "tab-glow-active text-white shadow-lg animate-scale-in"
-                      : "text-slate-400 hover:text-white hover:bg-slate-700/50"
-                  } stagger-${index + 1}`}
+                  onClick={() => setShowMiniMode(true)}
+                  className="p-2 hover:bg-slate-700/50 rounded-lg transition-colors"
+                  title="Mini Mode (Ctrl+M)"
                 >
-                  <span className={`icon-glow icon-glow-sm ${activeTab === tab.id ? `icon-glow-${tab.glowColor} icon-glow-animated` : ""}`}>
-                    {tab.icon}
-                  </span>
-                  <span className="hidden sm:inline">{tab.label}</span>
+                  <Minimize2 size={16} className="text-slate-400" />
                 </button>
-              ))}
+              )}
+
+              {/* Shortcuts Help */}
+              <button
+                onClick={() => setShowShortcuts(true)}
+                className="p-2 hover:bg-slate-700/50 rounded-lg transition-colors"
+                title="Keyboard Shortcuts"
+              >
+                <Keyboard size={16} className="text-slate-400" />
+              </button>
+
+              {/* Tabs */}
+              <div className="flex bg-slate-800/70 rounded-xl p-0.5 sm:p-1 overflow-x-auto scrollbar-hide">
+                {tabsConfig.map((tab, index) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium rounded-lg transition-all flex items-center gap-1 sm:gap-1.5 whitespace-nowrap btn-ripple ${
+                      activeTab === tab.id
+                        ? "tab-glow-active text-white shadow-lg animate-scale-in"
+                        : "text-slate-400 hover:text-white hover:bg-slate-700/50"
+                    } stagger-${index + 1}`}
+                  >
+                    <span className={`icon-glow icon-glow-sm ${activeTab === tab.id ? `icon-glow-${tab.glowColor} icon-glow-animated` : ""}`}>
+                      {tab.icon}
+                    </span>
+                    <span className="hidden sm:inline">{tab.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -540,11 +659,20 @@ function App() {
       <main className="container-responsive py-4 sm:py-6 space-y-4 sm:space-y-6">
         {activeTab === "download" && (
           <div className="page-transition space-y-4 sm:space-y-6">
+            {/* Presets */}
+            <div className="animate-fade-in">
+              <PresetSelector
+                presets={presets}
+                activePresetId={activePresetId}
+                onSelect={handlePresetSelect}
+              />
+            </div>
+
             {/* URL Input */}
             <div className="space-y-3 sm:space-y-4 animate-fade-in">
               <Input
                 label="Series URL"
-                placeholder="https://rongyok.com/watch/?series_id=XXX"
+                placeholder="https://rongyok.com/watch/?series_id=XXX (or drag & drop)"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 leftIcon={<Link size={16} className="sm:w-[18px] sm:h-[18px]" />}
@@ -571,6 +699,7 @@ function App() {
                       onClick={handlePaste}
                       leftIcon={<Clipboard size={14} />}
                       className="hover-scale"
+                      title="Paste (Ctrl+V)"
                     >
                       <span className="hidden sm:inline">Paste</span>
                       <span className="sm:hidden">📋</span>
@@ -629,7 +758,7 @@ function App() {
               </div>
             )}
 
-            {/* Speed Graph & Progress - show when downloading or has data */}
+            {/* Speed Graph & Progress */}
             {(downloadState.isDownloading || speedData.length > 0) && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 animate-fade-in">
                 <div className="hover-lift">
@@ -652,7 +781,6 @@ function App() {
                     sublabel={`${downloadState.completedEpisodes.length}/${downloadState.totalSelected} episodes`}
                     variant="success"
                   />
-                  {/* Merge Status */}
                   {mergeState.isMerging && (
                     <div className="flex items-center gap-3 p-3 bg-violet-500/20 rounded-lg border border-violet-500/30 animate-pulse-glow">
                       <div className="w-5 h-5 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
@@ -718,6 +846,7 @@ function App() {
                     disabled={!series || selectedEpisodes.size === 0}
                     leftIcon={<span className="icon-glow icon-glow-sm icon-glow-violet icon-glow-animated"><Download size={18} /></span>}
                     className="flex-1 sm:flex-none btn-glow-violet btn-ripple"
+                    title="Download (Ctrl+D)"
                   >
                     Download ({selectedEpisodes.size})
                   </Button>
@@ -729,15 +858,15 @@ function App() {
               ) : (
                 <>
                   {!downloadState.isPaused ? (
-                    <Button size="lg" variant="secondary" onClick={handlePause} leftIcon={<span className="icon-glow icon-glow-sm icon-glow-amber"><Pause size={18} /></span>} className="flex-1 sm:flex-none hover-lift btn-ripple">
+                    <Button size="lg" variant="secondary" onClick={handlePause} leftIcon={<span className="icon-glow icon-glow-sm icon-glow-amber"><Pause size={18} /></span>} className="flex-1 sm:flex-none hover-lift btn-ripple" title="Pause (Space)">
                       Pause
                     </Button>
                   ) : (
-                    <Button size="lg" variant="success" onClick={handleResume} leftIcon={<span className="icon-glow icon-glow-sm icon-glow-emerald icon-glow-animated"><Play size={18} /></span>} className="flex-1 sm:flex-none btn-glow-emerald btn-ripple">
+                    <Button size="lg" variant="success" onClick={handleResume} leftIcon={<span className="icon-glow icon-glow-sm icon-glow-emerald icon-glow-animated"><Play size={18} /></span>} className="flex-1 sm:flex-none btn-glow-emerald btn-ripple" title="Resume (Space)">
                       Resume
                     </Button>
                   )}
-                  <Button size="lg" variant="danger" onClick={handleCancel} leftIcon={<span className="icon-glow icon-glow-sm icon-glow-red"><X size={18} /></span>} className="flex-1 sm:flex-none btn-glow-red btn-ripple">
+                  <Button size="lg" variant="danger" onClick={handleCancel} leftIcon={<span className="icon-glow icon-glow-sm icon-glow-red"><X size={18} /></span>} className="flex-1 sm:flex-none btn-glow-red btn-ripple" title="Cancel (Escape)">
                     Cancel
                   </Button>
                 </>
@@ -779,6 +908,12 @@ function App() {
               onOpenFolder={handleOpenOutputFolder}
               onCheckUpdates={checkForUpdates}
               isCheckingUpdates={isCheckingUpdates}
+              language={language}
+              onLanguageChange={setLanguage}
+              t={t}
+              themes={themes}
+              activeThemeId={activeThemeId}
+              onThemeSelect={setActiveTheme}
             />
           </div>
         )}
@@ -789,6 +924,27 @@ function App() {
           </div>
         )}
       </main>
+
+      {/* Mini Mode */}
+      <MiniMode
+        isOpen={showMiniMode && downloadState.isDownloading}
+        onClose={() => setShowMiniMode(false)}
+        onExpand={() => setShowMiniMode(false)}
+        progress={progress}
+        overallProgress={overallProgress}
+        completedEpisodes={downloadState.completedEpisodes.length}
+        totalEpisodes={downloadState.totalSelected}
+        isPaused={downloadState.isPaused}
+        onPause={handlePause}
+        onResume={handleResume}
+        seriesTitle={series?.title}
+      />
+
+      {/* Shortcuts Help */}
+      <ShortcutsHelp
+        isOpen={showShortcuts}
+        onClose={() => setShowShortcuts(false)}
+      />
 
       {/* Update Dialog */}
       <UpdateDialog
