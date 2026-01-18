@@ -521,6 +521,21 @@ function App() {
                 leftIcon={<Link size={16} className="sm:w-[18px] sm:h-[18px]" />}
                 rightElement={
                   <div className="flex gap-1">
+                    {url && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setUrl("");
+                          setSeries(null);
+                          setSelectedEpisodes(new Set());
+                          log("URL cleared");
+                        }}
+                        className="hover-scale text-slate-400 hover:text-red-400"
+                      >
+                        <X size={14} />
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="ghost"
