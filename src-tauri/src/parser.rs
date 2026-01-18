@@ -46,15 +46,29 @@ impl RongyokParser {
     }
 
     /// Fetch series information
-    pub async fn get_series_info(&self, series_id: i32) -> Result<SeriesInfo, String> {
-        let url = format!("https://rongyok.com/watch/?series_id={}", series_id);
+    pub async fn get_series_info(&self, series_id: i32, original_url: Option<&str>) -> Result<SeriesInfo, String> {
+        let url = if let Some(orig) = original_url {
+            if orig.contains("thongyok.com") {
+                orig.to_string()
+            } else {
+                format!("https://rongyok.com/watch/?series_id={}", series_id)
+            }
+        } else {
+            format!("https://rongyok.com/watch/?series_id={}", series_id)
+        };
+
+        let domain = if url.contains("thongyok.com") {
+            "https://thongyok.com/"
+        } else {
+            "https://rongyok.com/"
+        };
 
         let response = self
             .client
             .get(&url)
             .header("Accept", "text/html,application/xhtml+xml")
             .header("Accept-Language", "th,en-US;q=0.9,en;q=0.8")
-            .header("Referer", "https://rongyok.com/")
+            .header("Referer", domain)
             .send()
             .await
             .map_err(|e| format!("HTTP request failed: {}", e))?;

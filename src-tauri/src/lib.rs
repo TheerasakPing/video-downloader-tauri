@@ -44,7 +44,7 @@ struct DownloadRequest {
 async fn fetch_series(url: String, state: State<'_, AppState>) -> Result<SeriesInfo, String> {
     let series_id = RongyokParser::parse_series_url(&url).ok_or("Invalid URL format")?;
 
-    let series_info = state.parser.get_series_info(series_id).await?;
+    let series_info = state.parser.get_series_info(series_id, Some(&url)).await?;
 
     // Store in state
     *state.current_series.lock().unwrap() = Some(series_info.clone());
@@ -237,7 +237,7 @@ async fn get_episode_url(
     }
 
     // Fetch fresh
-    let series_info = state.parser.get_series_info(series_id).await?;
+    let series_info = state.parser.get_series_info(series_id, None).await?;
     series_info
         .episode_urls
         .get(&episode)
