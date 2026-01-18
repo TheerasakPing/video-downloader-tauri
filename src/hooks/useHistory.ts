@@ -14,7 +14,7 @@ export interface DownloadRecord {
 }
 
 const STORAGE_KEY = "rongyok-history";
-const MAX_RECORDS = 50;
+const MAX_RECORDS = 500;
 
 export function useHistory() {
   const [history, setHistory] = useState<DownloadRecord[]>([]);

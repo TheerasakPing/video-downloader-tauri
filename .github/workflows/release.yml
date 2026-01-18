@@ -55,7 +55,18 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Rongyok Downloader ${{ github.ref_name }}'
-          releaseBody: 'See the assets to download and install this version.'
-          releaseDraft: true
+          releaseBody: |
+            ## What's New
+            - Auto-paste and auto-fetch from clipboard
+            - Support for thongyok.com URLs
+            - Improved history panel (stores up to 500 records)
+
+            ## Download
+            - **macOS (Apple Silicon)**: Download `.dmg` file for M1/M2/M3 Macs
+            - **macOS (Intel)**: Download `x64.dmg` file for Intel Macs
+            - **Windows**: Download `.msi` or `.exe` installer
+            - **Linux**: Download `.deb` or `.AppImage`
+          releaseDraft: false
           prerelease: false
+          includeUpdaterJson: true
           args: ${{ matrix.args }}

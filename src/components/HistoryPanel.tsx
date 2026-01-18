@@ -121,7 +121,7 @@ export function HistoryPanel({
           )}
         </div>
 
-        <div className="max-h-96 overflow-y-auto">
+        <div className="max-h-[60vh] overflow-y-auto">
           {history.length === 0 ? (
             <div className="p-8 text-center text-slate-500">
               <div className="icon-glow icon-glow-lg icon-glow-slate mx-auto mb-3">
