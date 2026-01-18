@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Keyboard } from "lucide-react";
 import { SHORTCUTS } from "../hooks/useKeyboardShortcuts";
 
@@ -13,6 +13,23 @@ export const ShortcutsHelp: React.FC<ShortcutsHelpProps> = ({
   onClose,
   language = "en",
 }) => {
+  // Handle Escape key to close modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen) {
+        onClose();
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener("keydown", handleKeyDown);
+    }
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
