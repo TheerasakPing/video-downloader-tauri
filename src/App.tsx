@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   Download,
   Pause,
@@ -145,13 +146,36 @@ function App() {
   // Handlers
   const handlePaste = useCallback(async () => {
     try {
-      const text = await navigator.clipboard.readText();
+      const text = await readText();
+      if (!text) {
+        error("Clipboard is empty");
+        return;
+      }
       setUrl(text);
       log(`Pasted URL: ${text}`);
+
+      // Auto-fetch if valid URL
+      if (text.includes("rongyok.com") || text.includes("thongyok.com")) {
+        setIsFetching(true);
+        try {
+          const result = await invoke<SeriesInfo>("fetch_series", { url: text });
+          setSeries(result);
+          const allEpisodes = new Set(
+            Array.from({ length: result.totalEpisodes }, (_, i) => i + 1)
+          );
+          setSelectedEpisodes(allEpisodes);
+          success(`Loaded: ${result.title} (${result.totalEpisodes} episodes)`);
+          log(`Cached ${Object.keys(result.episodeUrls).length} video URLs`);
+        } catch (e) {
+          error(`Failed to fetch: ${e}`);
+        } finally {
+          setIsFetching(false);
+        }
+      }
     } catch (e) {
       error("Failed to read clipboard");
     }
-  }, [log, error]);
+  }, [log, error, success]);
 
   const handleStartDownload = useCallback(async () => {
     if (!series || selectedEpisodes.size === 0) {
@@ -275,6 +299,42 @@ function App() {
     isPaused: downloadState.isPaused,
   });
 
+  // Helper to check if URL is valid for this app
+  const isValidSeriesUrl = useCallback((text: string): boolean => {
+    if (!text) return false;
+    return text.includes("rongyok.com") || text.includes("thongyok.com");
+  }, []);
+
+  // Auto-paste and auto-fetch from clipboard
+  const autoFetchFromClipboard = useCallback(async () => {
+    try {
+      const text = await readText();
+      if (text && isValidSeriesUrl(text) && text !== url) {
+        setUrl(text);
+        log(`Auto-pasted URL: ${text}`);
+
+        // Auto-fetch the series info
+        setIsFetching(true);
+        try {
+          const result = await invoke<SeriesInfo>("fetch_series", { url: text });
+          setSeries(result);
+          const allEpisodes = new Set(
+            Array.from({ length: result.totalEpisodes }, (_, i) => i + 1)
+          );
+          setSelectedEpisodes(allEpisodes);
+          success(`Auto-loaded: ${result.title} (${result.totalEpisodes} episodes)`);
+          log(`Cached ${Object.keys(result.episodeUrls).length} video URLs`);
+        } catch (e) {
+          error(`Failed to fetch: ${e}`);
+        } finally {
+          setIsFetching(false);
+        }
+      }
+    } catch (e) {
+      // Clipboard access denied or empty - silently ignore
+    }
+  }, [url, isValidSeriesUrl, log, success, error]);
+
   // Initialize
   const initialized = React.useRef(false);
   useEffect(() => {
@@ -284,7 +344,23 @@ function App() {
     log("Application started");
     checkFFmpeg();
     setupEventListeners();
+
+    // Auto-paste from clipboard on startup
+    autoFetchFromClipboard();
   }, []);
+
+  // Auto-fetch when window gains focus
+  useEffect(() => {
+    const handleFocus = () => {
+      // Only auto-fetch if not currently downloading or fetching
+      if (!downloadState.isDownloading && !isFetching) {
+        autoFetchFromClipboard();
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [downloadState.isDownloading, isFetching, autoFetchFromClipboard]);
 
   // Apply theme
   useEffect(() => {
@@ -522,15 +598,32 @@ function App() {
     setIsDragging(false);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
 
     const text = e.dataTransfer.getData("text/plain");
-    if (text && text.includes("rongyok.com")) {
+    if (text && (text.includes("rongyok.com") || text.includes("thongyok.com"))) {
       setUrl(text);
       log(`Dropped URL: ${text}`);
       success("URL added from drop");
+
+      // Auto-fetch
+      setIsFetching(true);
+      try {
+        const result = await invoke<SeriesInfo>("fetch_series", { url: text });
+        setSeries(result);
+        const allEpisodes = new Set(
+          Array.from({ length: result.totalEpisodes }, (_, i) => i + 1)
+        );
+        setSelectedEpisodes(allEpisodes);
+        success(`Loaded: ${result.title} (${result.totalEpisodes} episodes)`);
+        log(`Cached ${Object.keys(result.episodeUrls).length} video URLs`);
+      } catch (err) {
+        error(`Failed to fetch: ${err}`);
+      } finally {
+        setIsFetching(false);
+      }
     } else if (text) {
       setUrl(text);
       log(`Dropped text: ${text}`);
