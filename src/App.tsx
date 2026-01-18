@@ -470,12 +470,12 @@ function App() {
       ? (downloadState.completedEpisodes.length / downloadState.totalSelected) * 100
       : 0;
 
-  const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
-    { id: "download", label: "Download", icon: <Download size={16} /> },
-    { id: "files", label: "Files", icon: <HardDrive size={16} /> },
-    { id: "history", label: "History", icon: <Clock size={16} /> },
-    { id: "settings", label: "Settings", icon: <Settings size={16} /> },
-    { id: "logs", label: `Logs (${logs.length})`, icon: <AlertCircle size={16} /> },
+  const tabs: { id: TabType; label: string; icon: React.ReactNode; glowColor: string }[] = [
+    { id: "download", label: "Download", icon: <Download size={16} />, glowColor: "violet" },
+    { id: "files", label: "Files", icon: <HardDrive size={16} />, glowColor: "blue" },
+    { id: "history", label: "History", icon: <Clock size={16} />, glowColor: "amber" },
+    { id: "settings", label: "Settings", icon: <Settings size={16} />, glowColor: "slate" },
+    { id: "logs", label: `Logs (${logs.length})`, icon: <AlertCircle size={16} />, glowColor: "cyan" },
   ];
 
   return (
@@ -485,7 +485,7 @@ function App() {
         <div className="container-responsive py-3 sm:py-4">
           <div className="flex items-center justify-between gap-2 sm:gap-4">
             <div className="flex items-center gap-2 sm:gap-3">
-              <div className="hover-scale animate-pulse-glow">
+              <div className="hover-scale">
                 <Logo size={40} className="sm:w-11 sm:h-11" />
               </div>
               <div>
@@ -493,18 +493,20 @@ function App() {
                   <span className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
                     Rongyok
                   </span>
-                  <Film size={16} className="text-fuchsia-400" />
+                  <span className="icon-glow icon-glow-sm icon-glow-fuchsia"><Film size={16} /></span>
                 </h1>
                 <p className="text-[10px] sm:text-xs text-slate-500 flex flex-wrap items-center gap-1">
                   <span className="hidden xs:inline">Video Downloader</span>
                   {ffmpegAvailable && (
-                    <span className="text-emerald-400 animate-fade-in flex items-center gap-0.5">
-                      <CheckCircle2 size={10} /> FFmpeg
+                    <span className="animate-fade-in flex items-center gap-0.5">
+                      <span className="icon-glow icon-glow-sm icon-glow-emerald"><CheckCircle2 size={10} /></span>
+                      <span className="text-emerald-400">FFmpeg</span>
                     </span>
                   )}
                   {downloadState.isDownloading && currentSpeed > 0 && (
-                    <span className="text-violet-400 animate-bounce-subtle flex items-center gap-0.5">
-                      <Zap size={10} /> {(currentSpeed / 1024 / 1024).toFixed(1)} MB/s
+                    <span className="animate-bounce-subtle flex items-center gap-0.5">
+                      <span className="icon-glow icon-glow-sm icon-glow-violet icon-glow-animated"><Zap size={10} /></span>
+                      <span className="text-violet-400">{(currentSpeed / 1024 / 1024).toFixed(1)} MB/s</span>
                     </span>
                   )}
                 </p>
@@ -519,11 +521,13 @@ function App() {
                   onClick={() => setActiveTab(tab.id)}
                   className={`px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium rounded-lg transition-all flex items-center gap-1 sm:gap-1.5 whitespace-nowrap btn-ripple ${
                     activeTab === tab.id
-                      ? "bg-violet-600 text-white shadow-lg animate-scale-in"
+                      ? "tab-glow-active text-white shadow-lg animate-scale-in"
                       : "text-slate-400 hover:text-white hover:bg-slate-700/50"
                   } stagger-${index + 1}`}
                 >
-                  {tab.icon}
+                  <span className={`icon-glow icon-glow-sm ${activeTab === tab.id ? `icon-glow-${tab.glowColor} icon-glow-animated` : ""}`}>
+                    {tab.icon}
+                  </span>
                   <span className="hidden sm:inline">{tab.label}</span>
                 </button>
               ))}
@@ -712,12 +716,12 @@ function App() {
                     size="lg"
                     onClick={handleStartDownload}
                     disabled={!series || selectedEpisodes.size === 0}
-                    leftIcon={<Download size={18} />}
-                    className="flex-1 sm:flex-none hover-glow btn-ripple"
+                    leftIcon={<span className="icon-glow icon-glow-sm icon-glow-violet icon-glow-animated"><Download size={18} /></span>}
+                    className="flex-1 sm:flex-none btn-glow-violet btn-ripple"
                   >
                     Download ({selectedEpisodes.size})
                   </Button>
-                  <Button size="lg" variant="secondary" leftIcon={<RefreshCw size={18} />} disabled className="flex-1 sm:flex-none hover-lift">
+                  <Button size="lg" variant="secondary" leftIcon={<span className="icon-glow icon-glow-sm icon-glow-slate"><RefreshCw size={18} /></span>} disabled className="flex-1 sm:flex-none hover-lift">
                     <span className="hidden sm:inline">Resume Previous</span>
                     <span className="sm:hidden">Resume</span>
                   </Button>
@@ -725,15 +729,15 @@ function App() {
               ) : (
                 <>
                   {!downloadState.isPaused ? (
-                    <Button size="lg" variant="secondary" onClick={handlePause} leftIcon={<Pause size={18} />} className="flex-1 sm:flex-none hover-lift btn-ripple">
+                    <Button size="lg" variant="secondary" onClick={handlePause} leftIcon={<span className="icon-glow icon-glow-sm icon-glow-amber"><Pause size={18} /></span>} className="flex-1 sm:flex-none hover-lift btn-ripple">
                       Pause
                     </Button>
                   ) : (
-                    <Button size="lg" variant="success" onClick={handleResume} leftIcon={<Play size={18} />} className="flex-1 sm:flex-none hover-glow btn-ripple">
+                    <Button size="lg" variant="success" onClick={handleResume} leftIcon={<span className="icon-glow icon-glow-sm icon-glow-emerald icon-glow-animated"><Play size={18} /></span>} className="flex-1 sm:flex-none btn-glow-emerald btn-ripple">
                       Resume
                     </Button>
                   )}
-                  <Button size="lg" variant="danger" onClick={handleCancel} leftIcon={<X size={18} />} className="flex-1 sm:flex-none hover-lift btn-ripple">
+                  <Button size="lg" variant="danger" onClick={handleCancel} leftIcon={<span className="icon-glow icon-glow-sm icon-glow-red"><X size={18} /></span>} className="flex-1 sm:flex-none btn-glow-red btn-ripple">
                     Cancel
                   </Button>
                 </>

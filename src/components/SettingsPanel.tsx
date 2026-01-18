@@ -37,7 +37,9 @@ export function SettingsPanel({
       {/* Download Settings */}
       <section className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
         <h3 className="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
-          <Download size={16} />
+          <span className="icon-glow icon-glow-sm icon-glow-violet">
+            <Download size={16} />
+          </span>
           Download Settings
         </h3>
 
@@ -69,7 +71,9 @@ export function SettingsPanel({
           <div className="flex items-center justify-between">
             <div>
               <label className="text-sm text-white flex items-center gap-2">
-                <Gauge size={14} />
+                <span className="icon-glow icon-glow-sm icon-glow-cyan">
+                  <Gauge size={14} />
+                </span>
                 Speed Limit
               </label>
               <p className="text-xs text-slate-500">0 = Unlimited</p>
@@ -131,7 +135,9 @@ export function SettingsPanel({
           <div className="flex items-center justify-between">
             <div>
               <label className="text-sm text-white flex items-center gap-2">
-                <Trash2 size={14} />
+                <span className="icon-glow icon-glow-sm icon-glow-red">
+                  <Trash2 size={14} />
+                </span>
                 Delete After Merge
               </label>
               <p className="text-xs text-slate-500">
@@ -154,7 +160,9 @@ export function SettingsPanel({
       {/* Notifications */}
       <section className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
         <h3 className="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
-          <Bell size={16} />
+          <span className="icon-glow icon-glow-sm icon-glow-amber">
+            <Bell size={16} />
+          </span>
           Notifications
         </h3>
 
@@ -184,7 +192,9 @@ export function SettingsPanel({
           <div className="flex items-center justify-between">
             <div>
               <label className="text-sm text-white flex items-center gap-2">
-                <Volume2 size={14} />
+                <span className="icon-glow icon-glow-sm icon-glow-blue">
+                  <Volume2 size={14} />
+                </span>
                 Sound Alert
               </label>
               <p className="text-xs text-slate-500">Play sound when done</p>
@@ -205,7 +215,9 @@ export function SettingsPanel({
       {/* Appearance */}
       <section className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
         <h3 className="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
-          <Sun size={16} />
+          <span className="icon-glow icon-glow-sm icon-glow-amber">
+            <Sun size={16} />
+          </span>
           Appearance
         </h3>
 
@@ -214,33 +226,39 @@ export function SettingsPanel({
             onClick={() => onUpdate("theme", "light")}
             className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all ${
               settings.theme === "light"
-                ? "bg-violet-600 text-white"
+                ? "bg-violet-600 text-white tab-glow-active"
                 : "bg-slate-700 text-slate-400 hover:bg-slate-600"
             }`}
           >
-            <Sun size={18} />
+            <span className={`icon-glow icon-glow-sm ${settings.theme === "light" ? "icon-glow-amber icon-glow-animated" : ""}`}>
+              <Sun size={18} />
+            </span>
             Light
           </button>
           <button
             onClick={() => onUpdate("theme", "dark")}
             className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all ${
               settings.theme === "dark"
-                ? "bg-violet-600 text-white"
+                ? "bg-violet-600 text-white tab-glow-active"
                 : "bg-slate-700 text-slate-400 hover:bg-slate-600"
             }`}
           >
-            <Moon size={18} />
+            <span className={`icon-glow icon-glow-sm ${settings.theme === "dark" ? "icon-glow-violet icon-glow-animated" : ""}`}>
+              <Moon size={18} />
+            </span>
             Dark
           </button>
           <button
             onClick={() => onUpdate("theme", "system")}
             className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all ${
               settings.theme === "system"
-                ? "bg-violet-600 text-white"
+                ? "bg-violet-600 text-white tab-glow-active"
                 : "bg-slate-700 text-slate-400 hover:bg-slate-600"
             }`}
           >
-            <Monitor size={18} />
+            <span className={`icon-glow icon-glow-sm ${settings.theme === "system" ? "icon-glow-cyan icon-glow-animated" : ""}`}>
+              <Monitor size={18} />
+            </span>
             System
           </button>
         </div>
@@ -249,7 +267,9 @@ export function SettingsPanel({
       {/* Updates */}
       <section className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
         <h3 className="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
-          <Sparkles size={16} />
+          <span className="icon-glow icon-glow-sm icon-glow-fuchsia icon-glow-animated">
+            <Sparkles size={16} />
+          </span>
           Updates
         </h3>
 
@@ -278,7 +298,7 @@ export function SettingsPanel({
       <div className="flex gap-3">
         <Button
           variant="secondary"
-          leftIcon={<FolderOpen size={16} />}
+          leftIcon={<span className="icon-glow icon-glow-sm icon-glow-blue"><FolderOpen size={16} /></span>}
           onClick={onOpenFolder}
           className="flex-1"
         >
@@ -286,8 +306,9 @@ export function SettingsPanel({
         </Button>
         <Button
           variant="danger"
-          leftIcon={<RotateCcw size={16} />}
+          leftIcon={<span className="icon-glow icon-glow-sm icon-glow-red"><RotateCcw size={16} /></span>}
           onClick={onReset}
+          className="btn-glow-red"
         >
           Reset Settings
         </Button>
