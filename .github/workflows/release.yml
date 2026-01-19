@@ -71,5 +71,111 @@ jobs:
             - **Linux**: Download `.deb` or `.AppImage`
           releaseDraft: false
           prerelease: false
-          includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+  # Create updater JSON after all builds complete
+  updater:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Wait for release assets
+        run: sleep 30
+
+      - name: Download release assets and create latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ github.ref_name }}"
+          REPO="${{ github.repository }}"
+
+          # Create temp directory
+          mkdir -p assets
+          cd assets
+
+          # Download all .sig files from the release
+          gh release download "$TAG" --repo "$REPO" --pattern "*.sig" || true
+
+          # List downloaded files
+          echo "Downloaded signature files:"
+          ls -la *.sig 2>/dev/null || echo "No .sig files found"
+
+          # Get release info
+          RELEASE_DATE=$(gh release view "$TAG" --repo "$REPO" --json publishedAt -q '.publishedAt')
+
+          # Read signatures
+          read_sig() {
+            local file="$1"
+            if [ -f "$file" ]; then
+              cat "$file"
+            else
+              echo ""
+            fi
+          }
+
+          # macOS aarch64 (Apple Silicon) - .dmg.tar.gz
+          MACOS_AARCH64_SIG=$(read_sig "Rongyok.Downloader_${VERSION}_aarch64.dmg.tar.gz.sig")
+          MACOS_AARCH64_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_${VERSION}_aarch64.dmg.tar.gz"
+
+          # macOS x86_64 (Intel) - .dmg.tar.gz
+          MACOS_X64_SIG=$(read_sig "Rongyok.Downloader_${VERSION}_x64.dmg.tar.gz.sig")
+          MACOS_X64_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_${VERSION}_x64.dmg.tar.gz"
+
+          # Linux - .AppImage.tar.gz
+          LINUX_SIG=$(read_sig "rongyok-downloader_${VERSION}_amd64.AppImage.tar.gz.sig")
+          LINUX_URL="https://github.com/${REPO}/releases/download/${TAG}/rongyok-downloader_${VERSION}_amd64.AppImage.tar.gz"
+
+          # Windows - .msi.zip (NSIS) or .nsis.zip
+          WINDOWS_SIG=$(read_sig "Rongyok.Downloader_${VERSION}_x64-setup.nsis.zip.sig")
+          WINDOWS_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_${VERSION}_x64-setup.nsis.zip"
+
+          # If NSIS sig not found, try MSI
+          if [ -z "$WINDOWS_SIG" ]; then
+            WINDOWS_SIG=$(read_sig "Rongyok.Downloader_${VERSION}_x64_en-US.msi.zip.sig")
+            WINDOWS_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_${VERSION}_x64_en-US.msi.zip"
+          fi
+
+          # Create latest.json
+          cd ..
+          cat > latest.json << EOF
+          {
+            "version": "${VERSION}",
+            "notes": "Auto-paste and auto-fetch from clipboard, Support for thongyok.com URLs, Improved history panel",
+            "pub_date": "${RELEASE_DATE}",
+            "platforms": {
+              "darwin-aarch64": {
+                "signature": "${MACOS_AARCH64_SIG}",
+                "url": "${MACOS_AARCH64_URL}"
+              },
+              "darwin-x86_64": {
+                "signature": "${MACOS_X64_SIG}",
+                "url": "${MACOS_X64_URL}"
+              },
+              "linux-x86_64": {
+                "signature": "${LINUX_SIG}",
+                "url": "${LINUX_URL}"
+              },
+              "windows-x86_64": {
+                "signature": "${WINDOWS_SIG}",
+                "url": "${WINDOWS_URL}"
+              }
+            }
+          }
+          EOF
+
+          echo "Generated latest.json:"
+          cat latest.json
+
+          # Upload to release
+          gh release upload "$TAG" latest.json --repo "$REPO" --clobber
+
+          echo "✅ Uploaded latest.json to release"
