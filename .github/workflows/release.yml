@@ -130,18 +130,18 @@ jobs:
           MACOS_X64_SIG=$(read_sig "Rongyok.Downloader_x64.app.tar.gz.sig")
           MACOS_X64_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_x64.app.tar.gz"
 
-          # Linux - .AppImage.tar.gz
-          LINUX_SIG=$(read_sig "Rongyok.Downloader_${VERSION}_amd64.AppImage.tar.gz.sig")
-          LINUX_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_${VERSION}_amd64.AppImage.tar.gz"
+          # Linux - .AppImage (direct, no tar.gz wrapper needed for Tauri v2)
+          LINUX_SIG=$(read_sig "Rongyok.Downloader_${VERSION}_amd64.AppImage.sig")
+          LINUX_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_${VERSION}_amd64.AppImage"
 
-          # Windows - .nsis.zip
-          WINDOWS_SIG=$(read_sig "Rongyok.Downloader_${VERSION}_x64-setup.nsis.zip.sig")
-          WINDOWS_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_${VERSION}_x64-setup.nsis.zip"
+          # Windows - try NSIS exe first, then MSI
+          WINDOWS_SIG=$(read_sig "Rongyok.Downloader_${VERSION}_x64-setup.exe.sig")
+          WINDOWS_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_${VERSION}_x64-setup.exe"
 
           # If NSIS sig not found, try MSI
           if [ -z "$WINDOWS_SIG" ]; then
-            WINDOWS_SIG=$(read_sig "Rongyok.Downloader_${VERSION}_x64_en-US.msi.zip.sig")
-            WINDOWS_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_${VERSION}_x64_en-US.msi.zip"
+            WINDOWS_SIG=$(read_sig "Rongyok.Downloader_${VERSION}_x64_en-US.msi.sig")
+            WINDOWS_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_${VERSION}_x64_en-US.msi"
           fi
 
           # Create latest.json using jq
