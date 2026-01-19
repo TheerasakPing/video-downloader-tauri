@@ -144,33 +144,31 @@ jobs:
             WINDOWS_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_${VERSION}_x64_en-US.msi.zip"
           fi
 
-          # Create latest.json
+          # Create latest.json using jq
           cd ..
-          cat > latest.json << EOF
-{
-  "version": "${VERSION}",
-  "notes": "Auto-paste and auto-fetch from clipboard, Support for thongyok.com URLs, Improved history panel",
-  "pub_date": "${RELEASE_DATE}",
-  "platforms": {
-    "darwin-aarch64": {
-      "signature": "${MACOS_AARCH64_SIG}",
-      "url": "${MACOS_AARCH64_URL}"
-    },
-    "darwin-x86_64": {
-      "signature": "${MACOS_X64_SIG}",
-      "url": "${MACOS_X64_URL}"
-    },
-    "linux-x86_64": {
-      "signature": "${LINUX_SIG}",
-      "url": "${LINUX_URL}"
-    },
-    "windows-x86_64": {
-      "signature": "${WINDOWS_SIG}",
-      "url": "${WINDOWS_URL}"
-    }
-  }
-}
-EOF
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "Auto-paste and auto-fetch from clipboard, Support for thongyok.com URLs, Improved history panel" \
+            --arg pub_date "$RELEASE_DATE" \
+            --arg darwin_aarch64_sig "$MACOS_AARCH64_SIG" \
+            --arg darwin_aarch64_url "$MACOS_AARCH64_URL" \
+            --arg darwin_x64_sig "$MACOS_X64_SIG" \
+            --arg darwin_x64_url "$MACOS_X64_URL" \
+            --arg linux_sig "$LINUX_SIG" \
+            --arg linux_url "$LINUX_URL" \
+            --arg windows_sig "$WINDOWS_SIG" \
+            --arg windows_url "$WINDOWS_URL" \
+            '{
+              version: $version,
+              notes: $notes,
+              pub_date: $pub_date,
+              platforms: {
+                "darwin-aarch64": { signature: $darwin_aarch64_sig, url: $darwin_aarch64_url },
+                "darwin-x86_64": { signature: $darwin_x64_sig, url: $darwin_x64_url },
+                "linux-x86_64": { signature: $linux_sig, url: $linux_url },
+                "windows-x86_64": { signature: $windows_sig, url: $windows_url }
+              }
+            }' > latest.json
 
           echo "Generated latest.json:"
           cat latest.json
