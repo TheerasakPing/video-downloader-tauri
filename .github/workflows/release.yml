@@ -179,3 +179,4 @@ EOF
           gh release upload "$TAG" latest.json --repo "$REPO" --clobber
 
           echo "✅ Uploaded latest.json to release"
+
