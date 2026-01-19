@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Rongyok Downloader",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "identifier": "com.rongyok.downloader",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -39,7 +39,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNGOUU0OENDQjYzNURDRTIKUldUaTNEVzJ6RWllUHdHWkdyOUcwdC9XWWRua1JFR0dCOUQ0MlNVbURrQ3V3SEdzYU9xR2JVV2gK",
+      "pubkey": "RWTk7ht7CVeViRrciNKLQvbybgkW3dpiiKg0YXvcvRRGKqBncyC4dQ5K",
       "endpoints": [
         "https://github.com/TheerasakPing/video-downloader-tauri/releases/latest/download/latest.json"
       ],
