@@ -122,19 +122,19 @@ jobs:
             fi
           }
 
-          # macOS aarch64 (Apple Silicon) - .dmg.tar.gz
-          MACOS_AARCH64_SIG=$(read_sig "Rongyok.Downloader_${VERSION}_aarch64.dmg.tar.gz.sig")
-          MACOS_AARCH64_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_${VERSION}_aarch64.dmg.tar.gz"
+          # macOS aarch64 (Apple Silicon) - .app.tar.gz (Tauri v2 updater bundle)
+          MACOS_AARCH64_SIG=$(read_sig "Rongyok.Downloader_aarch64.app.tar.gz.sig")
+          MACOS_AARCH64_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_aarch64.app.tar.gz"
 
-          # macOS x86_64 (Intel) - .dmg.tar.gz
-          MACOS_X64_SIG=$(read_sig "Rongyok.Downloader_${VERSION}_x64.dmg.tar.gz.sig")
-          MACOS_X64_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_${VERSION}_x64.dmg.tar.gz"
+          # macOS x86_64 (Intel) - .app.tar.gz
+          MACOS_X64_SIG=$(read_sig "Rongyok.Downloader_x64.app.tar.gz.sig")
+          MACOS_X64_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_x64.app.tar.gz"
 
           # Linux - .AppImage.tar.gz
-          LINUX_SIG=$(read_sig "rongyok-downloader_${VERSION}_amd64.AppImage.tar.gz.sig")
-          LINUX_URL="https://github.com/${REPO}/releases/download/${TAG}/rongyok-downloader_${VERSION}_amd64.AppImage.tar.gz"
+          LINUX_SIG=$(read_sig "Rongyok.Downloader_${VERSION}_amd64.AppImage.tar.gz.sig")
+          LINUX_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_${VERSION}_amd64.AppImage.tar.gz"
 
-          # Windows - .msi.zip (NSIS) or .nsis.zip
+          # Windows - .nsis.zip
           WINDOWS_SIG=$(read_sig "Rongyok.Downloader_${VERSION}_x64-setup.nsis.zip.sig")
           WINDOWS_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_${VERSION}_x64-setup.nsis.zip"
 
@@ -147,30 +147,30 @@ jobs:
           # Create latest.json
           cd ..
           cat > latest.json << EOF
-          {
-            "version": "${VERSION}",
-            "notes": "Auto-paste and auto-fetch from clipboard, Support for thongyok.com URLs, Improved history panel",
-            "pub_date": "${RELEASE_DATE}",
-            "platforms": {
-              "darwin-aarch64": {
-                "signature": "${MACOS_AARCH64_SIG}",
-                "url": "${MACOS_AARCH64_URL}"
-              },
-              "darwin-x86_64": {
-                "signature": "${MACOS_X64_SIG}",
-                "url": "${MACOS_X64_URL}"
-              },
-              "linux-x86_64": {
-                "signature": "${LINUX_SIG}",
-                "url": "${LINUX_URL}"
-              },
-              "windows-x86_64": {
-                "signature": "${WINDOWS_SIG}",
-                "url": "${WINDOWS_URL}"
-              }
-            }
-          }
-          EOF
+{
+  "version": "${VERSION}",
+  "notes": "Auto-paste and auto-fetch from clipboard, Support for thongyok.com URLs, Improved history panel",
+  "pub_date": "${RELEASE_DATE}",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "${MACOS_AARCH64_SIG}",
+      "url": "${MACOS_AARCH64_URL}"
+    },
+    "darwin-x86_64": {
+      "signature": "${MACOS_X64_SIG}",
+      "url": "${MACOS_X64_URL}"
+    },
+    "linux-x86_64": {
+      "signature": "${LINUX_SIG}",
+      "url": "${LINUX_URL}"
+    },
+    "windows-x86_64": {
+      "signature": "${WINDOWS_SIG}",
+      "url": "${WINDOWS_URL}"
+    }
+  }
+}
+EOF
 
           echo "Generated latest.json:"
           cat latest.json
