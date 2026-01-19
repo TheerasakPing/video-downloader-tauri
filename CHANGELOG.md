@@ -2,6 +2,21 @@
 
 All notable changes to Rongyok Video Downloader will be documented in this file.
 
+# Changelog
+
+All notable changes to Rongyok Video Downloader will be documented in this file.
+
+## [1.6.0] - 2026-01-19
+
+### Added
+- **Pause/Resume Downloads**: Real-time pause and resume for active downloads
+- **Cancel Download**: Cancel active download and delete partial file
+- **Restart Resume**: Downloads automatically resume from partial files on restart
+
+### Changed
+- Refactored download state management with thread-safe atomic flags
+- Improved error handling for pause/resume operations
+
 ## [1.5.3] - 2026-01-19
 
 ### Fixed

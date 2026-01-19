@@ -263,20 +263,46 @@ function App() {
     }
   }, [series, selectedEpisodes, settings, ffmpegAvailable, addRecord, updateRecord, log, success, warning, error, resetSpeedGraph]);
 
-  const handlePause = useCallback(() => {
+  const handlePause = useCallback(async () => {
+    if (downloadState.currentEpisode === 0) {
+      warning("No episode currently downloading");
+      return;
+    }
     setDownloadState((prev) => ({ ...prev, isPaused: true }));
-    warning("Pause not yet implemented");
-  }, [warning]);
+    try {
+      await invoke("pause_download", { episode: downloadState.currentEpisode });
+      log("Paused download");
+    } catch (e) {
+      // Download may have completed, don't show error
+      log("Pause completed (download may have finished)");
+    }
+  }, [downloadState.currentEpisode, log, warning]);
 
-  const handleResume = useCallback(() => {
+  const handleResume = useCallback(async () => {
+    if (downloadState.currentEpisode === 0) {
+      warning("No episode currently downloading");
+      return;
+    }
     setDownloadState((prev) => ({ ...prev, isPaused: false }));
-    log("Resume not yet implemented");
-  }, [log]);
+    try {
+      await invoke("resume_download", { episode: downloadState.currentEpisode });
+      log("Resumed download");
+    } catch (e) {
+      // Download may have completed, don't show error
+      log("Resume completed (download may have finished)");
+    }
+  }, [downloadState.currentEpisode, log, warning]);
 
-  const handleCancel = useCallback(() => {
-    setDownloadState((prev) => ({ ...prev, isDownloading: false }));
-    warning("Cancel requested");
-  }, [warning]);
+  const handleCancel = useCallback(async () => {
+    if (downloadState.currentEpisode === 0) return;
+    setDownloadState((prev) => ({ ...prev, isDownloading: false, isPaused: false }));
+    try {
+      await invoke("cancel_download", { episode: downloadState.currentEpisode });
+      warning("Cancelled download");
+    } catch (e) {
+      error(`Failed to cancel: ${e}`);
+    }
+  }, [downloadState.currentEpisode, warning, error]);
 
   const handlePauseResume = useCallback(() => {
     if (downloadState.isPaused) {

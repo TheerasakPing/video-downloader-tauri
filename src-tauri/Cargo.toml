@@ -1,6 +1,6 @@
 [package]
 name = "tauri-app"
-version = "1.5.3"
+version = "1.6.0"
 description = "Rongyok Video Downloader"
 authors = ["you"]
 edition = "2021"

@@ -5,6 +5,8 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::time::{sleep, Duration};
 
@@ -44,6 +46,21 @@ impl Default for DownloadConfig {
     }
 }
 
+/// Shared state for tracking download pause/cancel status
+pub struct DownloadState {
+    pub is_paused: Arc<AtomicBool>,
+    pub is_cancelled: Arc<AtomicBool>,
+}
+
+impl DownloadState {
+    pub fn new() -> Self {
+        Self {
+            is_paused: Arc::new(AtomicBool::new(false)),
+            is_cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
+
 pub struct VideoDownloader {
     client: Client,
     output_dir: PathBuf,
@@ -51,10 +68,6 @@ pub struct VideoDownloader {
 }
 
 impl VideoDownloader {
-    pub fn new(output_dir: &str) -> Self {
-        Self::with_config(output_dir, DownloadConfig::default())
-    }
-
     pub fn with_config(output_dir: &str, config: DownloadConfig) -> Self {
         let client = Client::builder()
             .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
@@ -102,6 +115,7 @@ impl VideoDownloader {
         episode: i32,
         video_url: &str,
         app_handle: &AppHandle,
+        download_state: Option<Arc<DownloadState>>,
     ) -> DownloadResult {
         let file_path = self.get_episode_filename(episode);
 
@@ -183,6 +197,34 @@ impl VideoDownloader {
         let mut interval_start = std::time::Instant::now();
 
         while let Some(chunk_result) = stream.next().await {
+            // Check for pause request
+            if let Some(ref state) = download_state {
+                if state.is_cancelled.load(Ordering::SeqCst) {
+                    // Clean up partial file on cancel
+                    let _ = fs::remove_file(&file_path);
+                    return DownloadResult {
+                        episode,
+                        success: false,
+                        file_path: None,
+                        error: Some("Download cancelled".to_string()),
+                    };
+                }
+
+                while state.is_paused.load(Ordering::SeqCst) {
+                    // Check for cancel while paused
+                    if state.is_cancelled.load(Ordering::SeqCst) {
+                        let _ = fs::remove_file(&file_path);
+                        return DownloadResult {
+                            episode,
+                            success: false,
+                            file_path: None,
+                            error: Some("Download cancelled".to_string()),
+                        };
+                    }
+                    sleep(Duration::from_millis(100)).await;
+                }
+            }
+
             match chunk_result {
                 Ok(chunk) => {
                     if let Err(e) = file.write_all(&chunk) {
@@ -265,9 +307,38 @@ impl VideoDownloader {
     }
 }
 
+/// Get FFmpeg command - tries bundled first, then system
+pub fn get_ffmpeg_command() -> Command {
+    // Try bundled FFmpeg first (from resources)
+    #[cfg(target_os = "macos")]
+    let ffmpeg_path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.join("..").join("Resources").join("ffmpeg")))
+        .filter(|p| p.exists());
+
+    #[cfg(target_os = "linux")]
+    let ffmpeg_path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.join("resources").join("ffmpeg")))
+        .filter(|p| p.exists());
+
+    #[cfg(target_os = "windows")]
+    let ffmpeg_path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.join("resources").join("ffmpeg.exe")))
+        .filter(|p| p.exists());
+
+    if let Some(path) = ffmpeg_path {
+        Command::new(path)
+    } else {
+        // Fall back to system ffmpeg
+        Command::new("ffmpeg")
+    }
+}
+
 /// Check if FFmpeg is available
 pub fn check_ffmpeg() -> bool {
-    Command::new("ffmpeg")
+    get_ffmpeg_command()
         .arg("-version")
         .output()
         .map(|o| o.status.success())
@@ -286,15 +357,24 @@ pub fn merge_videos(video_files: Vec<String>, output_path: &str) -> Result<(), S
         .unwrap_or(std::path::Path::new("."));
     let concat_file = output_dir.join("concat_list.txt");
 
+    // Build concat content with properly escaped paths
+    // FFmpeg concat demuxer requires absolute paths or paths relative to concat file
     let mut concat_content = String::new();
     for file in &video_files {
-        concat_content.push_str(&format!("file '{}'\n", file));
+        // Use absolute paths and escape single quotes in file paths
+        let abs_path = std::fs::canonicalize(file)
+            .map_err(|e| format!("Cannot find file {}: {}", file, e))?;
+        let path_str = abs_path.to_string_lossy();
+        // Escape single quotes by doubling them (FFmpeg requirement)
+        let escaped = path_str.replace('\'', "''");
+        concat_content.push_str(&format!("file '{}'\n", escaped));
     }
 
-    fs::write(&concat_file, &concat_content).map_err(|e| format!("Failed to create concat file: {}", e))?;
+    fs::write(&concat_file, &concat_content)
+        .map_err(|e| format!("Failed to create concat file: {}", e))?;
 
-    // Run FFmpeg
-    let output = Command::new("ffmpeg")
+    // First try with -c copy (fast, no re-encoding)
+    let output = get_ffmpeg_command()
         .args([
             "-y",
             "-f",
@@ -314,11 +394,47 @@ pub fn merge_videos(video_files: Vec<String>, output_path: &str) -> Result<(), S
     fs::remove_file(&concat_file).ok();
 
     if output.status.success() {
+        return Ok(());
+    }
+
+    // If copy failed, try re-encoding (slower but more compatible)
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    println!("FFmpeg copy failed: {}, trying re-encoding...", stderr);
+
+    // Re-create concat file for re-encoding attempt
+    fs::write(&concat_file, &concat_content)
+        .map_err(|e| format!("Failed to recreate concat file: {}", e))?;
+
+    let reencode_output = get_ffmpeg_command()
+        .args([
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            concat_file.to_str().unwrap(),
+            "-c",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "22",
+            output_path,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run FFmpeg (reencode): {}", e))?;
+
+    // Clean up concat file
+    fs::remove_file(&concat_file).ok();
+
+    if reencode_output.status.success() {
         Ok(())
     } else {
+        let reencode_stderr = String::from_utf8_lossy(&reencode_output.stderr);
         Err(format!(
-            "FFmpeg failed: {}",
-            String::from_utf8_lossy(&output.stderr)
+            "FFmpeg failed (both copy and re-encoding): {}",
+            reencode_stderr
         ))
     }
 }

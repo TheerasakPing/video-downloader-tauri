@@ -1,10 +1,12 @@
 mod downloader;
 mod parser;
 
-use downloader::{check_ffmpeg, merge_videos, sanitize_filename, DownloadConfig, DownloadResult, VideoDownloader};
+use downloader::{check_ffmpeg, merge_videos, sanitize_filename, DownloadConfig, DownloadResult, DownloadState, VideoDownloader};
 use parser::{RongyokParser, SeriesInfo};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
@@ -23,6 +25,7 @@ struct AppState {
     parser: RongyokParser,
     downloader: Mutex<Option<VideoDownloader>>,
     current_series: Mutex<Option<SeriesInfo>>,
+    download_states: Mutex<HashMap<i32, Arc<DownloadState>>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,16 +109,29 @@ async fn start_download(
             );
             let ep = *episode;
 
+            // Create download state for this episode
+            let download_state = Arc::new(DownloadState::new());
+            {
+                let mut states = state.download_states.lock().unwrap();
+                states.insert(ep, download_state.clone());
+            }
+
             let handle = tokio::spawn(async move {
-                dl.download_episode(ep, &video_url, &app).await
+                dl.download_episode(ep, &video_url, &app, Some(download_state)).await
             });
-            handles.push(handle);
+            handles.push((ep, handle));
         }
 
         // Wait for all in this chunk to complete
-        for handle in handles {
+        for (ep, handle) in handles {
             match handle.await {
                 Ok(result) => {
+                    // Remove from download states when done
+                    {
+                        let mut states = state.download_states.lock().unwrap();
+                        states.remove(&ep);
+                    }
+
                     if result.success {
                         if let Some(ref path) = result.file_path {
                             successful_files.push(path.clone());
@@ -125,8 +141,13 @@ async fn start_download(
                     results.push(result);
                 }
                 Err(e) => {
+                    // Remove from download states on error
+                    {
+                        let mut states = state.download_states.lock().unwrap();
+                        states.remove(&ep);
+                    }
                     let result = DownloadResult {
-                        episode: 0,
+                        episode: ep,
                         success: false,
                         file_path: None,
                         error: Some(format!("Task failed: {}", e)),
@@ -172,16 +193,22 @@ async fn start_download(
         if successful_files.len() == 1 {
             // Just rename/copy the single file
             let _ = app_handle.emit("log-info", "Single file - renaming...".to_string());
-            match std::fs::rename(&successful_files[0], &output_path) {
+
+            // Check if source file exists
+            let source = std::fs::canonicalize(&successful_files[0])
+                .map_err(|e| format!("Cannot find source file: {}", e))
+                .unwrap_or(std::path::PathBuf::from(&successful_files[0]));
+
+            match std::fs::rename(&source, &output_path) {
                 Ok(_) => {
                     let _ = app_handle.emit("merge-complete", output_path_str);
                 }
                 Err(e) => {
                     let _ = app_handle.emit("log-info", format!("Rename failed: {}, trying copy...", e));
                     // Try copy if rename fails (cross-device)
-                    match std::fs::copy(&successful_files[0], &output_path) {
+                    match std::fs::copy(&source, &output_path) {
                         Ok(_) => {
-                            std::fs::remove_file(&successful_files[0]).ok();
+                            std::fs::remove_file(&source).ok();
                             let _ = app_handle.emit("merge-complete", output_path_str.clone());
                         }
                         Err(e) => {
@@ -219,6 +246,39 @@ async fn start_download(
     }
 
     Ok(results)
+}
+
+#[tauri::command]
+async fn pause_download(episode: i32, state: State<'_, AppState>) -> Result<(), String> {
+    let states = state.download_states.lock().unwrap();
+    if let Some(download_state) = states.get(&episode) {
+        download_state.is_paused.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    } else {
+        Err(format!("No active download for episode {}", episode))
+    }
+}
+
+#[tauri::command]
+async fn resume_download(episode: i32, state: State<'_, AppState>) -> Result<(), String> {
+    let states = state.download_states.lock().unwrap();
+    if let Some(download_state) = states.get(&episode) {
+        download_state.is_paused.store(false, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    } else {
+        Err(format!("No active download for episode {}", episode))
+    }
+}
+
+#[tauri::command]
+async fn cancel_download(episode: i32, state: State<'_, AppState>) -> Result<(), String> {
+    let states = state.download_states.lock().unwrap();
+    if let Some(download_state) = states.get(&episode) {
+        download_state.is_cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    } else {
+        Err(format!("No active download for episode {}", episode))
+    }
 }
 
 #[tauri::command]
@@ -379,11 +439,15 @@ pub fn run() {
             parser: RongyokParser::new(),
             downloader: Mutex::new(None),
             current_series: Mutex::new(None),
+            download_states: Mutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
             fetch_series,
             check_ffmpeg_available,
             start_download,
+            pause_download,
+            resume_download,
+            cancel_download,
             get_episode_url,
             open_folder,
             list_files,
