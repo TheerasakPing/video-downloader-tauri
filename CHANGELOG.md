@@ -2,7 +2,39 @@
 
 All notable changes to Rongyok Video Downloader will be documented in this file.
 
-## [Unreleased] - v1.3.0
+## [1.5.3] - 2026-01-19
+
+### Fixed
+- **Updater Signing Pipeline**: All platforms now have working signatures
+  - macOS (ARM64 & x86_64): `.app.tar.gz` with valid signatures
+  - Linux: `.AppImage` with valid signatures
+  - Windows: `.exe` with valid signatures
+- Fixed `latest.json` generation for auto-updater
+- Fixed workflow YAML syntax issues with heredoc
+
+### Changed
+- Replaced heredoc with `jq` for reliable JSON generation in CI
+- Updated signing key format to Tauri v2 compatible format
+
+## [1.5.0] - 2026-01-19
+
+### Fixed
+- **Updater Configuration**: Added `createUpdaterArtifacts: true` to enable signing
+- Fixed signing key format (base64-encoded full pubkey file)
+- Fixed password configuration for signing keys
+
+## [1.4.0] - 2026-01-18
+
+### Added
+- **Auto-paste from Clipboard**: Automatically paste URL when app gains focus
+- **Auto-fetch**: Automatically fetch series info after pasting URL
+- **thongyok.com Support**: Added support for thongyok.com URLs
+- **Improved History Panel**: Now stores up to 500 download records
+
+### Changed
+- Enhanced clipboard integration with Tauri clipboard plugin
+
+## [1.3.0] - 2026-01-18
 
 ### Added
 - **Drag & Drop URL**: Drag URL text directly onto the app window to add it
