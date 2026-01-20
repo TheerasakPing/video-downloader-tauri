@@ -85,7 +85,10 @@ function App() {
     isMerging: boolean;
     mergedFile: string | null;
     mergeError: string | null;
-  }>({ isMerging: false, mergedFile: null, mergeError: null });
+    progress: number;
+    currentTime: number;
+    totalDuration: number;
+  }>({ isMerging: false, mergedFile: null, mergeError: null, progress: 0, currentTime: 0, totalDuration: 0 });
 
   // New UI states
   const [isDragging, setIsDragging] = useState(false);
@@ -453,12 +456,21 @@ function App() {
 
     await listen("merge-started", () => {
       log("Merging videos...");
-      setMergeState({ isMerging: true, mergedFile: null, mergeError: null });
+      setMergeState({ isMerging: true, mergedFile: null, mergeError: null, progress: 0, currentTime: 0, totalDuration: 0 });
+    });
+
+    await listen<{ percentage: number; currentTime: number; totalDuration: number }>("merge-progress", (event) => {
+      setMergeState((prev) => ({
+        ...prev,
+        progress: event.payload.percentage,
+        currentTime: event.payload.currentTime,
+        totalDuration: event.payload.totalDuration,
+      }));
     });
 
     await listen<string>("merge-complete", (event) => {
       success(`Merged to: ${event.payload}`);
-      setMergeState({ isMerging: false, mergedFile: event.payload, mergeError: null });
+      setMergeState({ isMerging: false, mergedFile: event.payload, mergeError: null, progress: 100, currentTime: 0, totalDuration: 0 });
       playNotificationSound();
       showNotification("Merge Complete", "Videos merged successfully!");
       refreshFiles();
@@ -466,7 +478,7 @@ function App() {
 
     await listen<string>("merge-error", (event) => {
       error(`Merge failed: ${event.payload}`);
-      setMergeState({ isMerging: false, mergedFile: null, mergeError: event.payload });
+      setMergeState({ isMerging: false, mergedFile: null, mergeError: event.payload, progress: 0, currentTime: 0, totalDuration: 0 });
     });
 
     await listen<string>("log-info", (event) => {
@@ -902,9 +914,25 @@ function App() {
                     variant="success"
                   />
                   {mergeState.isMerging && (
-                    <div className="flex items-center gap-3 p-3 bg-violet-500/20 rounded-lg border border-violet-500/30 animate-pulse-glow">
-                      <div className="w-5 h-5 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
-                      <span className="text-violet-300 text-sm font-medium">Merging videos...</span>
+                    <div className="p-3 bg-violet-500/20 rounded-lg border border-violet-500/30 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Merge size={16} className="text-violet-400 animate-pulse" />
+                          <span className="text-violet-300 text-sm font-medium">Merging videos...</span>
+                        </div>
+                        <span className="text-violet-400 text-sm font-mono">{mergeState.progress.toFixed(1)}%</span>
+                      </div>
+                      <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full transition-all duration-300"
+                          style={{ width: `${mergeState.progress}%` }}
+                        />
+                      </div>
+                      {mergeState.totalDuration > 0 && (
+                        <div className="text-violet-400/70 text-xs">
+                          {Math.floor(mergeState.currentTime / 60)}:{String(Math.floor(mergeState.currentTime % 60)).padStart(2, '0')} / {Math.floor(mergeState.totalDuration / 60)}:{String(Math.floor(mergeState.totalDuration % 60)).padStart(2, '0')}
+                        </div>
+                      )}
                     </div>
                   )}
                   {mergeState.mergedFile && !mergeState.isMerging && (

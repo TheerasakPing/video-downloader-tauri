@@ -83,6 +83,7 @@ export function useUpdater() {
         switch (event.event) {
           case "Started":
             contentLength = event.data.contentLength || 0;
+            console.log("Update download started, size:", contentLength);
             break;
           case "Progress":
             downloaded += event.data.chunkLength;
@@ -90,6 +91,7 @@ export function useUpdater() {
             setState((prev) => ({ ...prev, progress }));
             break;
           case "Finished":
+            console.log("Update download finished");
             setState((prev) => ({ ...prev, progress: 100 }));
             break;
         }
@@ -98,10 +100,23 @@ export function useUpdater() {
       // Relaunch the app
       await relaunch();
     } catch (error) {
+      console.error("Update download error:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      // Provide more helpful error messages
+      let displayError = errorMessage || "Failed to download update";
+      if (errorMessage.includes("signature")) {
+        displayError = "Signature verification failed. Please try again later.";
+      } else if (errorMessage.includes("network") || errorMessage.includes("connect")) {
+        displayError = "Network error. Please check your connection and try again.";
+      } else if (errorMessage.includes("permission")) {
+        displayError = "Permission denied. Try running as administrator.";
+      } else if (errorMessage.includes("Cross-device link") || errorMessage.includes("os error 18")) {
+        displayError = "Update installation failed due to filesystem restrictions. Please download the update manually from GitHub releases.";
+      }
       setState((prev) => ({
         ...prev,
         downloading: false,
-        error: error instanceof Error ? error.message : "Failed to download update",
+        error: displayError,
       }));
     }
   }, []);

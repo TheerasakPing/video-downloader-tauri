@@ -2,9 +2,9 @@ use futures_util::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
@@ -18,6 +18,14 @@ pub struct DownloadProgress {
     pub total: u64,
     pub speed: f64,
     pub percentage: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeProgress {
+    pub percentage: f64,
+    pub current_time: f64,
+    pub total_duration: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -307,9 +315,24 @@ impl VideoDownloader {
     }
 }
 
-/// Get FFmpeg command - tries bundled first, then system
+/// Get FFmpeg command - tries bundled sidecar first, then Resources folder, then system
 pub fn get_ffmpeg_command() -> Command {
-    // Try bundled FFmpeg first (from resources)
+    // Try sidecar binary first (externalBin puts binaries next to the executable)
+    let sidecar_path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| {
+            #[cfg(target_os = "windows")]
+            return p.join("ffmpeg.exe");
+            #[cfg(not(target_os = "windows"))]
+            return p.join("ffmpeg");
+        }))
+        .filter(|p| p.exists());
+
+    if let Some(path) = sidecar_path {
+        return Command::new(path);
+    }
+
+    // Try bundled FFmpeg in Resources folder (legacy location)
     #[cfg(target_os = "macos")]
     let ffmpeg_path = std::env::current_exe()
         .ok()
@@ -336,6 +359,50 @@ pub fn get_ffmpeg_command() -> Command {
     }
 }
 
+/// Get FFprobe command - tries bundled sidecar first, then Resources folder, then system
+fn get_ffprobe_command() -> Command {
+    // Try sidecar binary first (externalBin puts binaries next to the executable)
+    let sidecar_path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| {
+            #[cfg(target_os = "windows")]
+            return p.join("ffprobe.exe");
+            #[cfg(not(target_os = "windows"))]
+            return p.join("ffprobe");
+        }))
+        .filter(|p| p.exists());
+
+    if let Some(path) = sidecar_path {
+        return Command::new(path);
+    }
+
+    // Try bundled FFprobe in Resources folder (legacy location)
+    #[cfg(target_os = "macos")]
+    let ffprobe_path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.join("..").join("Resources").join("ffprobe")))
+        .filter(|p| p.exists());
+
+    #[cfg(target_os = "linux")]
+    let ffprobe_path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.join("resources").join("ffprobe")))
+        .filter(|p| p.exists());
+
+    #[cfg(target_os = "windows")]
+    let ffprobe_path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.join("resources").join("ffprobe.exe")))
+        .filter(|p| p.exists());
+
+    if let Some(path) = ffprobe_path {
+        Command::new(path)
+    } else {
+        // Fall back to system ffprobe
+        Command::new("ffprobe")
+    }
+}
+
 /// Check if FFmpeg is available
 pub fn check_ffmpeg() -> bool {
     get_ffmpeg_command()
@@ -345,96 +412,322 @@ pub fn check_ffmpeg() -> bool {
         .unwrap_or(false)
 }
 
+/// Validate a video file by checking if it exists and is a valid video
+/// Returns true if the file appears valid
+fn validate_video_file(path: &str) -> bool {
+    let path = std::path::Path::new(path);
+    if !path.exists() {
+        return false;
+    }
+
+    // Check file size - valid MP4 files should be at least 1KB
+    if let Ok(metadata) = std::fs::metadata(path) {
+        let size = metadata.len();
+        if size < 1024 {
+            // File is too small to be a valid video
+            return false;
+        }
+    } else {
+        return false;
+    }
+
+    // Use ffprobe to validate the video file structure
+    // This catches files with missing moov atoms (incomplete downloads)
+    let path_str = if let Some(s) = path.to_str() {
+        s.to_string()
+    } else {
+        path.to_string_lossy().to_string()
+    };
+    let output = get_ffprobe_command()
+        .args(["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", &path_str])
+        .output();
+
+    match output {
+        Ok(result) => {
+            // Check if ffprobe succeeded and returned a valid duration
+            if result.status.success() {
+                let stdout = String::from_utf8_lossy(&result.stdout);
+                // Parse the duration - if it's a positive number, the file is valid
+                stdout.trim().parse::<f64>().map_or(false, |d| d > 0.0)
+            } else {
+                // ffprobe failed - file is likely corrupted
+                false
+            }
+        }
+        Err(_) => false
+    }
+}
+
 /// Merge videos using FFmpeg
 pub fn merge_videos(video_files: Vec<String>, output_path: &str) -> Result<(), String> {
-    if video_files.len() < 2 {
-        return Err("Need at least 2 videos to merge".to_string());
-    }
+    merge_videos_with_progress(video_files, output_path, None)
+}
 
-    // Create concat file
-    let output_dir = std::path::Path::new(output_path)
-        .parent()
-        .unwrap_or(std::path::Path::new("."));
-    let concat_file = output_dir.join("concat_list.txt");
-
-    // Build concat content with properly escaped paths
-    // FFmpeg concat demuxer requires absolute paths or paths relative to concat file
-    let mut concat_content = String::new();
-    for file in &video_files {
-        // Use absolute paths and escape single quotes in file paths
-        let abs_path = std::fs::canonicalize(file)
-            .map_err(|e| format!("Cannot find file {}: {}", file, e))?;
-        let path_str = abs_path.to_string_lossy();
-        // Escape single quotes by doubling them (FFmpeg requirement)
-        let escaped = path_str.replace('\'', "''");
-        concat_content.push_str(&format!("file '{}'\n", escaped));
-    }
-
-    fs::write(&concat_file, &concat_content)
-        .map_err(|e| format!("Failed to create concat file: {}", e))?;
-
-    // First try with -c copy (fast, no re-encoding)
-    let output = get_ffmpeg_command()
-        .args([
-            "-y",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            concat_file.to_str().unwrap(),
-            "-c",
-            "copy",
-            output_path,
-        ])
+/// Get video duration using ffprobe
+fn get_video_duration(path: &str) -> Option<f64> {
+    let output = get_ffprobe_command()
+        .args(["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", path])
         .output()
-        .map_err(|e| format!("Failed to run FFmpeg: {}", e))?;
-
-    // Clean up concat file
-    fs::remove_file(&concat_file).ok();
+        .ok()?;
 
     if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        stdout.trim().parse::<f64>().ok()
+    } else {
+        None
+    }
+}
+
+/// Parse FFmpeg progress output to extract time in seconds
+fn parse_ffmpeg_time(line: &str) -> Option<f64> {
+    // FFmpeg outputs progress in format: time=00:01:23.45
+    if let Some(time_start) = line.find("time=") {
+        let time_str = &line[time_start + 5..];
+        if let Some(end) = time_str.find(' ') {
+            let time_part = &time_str[..end];
+            // Parse HH:MM:SS.ms format
+            let parts: Vec<&str> = time_part.split(':').collect();
+            if parts.len() == 3 {
+                let hours: f64 = parts[0].parse().unwrap_or(0.0);
+                let minutes: f64 = parts[1].parse().unwrap_or(0.0);
+                let seconds: f64 = parts[2].parse().unwrap_or(0.0);
+                return Some(hours * 3600.0 + minutes * 60.0 + seconds);
+            }
+        }
+    }
+    None
+}
+
+/// Merge videos using FFmpeg with progress reporting
+pub fn merge_videos_with_progress(video_files: Vec<String>, output_path: &str, app_handle: Option<&AppHandle>) -> Result<(), String> {
+    if video_files.is_empty() {
+        return Err("No videos to merge".to_string());
+    }
+
+    // Filter out invalid files
+    let valid_files: Vec<&String> = video_files.iter()
+        .filter(|f| validate_video_file(f))
+        .collect();
+
+    if valid_files.is_empty() {
+        return Err("No valid video files to merge - all files appear incomplete or corrupted".to_string());
+    }
+
+    if valid_files.len() != video_files.len() {
+        eprintln!("Warning: {} out of {} files were invalid and skipped", video_files.len() - valid_files.len(), video_files.len());
+        if let Some(app) = app_handle {
+            let _ = app.emit("log-info", format!("Warning: {} files skipped (corrupted/incomplete)", video_files.len() - valid_files.len()));
+        }
+    }
+
+    // For single valid file, just copy it
+    if valid_files.len() == 1 {
+        if let Some(app) = app_handle {
+            let _ = app.emit("merge-progress", MergeProgress {
+                percentage: 100.0,
+                current_time: 0.0,
+                total_duration: 0.0,
+            });
+        }
+        let source = std::path::Path::new(valid_files[0]);
+        let dest = std::path::Path::new(output_path);
+        std::fs::copy(source, dest)
+            .map_err(|e| format!("Failed to copy file: {}", e))?;
         return Ok(());
     }
 
-    // If copy failed, try re-encoding (slower but more compatible)
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    println!("FFmpeg copy failed: {}, trying re-encoding...", stderr);
+    // Calculate total duration for progress calculation
+    let total_duration: f64 = valid_files.iter()
+        .filter_map(|f| get_video_duration(f))
+        .sum();
 
-    // Re-create concat file for re-encoding attempt
-    fs::write(&concat_file, &concat_content)
-        .map_err(|e| format!("Failed to recreate concat file: {}", e))?;
+    if let Some(app) = app_handle {
+        let _ = app.emit("log-info", format!("Total video duration: {:.1}s ({} files)", total_duration, valid_files.len()));
+    }
 
-    let reencode_output = get_ffmpeg_command()
-        .args([
-            "-y",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            concat_file.to_str().unwrap(),
-            "-c",
-            "libx264",
-            "-preset",
-            "fast",
-            "-crf",
-            "22",
-            output_path,
-        ])
-        .output()
-        .map_err(|e| format!("Failed to run FFmpeg (reencode): {}", e))?;
+    // Create concat list file for demuxer (much faster than filter - no re-encoding)
+    let list_path = std::env::temp_dir().join("ffmpeg_concat_list.txt");
+    let mut list_content = String::new();
+    for file in valid_files.iter() {
+        let abs_path = std::fs::canonicalize(file)
+            .map_err(|e| format!("Cannot find file {}: {}", file, e))?;
+        // Escape single quotes for FFmpeg concat list format
+        let escaped_path = abs_path.to_string_lossy().replace("'", "'\\''");
+        list_content.push_str(&format!("file '{}'\n", escaped_path));
+    }
+    std::fs::write(&list_path, &list_content)
+        .map_err(|e| format!("Failed to create concat list: {}", e))?;
 
-    // Clean up concat file
-    fs::remove_file(&concat_file).ok();
+    // Build command using concat demuxer (stream copy - no re-encoding = FAST)
+    let mut cmd = get_ffmpeg_command();
+    cmd.args([
+        "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", list_path.to_str().unwrap_or(""),
+        "-c", "copy",  // Stream copy - no re-encoding!
+        output_path,
+    ]);
 
-    if reencode_output.status.success() {
+    // Spawn process and read stderr for progress
+    cmd.stderr(Stdio::piped());
+    cmd.stdout(Stdio::null());
+
+    let mut child = cmd.spawn()
+        .map_err(|e| format!("Failed to run FFmpeg: {}", e))?;
+
+    let stderr = child.stderr.take()
+        .ok_or_else(|| "Failed to capture FFmpeg stderr".to_string())?;
+
+    let reader = BufReader::new(stderr);
+    let mut last_emit = std::time::Instant::now();
+
+    for line in reader.lines() {
+        if let Ok(line) = line {
+            if let Some(current_time) = parse_ffmpeg_time(&line) {
+                let percentage = if total_duration > 0.0 {
+                    (current_time / total_duration * 100.0).min(100.0)
+                } else {
+                    0.0
+                };
+
+                // Emit progress every 500ms to reduce overhead
+                if last_emit.elapsed().as_millis() >= 500 {
+                    if let Some(app) = app_handle {
+                        let _ = app.emit("merge-progress", MergeProgress {
+                            percentage,
+                            current_time,
+                            total_duration,
+                        });
+                    }
+                    last_emit = std::time::Instant::now();
+                }
+            }
+        }
+    }
+
+    // Clean up temp file
+    std::fs::remove_file(&list_path).ok();
+
+    let status = child.wait()
+        .map_err(|e| format!("FFmpeg process error: {}", e))?;
+
+    if status.success() {
+        // Emit 100% completion
+        if let Some(app) = app_handle {
+            let _ = app.emit("merge-progress", MergeProgress {
+                percentage: 100.0,
+                current_time: total_duration,
+                total_duration,
+            });
+        }
         Ok(())
     } else {
-        let reencode_stderr = String::from_utf8_lossy(&reencode_output.stderr);
+        // If concat demuxer fails (incompatible formats), fall back to concat filter with re-encoding
+        if let Some(app) = app_handle {
+            let _ = app.emit("log-info", "Stream copy failed, trying re-encode method...".to_string());
+        }
+        merge_videos_reencode(video_files, output_path, app_handle)
+    }
+}
+
+/// Fallback merge using re-encoding (slower but handles incompatible formats)
+fn merge_videos_reencode(video_files: Vec<String>, output_path: &str, app_handle: Option<&AppHandle>) -> Result<(), String> {
+    let valid_files: Vec<&String> = video_files.iter()
+        .filter(|f| validate_video_file(f))
+        .collect();
+
+    if valid_files.is_empty() {
+        return Err("No valid video files to merge".to_string());
+    }
+
+    let total_duration: f64 = valid_files.iter()
+        .filter_map(|f| get_video_duration(f))
+        .sum();
+
+    let mut inputs = Vec::new();
+    for file in valid_files.iter() {
+        let abs_path = std::fs::canonicalize(file)
+            .map_err(|e| format!("Cannot find file {}: {}", file, e))?;
+        inputs.extend(["-i".to_string(), abs_path.to_string_lossy().to_string()]);
+    }
+
+    // Build concat filter
+    let filter_parts: Vec<String> = (0..valid_files.len())
+        .map(|i| format!("[{}:v][{}:a]", i, i))
+        .collect();
+    let filter_inputs = format!(
+        "{}concat=n={}:v=1:a=1[outv][outa]",
+        filter_parts.join(""),
+        valid_files.len()
+    );
+
+    let mut cmd = get_ffmpeg_command();
+    cmd.args(["-y"]);
+    cmd.args(&inputs);
+    cmd.args([
+        "-filter_complex", &filter_inputs,
+        "-map", "[outv]",
+        "-map", "[outa]",
+        "-c:v", "libx264",
+        "-preset", "ultrafast",  // Use ultrafast for speed
+        "-crf", "23",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        output_path,
+    ]);
+
+    cmd.stderr(Stdio::piped());
+    cmd.stdout(Stdio::null());
+
+    let mut child = cmd.spawn()
+        .map_err(|e| format!("Failed to run FFmpeg: {}", e))?;
+
+    let stderr = child.stderr.take()
+        .ok_or_else(|| "Failed to capture FFmpeg stderr".to_string())?;
+
+    let reader = BufReader::new(stderr);
+    let mut last_emit = std::time::Instant::now();
+
+    for line in reader.lines() {
+        if let Ok(line) = line {
+            if let Some(current_time) = parse_ffmpeg_time(&line) {
+                let percentage = if total_duration > 0.0 {
+                    (current_time / total_duration * 100.0).min(100.0)
+                } else {
+                    0.0
+                };
+
+                if last_emit.elapsed().as_millis() >= 500 {
+                    if let Some(app) = app_handle {
+                        let _ = app.emit("merge-progress", MergeProgress {
+                            percentage,
+                            current_time,
+                            total_duration,
+                        });
+                    }
+                    last_emit = std::time::Instant::now();
+                }
+            }
+        }
+    }
+
+    let status = child.wait()
+        .map_err(|e| format!("FFmpeg process error: {}", e))?;
+
+    if status.success() {
+        if let Some(app) = app_handle {
+            let _ = app.emit("merge-progress", MergeProgress {
+                percentage: 100.0,
+                current_time: total_duration,
+                total_duration,
+            });
+        }
+        Ok(())
+    } else {
         Err(format!(
-            "FFmpeg failed (both copy and re-encoding): {}",
-            reencode_stderr
+            "FFmpeg merge failed. The following files may be corrupted/incomplete: {:?}",
+            valid_files.iter().map(|s| std::path::Path::new(s).file_name().and_then(|n| n.to_str()).unwrap_or("")).collect::<Vec<_>>()
         ))
     }
 }

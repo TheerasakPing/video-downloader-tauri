@@ -1,3 +1,4 @@
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use regex::Regex;
 use reqwest::Client;
 use scraper::{Html, Selector};
@@ -111,11 +112,18 @@ impl RongyokParser {
             episode_urls.keys().max().copied().unwrap_or(1)
         };
 
+        // Convert poster URL to base64 data URL for Tauri v2 compatibility
+        let poster_data_url = if let Some(ref url) = poster_url {
+            self.fetch_image_as_data_url(url).await
+        } else {
+            None
+        };
+
         Ok(SeriesInfo {
             series_id,
             title,
             total_episodes,
-            poster_url,
+            poster_url: poster_data_url,
             episode_urls,
         })
     }
@@ -148,6 +156,33 @@ impl RongyokParser {
         }
 
         Ok(episode_urls)
+    }
+
+    /// Fetch an image and convert it to a base64 data URL
+    async fn fetch_image_as_data_url(&self, image_url: &str) -> Option<String> {
+        let response = self.client
+            .get(image_url)
+            .header("Accept", "image/*")
+            .send()
+            .await
+            .ok()?;
+
+        // Get content type
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("image/jpeg")
+            .to_string();
+
+        // Get image bytes
+        let bytes = response.bytes().await.ok()?;
+
+        // Convert to base64
+        let base64_data = BASE64.encode(&bytes);
+
+        // Return as data URL
+        Some(format!("data:{};base64,{}", content_type, base64_data))
     }
 
     /// Extract a single video URL from an episode page

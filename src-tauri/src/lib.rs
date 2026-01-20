@@ -1,7 +1,7 @@
 mod downloader;
 mod parser;
 
-use downloader::{check_ffmpeg, merge_videos, sanitize_filename, DownloadConfig, DownloadResult, DownloadState, VideoDownloader};
+use downloader::{check_ffmpeg, merge_videos_with_progress, sanitize_filename, DownloadConfig, DownloadResult, DownloadState, VideoDownloader};
 use parser::{RongyokParser, SeriesInfo};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -225,7 +225,7 @@ async fn start_download(
             let mut sorted_files = successful_files.clone();
             sorted_files.sort();
 
-            match merge_videos(sorted_files.clone(), &output_path_str) {
+            match merge_videos_with_progress(sorted_files.clone(), &output_path_str, Some(&app_handle)) {
                 Ok(_) => {
                     let _ = app_handle.emit("log-info", "Merge complete, deleting individual files...".to_string());
                     // Delete individual files after successful merge
@@ -429,6 +429,16 @@ async fn play_file(path: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Set TMPDIR to app cache directory to avoid cross-device link errors during updates
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(cache_dir) = dirs::cache_dir() {
+            let app_tmp = cache_dir.join("com.rongyok.downloader").join("tmp");
+            std::fs::create_dir_all(&app_tmp).ok();
+            std::env::set_var("TMPDIR", &app_tmp);
+        }
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
