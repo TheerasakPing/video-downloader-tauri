@@ -24,30 +24,17 @@ export function ProgressBar({
     }
   };
 
-  const getGlowColor = () => {
-    switch (variant) {
-      case "success":
-        return "shadow-emerald-500/30";
-      case "warning":
-        return "shadow-amber-500/30";
-      case "error":
-        return "shadow-red-500/30";
-      default:
-        return "shadow-violet-500/30";
-    }
-  };
-
   return (
-    <div className="space-y-1.5 sm:space-y-2">
+    <div className="space-y-1">
       {(label || sublabel) && (
-        <div className="flex items-center justify-between text-xs sm:text-sm">
+        <div className="flex items-center justify-between text-[10px]">
           <span className="text-slate-300 font-medium">{label}</span>
           <span className="text-slate-500">{sublabel}</span>
         </div>
       )}
-      <div className="h-1.5 sm:h-2 bg-slate-700/50 rounded-full overflow-hidden">
+      <div className="h-1.5 bg-slate-700/50 rounded-full overflow-hidden">
         <div
-          className={`h-full ${getBarColor()} rounded-full transition-all duration-300 shadow-lg ${getGlowColor()} progress-animated`}
+          className={`h-full ${getBarColor()} rounded-full transition-all duration-200`}
           style={{ width: `${Math.min(100, Math.max(0, percentage))}%` }}
         />
       </div>

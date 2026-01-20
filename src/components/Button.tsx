@@ -25,25 +25,25 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const baseStyles =
-      "inline-flex items-center justify-center font-medium rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed";
+      "inline-flex items-center justify-center font-medium rounded-md transition-all duration-150 focus:outline-none focus:ring-1 focus:ring-offset-1 focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed";
 
     const variants = {
       primary:
-        "bg-violet-600 hover:bg-violet-500 text-white focus:ring-violet-500 shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30",
+        "bg-violet-600 hover:bg-violet-500 text-white focus:ring-violet-500",
       secondary:
         "bg-slate-700 hover:bg-slate-600 text-white focus:ring-slate-500",
       success:
-        "bg-emerald-600 hover:bg-emerald-500 text-white focus:ring-emerald-500 shadow-lg shadow-emerald-500/20",
+        "bg-emerald-600 hover:bg-emerald-500 text-white focus:ring-emerald-500",
       danger:
-        "bg-red-600 hover:bg-red-500 text-white focus:ring-red-500 shadow-lg shadow-red-500/20",
+        "bg-red-600 hover:bg-red-500 text-white focus:ring-red-500",
       ghost:
         "bg-transparent hover:bg-slate-800 text-slate-300 focus:ring-slate-500",
     };
 
     const sizes = {
-      sm: "px-3 py-1.5 text-xs gap-1.5",
-      md: "px-4 py-2 text-sm gap-2",
-      lg: "px-6 py-3 text-base gap-2",
+      sm: "px-2 py-1 text-xs gap-1",
+      md: "px-3 py-1.5 text-xs gap-1.5",
+      lg: "px-4 py-2 text-sm gap-1.5",
     };
 
     return (
@@ -54,7 +54,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       >
         {isLoading ? (
-          <Loader2 className="animate-spin" size={size === "sm" ? 14 : 18} />
+          <Loader2 className="animate-spin" size={12} />
         ) : (
           leftIcon
         )}

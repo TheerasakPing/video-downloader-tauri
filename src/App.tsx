@@ -13,16 +13,12 @@ import {
   Clipboard,
   Search,
   Merge,
-  RefreshCw,
   Settings,
-  Film,
-  Zap,
-  CheckCircle2,
-  AlertCircle,
-  Clock,
   HardDrive,
   Minimize2,
   Keyboard,
+  Clock,
+  AlertCircle,
 } from "lucide-react";
 import {
   Button,
@@ -40,7 +36,6 @@ import {
   UpdateDialog,
   MiniMode,
   ShortcutsHelp,
-  PresetSelector,
 } from "./components";
 import { useLogger } from "./hooks/useLogger";
 import { useSettings } from "./hooks/useSettings";
@@ -48,7 +43,6 @@ import { useHistory } from "./hooks/useHistory";
 import { useSpeedGraph } from "./hooks/useSpeedGraph";
 import { useUpdater } from "./hooks/useUpdater";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
-import { useDownloadPresets } from "./hooks/useDownloadPresets";
 import { useI18n } from "./hooks/useI18n";
 import { useCustomTheme } from "./hooks/useCustomTheme";
 import { SeriesInfo, DownloadState, DownloadProgress } from "./types";
@@ -128,7 +122,6 @@ function App() {
     downloadAndInstall,
     dismissUpdate,
   } = useUpdater();
-  const { presets, activePresetId, applyPreset } = useDownloadPresets();
   const { language, setLanguage, t } = useI18n();
   const { themes, activeThemeId, setActiveTheme } = useCustomTheme();
 
@@ -668,11 +661,6 @@ function App() {
     }
   };
 
-  const handlePresetSelect = (presetId: string) => {
-    applyPreset(presetId, updateSetting);
-    success(`Preset "${presets.find(p => p.id === presetId)?.name}" applied`);
-  };
-
   const overallProgress =
     downloadState.totalSelected > 0
       ? (downloadState.completedEpisodes.length / downloadState.totalSelected) * 100
@@ -708,76 +696,51 @@ function App() {
         </div>
       )}
 
-      {/* Header */}
-      <header className="sticky top-0 z-50 glass border-b border-slate-800/50 animate-fade-in">
-        <div className="container-responsive py-3 sm:py-4">
-          <div className="flex items-center justify-between gap-2 sm:gap-4">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="hover-scale">
-                <Logo size={40} className="sm:w-11 sm:h-11" />
-              </div>
+      {/* Header - Compact */}
+      <header className="sticky top-0 z-50 glass border-b border-slate-800/50">
+        <div className="container-responsive py-1.5 sm:py-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Logo size={28} className="sm:w-8 sm:h-8" />
               <div>
-                <h1 className="text-base sm:text-lg font-bold flex items-center gap-2">
+                <h1 className="text-sm font-bold flex items-center gap-1.5">
                   <span className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
                     Rongyok
                   </span>
-                  <span className="icon-glow icon-glow-sm icon-glow-fuchsia"><Film size={16} /></span>
-                </h1>
-                <p className="text-[10px] sm:text-xs text-slate-500 flex flex-wrap items-center gap-1">
-                  <span className="hidden xs:inline">Video Downloader</span>
                   {ffmpegAvailable && (
-                    <span className="animate-fade-in flex items-center gap-0.5">
-                      <span className="icon-glow icon-glow-sm icon-glow-emerald"><CheckCircle2 size={10} /></span>
-                      <span className="text-emerald-400">FFmpeg</span>
-                    </span>
+                    <span className="text-emerald-400 text-[10px]">FFmpeg</span>
                   )}
                   {downloadState.isDownloading && currentSpeed > 0 && (
-                    <span className="animate-bounce-subtle flex items-center gap-0.5">
-                      <span className="icon-glow icon-glow-sm icon-glow-violet icon-glow-animated"><Zap size={10} /></span>
-                      <span className="text-violet-400">{(currentSpeed / 1024 / 1024).toFixed(1)} MB/s</span>
-                    </span>
+                    <span className="text-violet-400 text-[10px]">{(currentSpeed / 1024 / 1024).toFixed(1)} MB/s</span>
                   )}
-                </p>
+                </h1>
               </div>
             </div>
 
             {/* Header Actions */}
-            <div className="flex items-center gap-2">
-              {/* Mini Mode Toggle */}
+            <div className="flex items-center gap-1">
               {downloadState.isDownloading && (
-                <button
-                  onClick={() => setShowMiniMode(true)}
-                  className="p-2 hover:bg-slate-700/50 rounded-lg transition-colors"
-                  title="Mini Mode (Ctrl+M)"
-                >
-                  <Minimize2 size={16} className="text-slate-400" />
+                <button onClick={() => setShowMiniMode(true)} className="p-1.5 hover:bg-slate-700/50 rounded-md" title="Mini Mode">
+                  <Minimize2 size={14} className="text-slate-400" />
                 </button>
               )}
-
-              {/* Shortcuts Help */}
-              <button
-                onClick={() => setShowShortcuts(true)}
-                className="p-2 hover:bg-slate-700/50 rounded-lg transition-colors"
-                title="Keyboard Shortcuts"
-              >
-                <Keyboard size={16} className="text-slate-400" />
+              <button onClick={() => setShowShortcuts(true)} className="p-1.5 hover:bg-slate-700/50 rounded-md" title="Shortcuts">
+                <Keyboard size={14} className="text-slate-400" />
               </button>
 
               {/* Tabs */}
-              <div className="flex bg-slate-800/70 rounded-xl p-0.5 sm:p-1 overflow-x-auto scrollbar-hide">
-                {tabsConfig.map((tab, index) => (
+              <div className="flex bg-slate-800/70 rounded-lg p-0.5 ml-1">
+                {tabsConfig.map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium rounded-lg transition-all flex items-center gap-1 sm:gap-1.5 whitespace-nowrap btn-ripple ${
+                    className={`px-2 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${
                       activeTab === tab.id
-                        ? "tab-glow-active text-white shadow-lg animate-scale-in"
-                        : "text-slate-400 hover:text-white hover:bg-slate-700/50"
-                    } stagger-${index + 1}`}
+                        ? "bg-slate-700 text-white"
+                        : "text-slate-400 hover:text-white"
+                    }`}
                   >
-                    <span className={`icon-glow icon-glow-sm ${activeTab === tab.id ? `icon-glow-${tab.glowColor} icon-glow-animated` : ""}`}>
-                      {tab.icon}
-                    </span>
+                    {tab.icon}
                     <span className="hidden sm:inline">{tab.label}</span>
                   </button>
                 ))}
@@ -787,238 +750,149 @@ function App() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="container-responsive py-4 sm:py-6 space-y-4 sm:space-y-6">
+      {/* Main Content - Compact */}
+      <main className="container-responsive py-2 sm:py-3 space-y-2 sm:space-y-3">
         {activeTab === "download" && (
-          <div className="page-transition space-y-4 sm:space-y-6">
-            {/* Presets */}
-            <div className="animate-fade-in">
-              <PresetSelector
-                presets={presets}
-                activePresetId={activePresetId}
-                onSelect={handlePresetSelect}
-              />
-            </div>
-
-            {/* URL Input */}
-            <div className="space-y-3 sm:space-y-4 animate-fade-in">
+          <div className="space-y-2 sm:space-y-3">
+            {/* URL Input - Compact */}
+            <div className="space-y-2">
               <Input
-                label="Series URL"
-                placeholder="https://rongyok.com/watch/?series_id=XXX (or drag & drop)"
+                placeholder="https://rongyok.com/watch/?series_id=XXX"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                leftIcon={<Link size={16} className="sm:w-[18px] sm:h-[18px]" />}
+                leftIcon={<Link size={14} />}
                 rightElement={
-                  <div className="flex gap-1 items-center">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        setUrl("");
-                        setSeries(null);
-                        setSelectedEpisodes(new Set());
-                        log("URL cleared");
-                      }}
-                      disabled={!url}
-                      className={`hover-scale ${url ? "text-red-400 hover:text-red-300 hover:bg-red-500/20" : "text-slate-600"}`}
-                      title="Clear URL"
-                    >
-                      <X size={16} />
+                  <div className="flex gap-0.5 items-center">
+                    <Button size="sm" variant="ghost" onClick={() => { setUrl(""); setSeries(null); setSelectedEpisodes(new Set()); }} disabled={!url} className="px-1.5">
+                      <X size={14} />
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={handlePaste}
-                      leftIcon={<Clipboard size={14} />}
-                      className="hover-scale"
-                      title="Paste (Ctrl+V)"
-                    >
-                      <span className="hidden sm:inline">Paste</span>
-                      <span className="sm:hidden">📋</span>
+                    <Button size="sm" variant="ghost" onClick={handlePaste} className="px-1.5" title="Paste">
+                      <Clipboard size={14} />
                     </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleFetch}
-                      isLoading={isFetching}
-                      leftIcon={<Search size={14} />}
-                      className="hover-glow"
-                    >
-                      <span className="hidden sm:inline">Fetch</span>
-                      <span className="sm:hidden">🔍</span>
+                    <Button size="sm" onClick={handleFetch} isLoading={isFetching} className="px-2">
+                      <Search size={14} />
                     </Button>
                   </div>
                 }
               />
 
               <Input
-                label="Output Directory"
                 placeholder="~/Downloads/rongyok"
                 value={settings.outputDir}
                 onChange={(e) => updateSetting("outputDir", e.target.value)}
-                leftIcon={<FolderOpen size={16} className="sm:w-[18px] sm:h-[18px]" />}
+                leftIcon={<FolderOpen size={14} />}
                 rightElement={
-                  <div className="flex gap-1">
-                    <Button size="sm" variant="ghost" onClick={handleSelectOutputFolder} className="hover-scale">
-                      <span className="hidden sm:inline">Browse</span>
-                      <span className="sm:hidden">📂</span>
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={handleOpenOutputFolder} className="hover-scale">
-                      <span className="hidden sm:inline">Open</span>
-                      <span className="sm:hidden">↗</span>
-                    </Button>
+                  <div className="flex gap-0.5">
+                    <Button size="sm" variant="ghost" onClick={handleSelectOutputFolder} className="px-1.5">📂</Button>
+                    <Button size="sm" variant="ghost" onClick={handleOpenOutputFolder} className="px-1.5">↗</Button>
                   </div>
                 }
               />
             </div>
 
-            {/* Series Info */}
-            <div className="animate-fade-in stagger-1">
-              <SeriesCard series={series} isLoading={isFetching} />
-            </div>
+            {/* Series Info - Compact */}
+            <SeriesCard series={series} isLoading={isFetching} />
 
             {/* Episode Selector */}
             {series && (
-              <div className="animate-slide-in stagger-2">
-                <EpisodeSelector
-                  totalEpisodes={series.totalEpisodes}
-                  selectedEpisodes={selectedEpisodes}
-                  onToggle={toggleEpisode}
-                  onSelectAll={selectAllEpisodes}
-                  onDeselectAll={deselectAllEpisodes}
-                  disabled={downloadState.isDownloading}
-                />
-              </div>
+              <EpisodeSelector
+                totalEpisodes={series.totalEpisodes}
+                selectedEpisodes={selectedEpisodes}
+                onToggle={toggleEpisode}
+                onSelectAll={selectAllEpisodes}
+                onDeselectAll={deselectAllEpisodes}
+                disabled={downloadState.isDownloading}
+              />
             )}
 
-            {/* Speed Graph & Progress */}
+            {/* Speed Graph & Progress - Compact */}
             {(downloadState.isDownloading || speedData.length > 0) && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 animate-fade-in">
-                <div className="hover-lift">
-                  <SpeedGraph
-                    data={speedData}
-                    currentSpeed={currentSpeed}
-                    avgSpeed={avgSpeed}
-                    peakSpeed={peakSpeed}
-                  />
-                </div>
-                <div className="glass rounded-xl p-3 sm:p-4 border border-slate-700/50 space-y-3 sm:space-y-4 hover-lift">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                <SpeedGraph
+                  data={speedData}
+                  currentSpeed={currentSpeed}
+                  avgSpeed={avgSpeed}
+                  peakSpeed={peakSpeed}
+                />
+                <div className="glass rounded-lg p-2 border border-slate-700/50 space-y-2">
                   <ProgressBar
                     percentage={progress.percentage}
-                    label={`Episode ${progress.episode}`}
+                    label={`EP ${progress.episode}`}
                     sublabel={`${(progress.speed / 1024 / 1024).toFixed(1)} MB/s`}
                   />
                   <ProgressBar
                     percentage={overallProgress}
-                    label="Overall Progress"
-                    sublabel={`${downloadState.completedEpisodes.length}/${downloadState.totalSelected} episodes`}
+                    label="Overall"
+                    sublabel={`${downloadState.completedEpisodes.length}/${downloadState.totalSelected}`}
                     variant="success"
                   />
                   {mergeState.isMerging && (
-                    <div className="p-3 bg-violet-500/20 rounded-lg border border-violet-500/30 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Merge size={16} className="text-violet-400 animate-pulse" />
-                          <span className="text-violet-300 text-sm font-medium">Merging videos...</span>
-                        </div>
-                        <span className="text-violet-400 text-sm font-mono">{mergeState.progress.toFixed(1)}%</span>
+                    <div className="p-2 bg-violet-500/20 rounded-md border border-violet-500/30">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-violet-300 flex items-center gap-1">
+                          <Merge size={12} className="animate-pulse" /> Merging...
+                        </span>
+                        <span className="text-violet-400 font-mono">{mergeState.progress.toFixed(0)}%</span>
                       </div>
-                      <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full transition-all duration-300"
-                          style={{ width: `${mergeState.progress}%` }}
-                        />
+                      <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden mt-1">
+                        <div className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full" style={{ width: `${mergeState.progress}%` }} />
                       </div>
-                      {mergeState.totalDuration > 0 && (
-                        <div className="text-violet-400/70 text-xs">
-                          {Math.floor(mergeState.currentTime / 60)}:{String(Math.floor(mergeState.currentTime % 60)).padStart(2, '0')} / {Math.floor(mergeState.totalDuration / 60)}:{String(Math.floor(mergeState.totalDuration % 60)).padStart(2, '0')}
-                        </div>
-                      )}
                     </div>
                   )}
                   {mergeState.mergedFile && !mergeState.isMerging && (
-                    <div className="p-3 bg-emerald-500/20 rounded-lg border border-emerald-500/30 animate-scale-in">
-                      <div className="text-emerald-300 text-sm font-medium flex items-center gap-2">
-                        <span className="animate-bounce-subtle">✅</span> Merge Complete!
-                      </div>
-                      <div className="text-emerald-400/70 text-xs mt-1 truncate">{mergeState.mergedFile}</div>
-                    </div>
-                  )}
-                  {mergeState.mergeError && (
-                    <div className="p-3 bg-red-500/20 rounded-lg border border-red-500/30 animate-scale-in">
-                      <div className="text-red-300 text-sm font-medium">Merge Failed</div>
-                      <div className="text-red-400/70 text-xs mt-1">{mergeState.mergeError}</div>
+                    <div className="p-2 bg-emerald-500/20 rounded-md border border-emerald-500/30 text-xs text-emerald-300">
+                      ✅ Merged: {mergeState.mergedFile.split('/').pop()}
                     </div>
                   )}
                 </div>
               </div>
             )}
 
-            {/* Queue */}
+            {/* Queue - Compact */}
             {queue.length > 0 && (
-              <div className="animate-slide-in">
-                <DownloadQueue
-                  queue={queue}
-                  onMoveUp={() => {}}
-                  onMoveDown={() => {}}
-                  onRemove={(id) => setQueue((prev) => prev.filter((q) => q.id !== id))}
-                  onPause={() => {}}
-                />
-              </div>
+              <DownloadQueue
+                queue={queue}
+                onMoveUp={() => {}}
+                onMoveDown={() => {}}
+                onRemove={(id) => setQueue((prev) => prev.filter((q) => q.id !== id))}
+                onPause={() => {}}
+              />
             )}
 
-            {/* Options */}
-            <div className="flex flex-wrap items-center gap-3 sm:gap-4 animate-fade-in stagger-3">
-              <label className="flex items-center gap-2 cursor-pointer hover-scale p-2 -m-2 rounded-lg">
+            {/* Options & Actions - Compact inline */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-300">
                 <input
                   type="checkbox"
                   checked={settings.autoMerge}
                   onChange={(e) => updateSetting("autoMerge", e.target.checked)}
                   disabled={!ffmpegAvailable}
-                  className="w-4 h-4 rounded bg-slate-700 border-slate-600 text-violet-600 focus:ring-violet-500 focus-ring disabled:opacity-50"
+                  className="w-3.5 h-3.5 rounded bg-slate-700 border-slate-600 text-violet-600"
                 />
-                <span className={`text-xs sm:text-sm flex items-center gap-1 ${ffmpegAvailable ? "text-slate-300" : "text-slate-500"}`}>
-                  <Merge size={14} />
-                  <span className="hidden sm:inline">Merge videos after download</span>
-                  <span className="sm:hidden">Auto merge</span>
-                </span>
+                <Merge size={12} /> Auto merge
               </label>
-            </div>
 
-            {/* Action Buttons */}
-            <div className="flex flex-wrap gap-2 sm:gap-3 animate-fade-in stagger-4">
-              {!downloadState.isDownloading ? (
-                <>
+              <div className="flex gap-2">
+                {!downloadState.isDownloading ? (
                   <Button
-                    size="lg"
                     onClick={handleStartDownload}
                     disabled={!series || selectedEpisodes.size === 0}
-                    leftIcon={<span className="icon-glow icon-glow-sm icon-glow-violet icon-glow-animated"><Download size={18} /></span>}
-                    className="flex-1 sm:flex-none btn-glow-violet btn-ripple"
-                    title="Download (Ctrl+D)"
+                    leftIcon={<Download size={14} />}
+                    className="btn-glow-violet"
                   >
                     Download ({selectedEpisodes.size})
                   </Button>
-                  <Button size="lg" variant="secondary" leftIcon={<span className="icon-glow icon-glow-sm icon-glow-slate"><RefreshCw size={18} /></span>} disabled className="flex-1 sm:flex-none hover-lift">
-                    <span className="hidden sm:inline">Resume Previous</span>
-                    <span className="sm:hidden">Resume</span>
-                  </Button>
-                </>
-              ) : (
-                <>
-                  {!downloadState.isPaused ? (
-                    <Button size="lg" variant="secondary" onClick={handlePause} leftIcon={<span className="icon-glow icon-glow-sm icon-glow-amber"><Pause size={18} /></span>} className="flex-1 sm:flex-none hover-lift btn-ripple" title="Pause (Space)">
-                      Pause
-                    </Button>
-                  ) : (
-                    <Button size="lg" variant="success" onClick={handleResume} leftIcon={<span className="icon-glow icon-glow-sm icon-glow-emerald icon-glow-animated"><Play size={18} /></span>} className="flex-1 sm:flex-none btn-glow-emerald btn-ripple" title="Resume (Space)">
-                      Resume
-                    </Button>
-                  )}
-                  <Button size="lg" variant="danger" onClick={handleCancel} leftIcon={<span className="icon-glow icon-glow-sm icon-glow-red"><X size={18} /></span>} className="flex-1 sm:flex-none btn-glow-red btn-ripple" title="Cancel (Escape)">
-                    Cancel
-                  </Button>
-                </>
-              )}
+                ) : (
+                  <>
+                    {!downloadState.isPaused ? (
+                      <Button variant="secondary" onClick={handlePause} leftIcon={<Pause size={14} />}>Pause</Button>
+                    ) : (
+                      <Button variant="success" onClick={handleResume} leftIcon={<Play size={14} />}>Resume</Button>
+                    )}
+                    <Button variant="danger" onClick={handleCancel} leftIcon={<X size={14} />}>Cancel</Button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         )}
