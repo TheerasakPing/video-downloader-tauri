@@ -666,12 +666,12 @@ function App() {
       ? (downloadState.completedEpisodes.length / downloadState.totalSelected) * 100
       : 0;
 
-  const tabsConfig: { id: TabType; label: string; icon: React.ReactNode; glowColor: string }[] = [
-    { id: "download", label: "Download", icon: <Download size={16} />, glowColor: "violet" },
-    { id: "files", label: "Files", icon: <HardDrive size={16} />, glowColor: "blue" },
-    { id: "history", label: "History", icon: <Clock size={16} />, glowColor: "amber" },
-    { id: "settings", label: "Settings", icon: <Settings size={16} />, glowColor: "slate" },
-    { id: "logs", label: `Logs (${logs.length})`, icon: <AlertCircle size={16} />, glowColor: "cyan" },
+  const tabsConfig: { id: TabType; label: string; icon: React.ReactNode; glowColor: string; activeClass: string }[] = [
+    { id: "download", label: "Download", icon: <Download size={16} className="drop-shadow-[0_0_4px_rgba(139,92,246,0.6)]" />, glowColor: "violet", activeClass: "bg-violet-500/20 text-violet-300 border border-violet-500/40" },
+    { id: "files", label: "Files", icon: <HardDrive size={16} className="drop-shadow-[0_0_4px_rgba(59,130,246,0.6)]" />, glowColor: "blue", activeClass: "bg-blue-500/20 text-blue-300 border border-blue-500/40" },
+    { id: "history", label: "History", icon: <Clock size={16} className="drop-shadow-[0_0_4px_rgba(251,191,36,0.6)]" />, glowColor: "amber", activeClass: "bg-amber-500/20 text-amber-300 border border-amber-500/40" },
+    { id: "settings", label: "Settings", icon: <Settings size={16} className="drop-shadow-[0_0_4px_rgba(148,163,184,0.6)]" />, glowColor: "slate", activeClass: "bg-slate-500/20 text-slate-200 border border-slate-500/40" },
+    { id: "logs", label: `Logs (${logs.length})`, icon: <AlertCircle size={16} className="drop-shadow-[0_0_4px_rgba(34,211,238,0.6)]" />, glowColor: "cyan", activeClass: "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40" },
   ];
 
   return (
@@ -708,7 +708,7 @@ function App() {
                     Rongyok
                   </span>
                   {ffmpegAvailable && (
-                    <span className="text-emerald-400 text-[10px]">FFmpeg</span>
+                    <span className="text-violet-400 text-[10px]">FFmpeg</span>
                   )}
                   {downloadState.isDownloading && currentSpeed > 0 && (
                     <span className="text-violet-400 text-[10px]">{(currentSpeed / 1024 / 1024).toFixed(1)} MB/s</span>
@@ -721,11 +721,11 @@ function App() {
             <div className="flex items-center gap-1">
               {downloadState.isDownloading && (
                 <button onClick={() => setShowMiniMode(true)} className="p-1.5 hover:bg-slate-700/50 rounded-md" title="Mini Mode">
-                  <Minimize2 size={14} className="text-slate-400" />
+                  <Minimize2 size={14} className="text-violet-400 drop-shadow-[0_0_4px_currentColor]" />
                 </button>
               )}
               <button onClick={() => setShowShortcuts(true)} className="p-1.5 hover:bg-slate-700/50 rounded-md" title="Shortcuts">
-                <Keyboard size={14} className="text-slate-400" />
+                <Keyboard size={14} className="text-amber-400 drop-shadow-[0_0_4px_currentColor]" />
               </button>
 
               {/* Tabs */}
@@ -736,8 +736,8 @@ function App() {
                     onClick={() => setActiveTab(tab.id)}
                     className={`px-2 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${
                       activeTab === tab.id
-                        ? "bg-slate-700 text-white"
-                        : "text-slate-400 hover:text-white"
+                        ? tab.activeClass
+                        : "text-slate-400 hover:text-white border border-transparent"
                     }`}
                   >
                     {tab.icon}
@@ -761,6 +761,7 @@ function App() {
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 leftIcon={<Link size={14} />}
+                iconColor="cyan"
                 rightElement={
                   <div className="flex gap-0.5 items-center">
                     <Button size="sm" variant="ghost" onClick={() => { setUrl(""); setSeries(null); setSelectedEpisodes(new Set()); }} disabled={!url} className="px-1.5">
@@ -781,6 +782,7 @@ function App() {
                 value={settings.outputDir}
                 onChange={(e) => updateSetting("outputDir", e.target.value)}
                 leftIcon={<FolderOpen size={14} />}
+                iconColor="amber"
                 rightElement={
                   <div className="flex gap-0.5">
                     <Button size="sm" variant="ghost" onClick={handleSelectOutputFolder} className="px-1.5">📂</Button>
@@ -819,6 +821,7 @@ function App() {
                     percentage={progress.percentage}
                     label={`EP ${progress.episode}`}
                     sublabel={`${(progress.speed / 1024 / 1024).toFixed(1)} MB/s`}
+                    variant="cyan"
                   />
                   <ProgressBar
                     percentage={overallProgress}
@@ -827,21 +830,21 @@ function App() {
                     variant="success"
                   />
                   {mergeState.isMerging && (
-                    <div className="p-2 bg-violet-500/20 rounded-md border border-violet-500/30">
+                    <div className="p-2 bg-fuchsia-500/20 rounded-md border border-fuchsia-500/30">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="text-violet-300 flex items-center gap-1">
-                          <Merge size={12} className="animate-pulse" /> Merging...
+                        <span className="text-fuchsia-300 flex items-center gap-1">
+                          <Merge size={12} className="animate-pulse drop-shadow-[0_0_4px_currentColor]" /> Merging...
                         </span>
-                        <span className="text-violet-400 font-mono">{mergeState.progress.toFixed(0)}%</span>
+                        <span className="text-fuchsia-400 font-mono">{mergeState.progress.toFixed(0)}%</span>
                       </div>
                       <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden mt-1">
-                        <div className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full" style={{ width: `${mergeState.progress}%` }} />
+                        <div className="h-full bg-gradient-to-r from-fuchsia-500 to-violet-500 rounded-full" style={{ width: `${mergeState.progress}%` }} />
                       </div>
                     </div>
                   )}
                   {mergeState.mergedFile && !mergeState.isMerging && (
-                    <div className="p-2 bg-emerald-500/20 rounded-md border border-emerald-500/30 text-xs text-emerald-300">
-                      ✅ Merged: {mergeState.mergedFile.split('/').pop()}
+                    <div className="p-2 bg-emerald-500/20 rounded-md border border-emerald-500/30 text-xs text-emerald-300 flex items-center gap-1">
+                      <span className="text-emerald-400">✅</span> Merged: {mergeState.mergedFile.split('/').pop()}
                     </div>
                   )}
                 </div>
@@ -869,7 +872,7 @@ function App() {
                   disabled={!ffmpegAvailable}
                   className="w-3.5 h-3.5 rounded bg-slate-700 border-slate-600 text-violet-600"
                 />
-                <Merge size={12} /> Auto merge
+                <Merge size={12} className="text-fuchsia-400 drop-shadow-[0_0_4px_currentColor]" /> Auto merge
               </label>
 
               <div className="flex gap-2">
@@ -878,14 +881,14 @@ function App() {
                     onClick={handleStartDownload}
                     disabled={!series || selectedEpisodes.size === 0}
                     leftIcon={<Download size={14} />}
-                    className="btn-glow-violet"
+                    variant="success"
                   >
                     Download ({selectedEpisodes.size})
                   </Button>
                 ) : (
                   <>
                     {!downloadState.isPaused ? (
-                      <Button variant="secondary" onClick={handlePause} leftIcon={<Pause size={14} />}>Pause</Button>
+                      <Button variant="amber" onClick={handlePause} leftIcon={<Pause size={14} />}>Pause</Button>
                     ) : (
                       <Button variant="success" onClick={handleResume} leftIcon={<Play size={14} />}>Resume</Button>
                     )}

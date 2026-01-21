@@ -5,10 +5,20 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   error?: string;
   leftIcon?: React.ReactNode;
   rightElement?: React.ReactNode;
+  iconColor?: "violet" | "cyan" | "amber" | "emerald" | "blue" | "fuchsia";
 }
 
+const iconColors = {
+  violet: "text-violet-400",
+  cyan: "text-cyan-400",
+  amber: "text-amber-400",
+  emerald: "text-emerald-400",
+  blue: "text-blue-400",
+  fuchsia: "text-fuchsia-400",
+};
+
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, leftIcon, rightElement, className = "", ...props }, ref) => {
+  ({ label, error, leftIcon, rightElement, iconColor = "violet", className = "", ...props }, ref) => {
     return (
       <div className="space-y-1">
         {label && (
@@ -18,7 +28,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         )}
         <div className="relative">
           {leftIcon && (
-            <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500">
+            <div className={`absolute left-2.5 top-1/2 -translate-y-1/2 ${iconColors[iconColor]} drop-shadow-[0_0_4px_currentColor]`}>
               {leftIcon}
             </div>
           )}

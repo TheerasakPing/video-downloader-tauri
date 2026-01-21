@@ -59,17 +59,17 @@ export function SpeedGraph({
       {/* Stats row */}
       <div className="flex items-center justify-between px-2 py-1.5 bg-slate-800/30 border-b border-slate-700/50">
         <div className="flex items-center gap-1 text-violet-400">
-          <Zap size={10} />
+          <Zap size={10} className="drop-shadow-[0_0_4px_currentColor]" />
           <span className="text-[10px]">Current</span>
           <span className="text-xs font-bold text-white ml-0.5">{formatSpeed(currentSpeed)}</span>
         </div>
         <div className="flex items-center gap-1 text-emerald-400">
-          <Gauge size={10} />
+          <Gauge size={10} className="drop-shadow-[0_0_4px_currentColor]" />
           <span className="text-[10px]">Avg</span>
           <span className="text-xs font-bold text-white ml-0.5">{formatSpeed(avgSpeed)}</span>
         </div>
         <div className="flex items-center gap-1 text-amber-400">
-          <TrendingUp size={10} />
+          <TrendingUp size={10} className="drop-shadow-[0_0_4px_currentColor]" />
           <span className="text-[10px]">Peak</span>
           <span className="text-xs font-bold text-white ml-0.5">{formatSpeed(peakSpeed)}</span>
         </div>

@@ -51,11 +51,9 @@ export function HistoryPanel({
     <div className="space-y-6">
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="stats-card-glow stats-card-violet rounded-xl p-4">
+        <div className="glass rounded-xl p-4 border border-violet-500/30 bg-violet-500/10">
           <div className="flex items-center gap-2 text-violet-400 mb-2">
-            <span className="icon-glow icon-glow-sm icon-glow-violet">
-              <Film size={16} />
-            </span>
+            <Film size={16} className="drop-shadow-[0_0_4px_currentColor]" />
             <span className="text-xs font-medium">Total Downloads</span>
           </div>
           <div className="text-2xl font-bold text-white">
@@ -63,11 +61,9 @@ export function HistoryPanel({
           </div>
         </div>
 
-        <div className="stats-card-glow stats-card-emerald rounded-xl p-4">
+        <div className="glass rounded-xl p-4 border border-emerald-500/30 bg-emerald-500/10">
           <div className="flex items-center gap-2 text-emerald-400 mb-2">
-            <span className="icon-glow icon-glow-sm icon-glow-emerald">
-              <CheckCircle size={16} />
-            </span>
+            <CheckCircle size={16} className="drop-shadow-[0_0_4px_currentColor]" />
             <span className="text-xs font-medium">Episodes</span>
           </div>
           <div className="text-2xl font-bold text-white">
@@ -75,11 +71,9 @@ export function HistoryPanel({
           </div>
         </div>
 
-        <div className="stats-card-glow stats-card-blue rounded-xl p-4">
+        <div className="glass rounded-xl p-4 border border-blue-500/30 bg-blue-500/10">
           <div className="flex items-center gap-2 text-blue-400 mb-2">
-            <span className="icon-glow icon-glow-sm icon-glow-blue">
-              <HardDrive size={16} />
-            </span>
+            <HardDrive size={16} className="drop-shadow-[0_0_4px_currentColor]" />
             <span className="text-xs font-medium">Total Size</span>
           </div>
           <div className="text-2xl font-bold text-white">
@@ -87,11 +81,9 @@ export function HistoryPanel({
           </div>
         </div>
 
-        <div className="stats-card-glow stats-card-amber rounded-xl p-4">
+        <div className="glass rounded-xl p-4 border border-amber-500/30 bg-amber-500/10">
           <div className="flex items-center gap-2 text-amber-400 mb-2">
-            <span className="icon-glow icon-glow-sm icon-glow-amber">
-              <TrendingUp size={16} />
-            </span>
+            <TrendingUp size={16} className="drop-shadow-[0_0_4px_currentColor]" />
             <span className="text-xs font-medium">Success Rate</span>
           </div>
           <div className="text-2xl font-bold text-white">
@@ -101,12 +93,10 @@ export function HistoryPanel({
       </div>
 
       {/* History List */}
-      <div className="panel-glow overflow-hidden">
+      <div className="glass rounded-lg border border-slate-700/50 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 bg-slate-800/30 border-b border-slate-700/50">
           <h3 className="text-sm font-medium text-slate-300 flex items-center gap-2">
-            <span className="icon-glow icon-glow-sm icon-glow-cyan">
-              <Clock size={16} />
-            </span>
+            <Clock size={16} className="text-cyan-400 drop-shadow-[0_0_4px_currentColor]" />
             Download History
           </h3>
           {history.length > 0 && (
@@ -124,9 +114,7 @@ export function HistoryPanel({
         <div className="max-h-[60vh] overflow-y-auto">
           {history.length === 0 ? (
             <div className="p-8 text-center text-slate-500">
-              <div className="icon-glow icon-glow-lg icon-glow-slate mx-auto mb-3">
-                <Clock size={24} />
-              </div>
+              <Clock size={24} className="mx-auto mb-3 drop-shadow-[0_0_4px_currentColor]" />
               No download history yet
             </div>
           ) : (
@@ -141,19 +129,13 @@ export function HistoryPanel({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         {record.status === "completed" && (
-                          <span className="icon-glow icon-glow-sm icon-glow-emerald">
-                            <CheckCircle size={14} />
-                          </span>
+                          <CheckCircle size={14} className="text-emerald-400 drop-shadow-[0_0_4px_currentColor]" />
                         )}
                         {record.status === "failed" && (
-                          <span className="icon-glow icon-glow-sm icon-glow-red">
-                            <XCircle size={14} />
-                          </span>
+                          <XCircle size={14} className="text-red-400 drop-shadow-[0_0_4px_currentColor]" />
                         )}
                         {record.status === "partial" && (
-                          <span className="icon-glow icon-glow-sm icon-glow-amber">
-                            <AlertCircle size={14} />
-                          </span>
+                          <AlertCircle size={14} className="text-amber-400 drop-shadow-[0_0_4px_currentColor]" />
                         )}
                         <span className="text-sm font-medium text-white truncate">
                           {record.seriesTitle}
@@ -174,9 +156,9 @@ export function HistoryPanel({
                     </div>
                     <button
                       onClick={() => onDelete(record.id)}
-                      className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                      className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={14} className="drop-shadow-[0_0_4px_currentColor]" />
                     </button>
                   </div>
                 </div>

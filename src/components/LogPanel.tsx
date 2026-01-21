@@ -37,17 +37,17 @@ export function LogPanel({ logs, onClear }: LogPanelProps) {
         <div className="flex gap-2">
           <button
             onClick={copyLogs}
-            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+            className="p-1.5 text-blue-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
             title="Copy logs"
           >
-            <Copy size={16} />
+            <Copy size={16} className="drop-shadow-[0_0_4px_currentColor]" />
           </button>
           <button
             onClick={onClear}
-            className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors"
+            className="p-1.5 text-red-400 hover:text-red-300 hover:bg-slate-700 rounded-lg transition-colors"
             title="Clear logs"
           >
-            <Trash2 size={16} />
+            <Trash2 size={16} className="drop-shadow-[0_0_4px_currentColor]" />
           </button>
         </div>
       </div>

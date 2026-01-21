@@ -82,7 +82,7 @@ export function FileBrowser({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
           <h3 className="text-xs sm:text-sm font-medium text-white flex items-center gap-2 truncate">
-            <FolderOpen size={14} className="sm:w-4 sm:h-4 flex-shrink-0" />
+            <FolderOpen size={14} className="sm:w-4 sm:h-4 flex-shrink-0 text-amber-400 drop-shadow-[0_0_4px_currentColor]" />
             <span className="truncate">{outputDir}</span>
           </h3>
           <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1">
@@ -115,11 +115,9 @@ export function FileBrowser({
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        <div className="stats-card-glow stats-card-violet rounded-lg p-2 sm:p-3">
+        <div className="glass rounded-lg p-2 sm:p-3 border border-violet-500/30 bg-violet-500/10">
           <div className="flex items-center gap-1 sm:gap-2 text-violet-400 text-[10px] sm:text-xs mb-0.5 sm:mb-1">
-            <span className="icon-glow icon-glow-sm icon-glow-violet">
-              <Film size={12} />
-            </span>
+            <Film size={12} className="drop-shadow-[0_0_4px_currentColor]" />
             <span className="hidden sm:inline">Episodes</span>
             <span className="sm:hidden">Eps</span>
           </div>
@@ -127,22 +125,18 @@ export function FileBrowser({
             {episodeFiles.length}
           </div>
         </div>
-        <div className="stats-card-glow stats-card-emerald rounded-lg p-2 sm:p-3">
+        <div className="glass rounded-lg p-2 sm:p-3 border border-emerald-500/30 bg-emerald-500/10">
           <div className="flex items-center gap-1 sm:gap-2 text-emerald-400 text-[10px] sm:text-xs mb-0.5 sm:mb-1">
-            <span className="icon-glow icon-glow-sm icon-glow-emerald">
-              <FileVideo size={12} />
-            </span>
+            <FileVideo size={12} className="drop-shadow-[0_0_4px_currentColor]" />
             Merged
           </div>
           <div className="text-sm sm:text-lg font-bold text-white">
             {mergedFiles.length}
           </div>
         </div>
-        <div className="stats-card-glow stats-card-blue rounded-lg p-2 sm:p-3">
+        <div className="glass rounded-lg p-2 sm:p-3 border border-blue-500/30 bg-blue-500/10">
           <div className="flex items-center gap-1 sm:gap-2 text-blue-400 text-[10px] sm:text-xs mb-0.5 sm:mb-1">
-            <span className="icon-glow icon-glow-sm icon-glow-blue">
-              <HardDrive size={12} />
-            </span>
+            <HardDrive size={12} className="drop-shadow-[0_0_4px_currentColor]" />
             <span className="hidden sm:inline">Total Size</span>
             <span className="sm:hidden">Size</span>
           </div>
@@ -176,12 +170,10 @@ export function FileBrowser({
       )}
 
       {/* File List */}
-      <div className="panel-glow overflow-hidden">
+      <div className="glass rounded-lg border border-slate-700/50 overflow-hidden">
         {files.length === 0 ? (
           <div className="p-6 sm:p-8 text-center text-slate-500 text-sm animate-fade-in">
-            <div className="icon-glow icon-glow-lg icon-glow-slate mx-auto mb-3">
-              <FolderOpen size={28} />
-            </div>
+            <FolderOpen size={28} className="mx-auto mb-3 drop-shadow-[0_0_4px_currentColor]" />
             No files in output directory
           </div>
         ) : (
@@ -208,7 +200,7 @@ export function FileBrowser({
                       : "bg-violet-500/20 text-violet-400"
                   }`}
                 >
-                  <FileVideo size={14} className="sm:w-4 sm:h-4" />
+                  <FileVideo size={14} className="sm:w-4 sm:h-4 drop-shadow-[0_0_4px_currentColor]" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-xs sm:text-sm text-white truncate">{file.name}</div>
@@ -221,9 +213,9 @@ export function FileBrowser({
                     e.stopPropagation();
                     onPlay(file.path);
                   }}
-                  className="p-1 sm:p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors hover-scale"
+                  className="p-1 sm:p-1.5 text-emerald-400 hover:text-emerald-300 hover:bg-slate-700 rounded-lg transition-colors hover-scale"
                 >
-                  <Play size={12} className="sm:w-3.5 sm:h-3.5" />
+                  <Play size={12} className="sm:w-3.5 sm:h-3.5 drop-shadow-[0_0_4px_currentColor]" />
                 </button>
               </div>
             ))}

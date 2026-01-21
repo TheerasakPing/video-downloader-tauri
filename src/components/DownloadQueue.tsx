@@ -43,39 +43,21 @@ export function DownloadQueue({
   const getStatusIcon = (status: QueueItem["status"]) => {
     switch (status) {
       case "pending":
-        return (
-          <span className="icon-glow icon-glow-sm icon-glow-slate">
-            <Clock size={14} />
-          </span>
-        );
+        return <Clock size={14} className="text-slate-400 drop-shadow-[0_0_4px_currentColor]" />;
       case "downloading":
-        return (
-          <span className="icon-glow icon-glow-sm icon-glow-violet icon-glow-animated">
-            <Loader2 size={14} className="animate-spin" />
-          </span>
-        );
+        return <Loader2 size={14} className="text-violet-400 animate-spin drop-shadow-[0_0_4px_currentColor]" />;
       case "completed":
-        return (
-          <span className="icon-glow icon-glow-sm icon-glow-emerald">
-            <CheckCircle size={14} />
-          </span>
-        );
+        return <CheckCircle size={14} className="text-emerald-400 drop-shadow-[0_0_4px_currentColor]" />;
       case "failed":
-        return (
-          <span className="icon-glow icon-glow-sm icon-glow-red">
-            <XCircle size={14} />
-          </span>
-        );
+        return <XCircle size={14} className="text-red-400 drop-shadow-[0_0_4px_currentColor]" />;
     }
   };
 
   return (
-    <div className="panel-glow overflow-hidden">
+    <div className="glass rounded-lg border border-slate-700/50 overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 bg-slate-800/30 border-b border-slate-700/50">
         <h3 className="text-sm font-medium text-slate-300 flex items-center gap-2">
-          <span className="icon-glow icon-glow-sm icon-glow-amber">
-            <ListOrdered size={16} />
-          </span>
+          <ListOrdered size={16} className="text-amber-400 drop-shadow-[0_0_4px_currentColor]" />
           Download Queue
         </h3>
         <div className="flex items-center gap-3 text-xs">
@@ -94,9 +76,7 @@ export function DownloadQueue({
       <div className="max-h-64 overflow-y-auto">
         {queue.length === 0 ? (
           <div className="p-8 text-center text-slate-500">
-            <div className="icon-glow icon-glow-lg icon-glow-slate mx-auto mb-3">
-              <ListOrdered size={24} />
-            </div>
+            <ListOrdered size={24} className="mx-auto mb-3 drop-shadow-[0_0_4px_currentColor]" />
             Download queue is empty
           </div>
         ) : (
