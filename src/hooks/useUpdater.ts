@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from "react";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 
-interface UpdateInfo {
+export interface UpdateInfo {
   version: string;
+  currentVersion?: string;
   date?: string;
   body?: string;
 }
@@ -26,6 +27,7 @@ export const useUpdater = () => {
         setAvailable(true);
         setUpdateInfo({
           version: update.version,
+          currentVersion: update.currentVersion,
           date: update.date,
           body: update.body,
         });

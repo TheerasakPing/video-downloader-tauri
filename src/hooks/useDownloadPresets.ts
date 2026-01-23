@@ -53,7 +53,6 @@ export const PRESETS: DownloadPreset[] = [
 ];
 
 export const useDownloadPresets = (
-  currentSettings: Settings,
   onUpdateSettings: (newSettings: Partial<Settings>) => void,
 ) => {
   const [activePresetId, setActivePresetId] = useState<string | null>(null);

@@ -43,10 +43,12 @@ import { useHistory } from "./hooks/useHistory";
 import { useSpeedGraph } from "./hooks/useSpeedGraph";
 import { useUpdater } from "./hooks/useUpdater";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { useDownloadPresets } from "./hooks/useDownloadPresets";
 import { useI18n } from "./hooks/useI18n";
 import { useCustomTheme } from "./hooks/useCustomTheme";
 import { SeriesInfo, DownloadState, DownloadProgress } from "./types";
 import { QueueItem } from "./components/DownloadQueue";
+import { PresetSelector } from "./components/PresetSelector";
 
 interface DownloadResult {
   episode: number;
@@ -69,7 +71,9 @@ function App() {
   // State
   const [url, setUrl] = useState("");
   const [series, setSeries] = useState<SeriesInfo | null>(null);
-  const [selectedEpisodes, setSelectedEpisodes] = useState<Set<number>>(new Set());
+  const [selectedEpisodes, setSelectedEpisodes] = useState<Set<number>>(
+    new Set(),
+  );
   const [isFetching, setIsFetching] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>("download");
   const [ffmpegAvailable, setFfmpegAvailable] = useState(false);
@@ -82,7 +86,14 @@ function App() {
     progress: number;
     currentTime: number;
     totalDuration: number;
-  }>({ isMerging: false, mergedFile: null, mergeError: null, progress: 0, currentTime: 0, totalDuration: 0 });
+  }>({
+    isMerging: false,
+    mergedFile: null,
+    mergeError: null,
+    progress: 0,
+    currentTime: 0,
+    totalDuration: 0,
+  });
 
   // New UI states
   const [isDragging, setIsDragging] = useState(false);
@@ -109,8 +120,22 @@ function App() {
   // Hooks
   const { logs, log, success, warning, error, clearLogs } = useLogger();
   const { settings, updateSetting, resetSettings } = useSettings();
-  const { history, addRecord, updateRecord, deleteRecord, clearHistory, getStats } = useHistory();
-  const { speedData, currentSpeed, avgSpeed, peakSpeed, addDataPoint, reset: resetSpeedGraph } = useSpeedGraph();
+  const {
+    history,
+    addRecord,
+    updateRecord,
+    deleteRecord,
+    clearHistory,
+    getStats,
+  } = useHistory();
+  const {
+    speedData,
+    currentSpeed,
+    avgSpeed,
+    peakSpeed,
+    addDataPoint,
+    reset: resetSpeedGraph,
+  } = useSpeedGraph();
   const {
     checking: isCheckingUpdates,
     available: updateAvailable,
@@ -124,6 +149,16 @@ function App() {
   } = useUpdater();
   const { language, setLanguage, t } = useI18n();
   const { themes, activeThemeId, setActiveTheme } = useCustomTheme();
+
+  const { presets, activePresetId, applyPreset } = useDownloadPresets(
+    (newSettings) => {
+      Object.entries(newSettings).forEach(([key, value]) => {
+        // @ts-ignore - dynamic setting update
+        updateSetting(key, value);
+      });
+      success("Preset applied!");
+    },
+  );
 
   // Tab navigation
   const tabs: TabType[] = ["download", "files", "history", "settings", "logs"];
@@ -154,10 +189,12 @@ function App() {
       if (text.includes("rongyok.com") || text.includes("thongyok.com")) {
         setIsFetching(true);
         try {
-          const result = await invoke<SeriesInfo>("fetch_series", { url: text });
+          const result = await invoke<SeriesInfo>("fetch_series", {
+            url: text,
+          });
           setSeries(result);
           const allEpisodes = new Set(
-            Array.from({ length: result.totalEpisodes }, (_, i) => i + 1)
+            Array.from({ length: result.totalEpisodes }, (_, i) => i + 1),
           );
           setSelectedEpisodes(allEpisodes);
           success(`Loaded: ${result.title} (${result.totalEpisodes} episodes)`);
@@ -202,7 +239,7 @@ function App() {
         status: i === 0 ? "downloading" : "pending",
         progress: 0,
         priority: i,
-      }))
+      })),
     );
 
     setDownloadState({
@@ -235,19 +272,31 @@ function App() {
       const totalSize = 100 * 1024 * 1024 * successCount;
 
       updateRecord(recordId, {
-        completedEpisodes: results.filter((r) => r.success).map((r) => r.episode),
+        completedEpisodes: results
+          .filter((r) => r.success)
+          .map((r) => r.episode),
         failedEpisodes: results.filter((r) => !r.success).map((r) => r.episode),
         endTime: new Date().toISOString(),
         totalSize,
-        status: failCount === 0 ? "completed" : failCount === episodes.length ? "failed" : "partial",
+        status:
+          failCount === 0
+            ? "completed"
+            : failCount === episodes.length
+              ? "failed"
+              : "partial",
       });
 
       if (failCount === 0) {
         success(`All ${successCount} episodes downloaded successfully!`);
-        showNotification("Download Complete", `${successCount} episodes downloaded`);
+        showNotification(
+          "Download Complete",
+          `${successCount} episodes downloaded`,
+        );
         playNotificationSound();
       } else {
-        warning(`Downloaded ${successCount}/${episodes.length} episodes (${failCount} failed)`);
+        warning(
+          `Downloaded ${successCount}/${episodes.length} episodes (${failCount} failed)`,
+        );
       }
 
       refreshFiles();
@@ -257,7 +306,19 @@ function App() {
       setDownloadState((prev) => ({ ...prev, isDownloading: false }));
       setQueue([]);
     }
-  }, [series, selectedEpisodes, settings, ffmpegAvailable, addRecord, updateRecord, log, success, warning, error, resetSpeedGraph]);
+  }, [
+    series,
+    selectedEpisodes,
+    settings,
+    ffmpegAvailable,
+    addRecord,
+    updateRecord,
+    log,
+    success,
+    warning,
+    error,
+    resetSpeedGraph,
+  ]);
 
   const handlePause = useCallback(async () => {
     if (downloadState.currentEpisode === 0) {
@@ -281,7 +342,9 @@ function App() {
     }
     setDownloadState((prev) => ({ ...prev, isPaused: false }));
     try {
-      await invoke("resume_download", { episode: downloadState.currentEpisode });
+      await invoke("resume_download", {
+        episode: downloadState.currentEpisode,
+      });
       log("Resumed download");
     } catch (e) {
       // Download may have completed, don't show error
@@ -291,9 +354,15 @@ function App() {
 
   const handleCancel = useCallback(async () => {
     if (downloadState.currentEpisode === 0) return;
-    setDownloadState((prev) => ({ ...prev, isDownloading: false, isPaused: false }));
+    setDownloadState((prev) => ({
+      ...prev,
+      isDownloading: false,
+      isPaused: false,
+    }));
     try {
-      await invoke("cancel_download", { episode: downloadState.currentEpisode });
+      await invoke("cancel_download", {
+        episode: downloadState.currentEpisode,
+      });
       warning("Cancelled download");
     } catch (e) {
       error(`Failed to cancel: ${e}`);
@@ -338,13 +407,17 @@ function App() {
         // Auto-fetch the series info
         setIsFetching(true);
         try {
-          const result = await invoke<SeriesInfo>("fetch_series", { url: text });
+          const result = await invoke<SeriesInfo>("fetch_series", {
+            url: text,
+          });
           setSeries(result);
           const allEpisodes = new Set(
-            Array.from({ length: result.totalEpisodes }, (_, i) => i + 1)
+            Array.from({ length: result.totalEpisodes }, (_, i) => i + 1),
           );
           setSelectedEpisodes(allEpisodes);
-          success(`Auto-loaded: ${result.title} (${result.totalEpisodes} episodes)`);
+          success(
+            `Auto-loaded: ${result.title} (${result.totalEpisodes} episodes)`,
+          );
           log(`Cached ${Object.keys(result.episodeUrls).length} video URLs`);
         } catch (e) {
           error(`Failed to fetch: ${e}`);
@@ -394,7 +467,9 @@ function App() {
       root.classList.remove("dark");
       root.classList.add("light");
     } else {
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const prefersDark = window.matchMedia(
+        "(prefers-color-scheme: dark)",
+      ).matches;
       if (prefersDark) {
         root.classList.add("dark");
         root.classList.remove("light");
@@ -441,18 +516,33 @@ function App() {
       setQueue((prev) =>
         prev.map((q) =>
           q.episode === result.episode
-            ? { ...q, status: result.success ? "completed" : "failed", progress: 100 }
-            : q
-        )
+            ? {
+                ...q,
+                status: result.success ? "completed" : "failed",
+                progress: 100,
+              }
+            : q,
+        ),
       );
     });
 
     await listen("merge-started", () => {
       log("Merging videos...");
-      setMergeState({ isMerging: true, mergedFile: null, mergeError: null, progress: 0, currentTime: 0, totalDuration: 0 });
+      setMergeState({
+        isMerging: true,
+        mergedFile: null,
+        mergeError: null,
+        progress: 0,
+        currentTime: 0,
+        totalDuration: 0,
+      });
     });
 
-    await listen<{ percentage: number; currentTime: number; totalDuration: number }>("merge-progress", (event) => {
+    await listen<{
+      percentage: number;
+      currentTime: number;
+      totalDuration: number;
+    }>("merge-progress", (event) => {
       setMergeState((prev) => ({
         ...prev,
         progress: event.payload.percentage,
@@ -463,7 +553,14 @@ function App() {
 
     await listen<string>("merge-complete", (event) => {
       success(`Merged to: ${event.payload}`);
-      setMergeState({ isMerging: false, mergedFile: event.payload, mergeError: null, progress: 100, currentTime: 0, totalDuration: 0 });
+      setMergeState({
+        isMerging: false,
+        mergedFile: event.payload,
+        mergeError: null,
+        progress: 100,
+        currentTime: 0,
+        totalDuration: 0,
+      });
       playNotificationSound();
       showNotification("Merge Complete", "Videos merged successfully!");
       refreshFiles();
@@ -471,7 +568,14 @@ function App() {
 
     await listen<string>("merge-error", (event) => {
       error(`Merge failed: ${event.payload}`);
-      setMergeState({ isMerging: false, mergedFile: null, mergeError: event.payload, progress: 0, currentTime: 0, totalDuration: 0 });
+      setMergeState({
+        isMerging: false,
+        mergedFile: null,
+        mergeError: event.payload,
+        progress: 0,
+        currentTime: 0,
+        totalDuration: 0,
+      });
     });
 
     await listen<string>("log-info", (event) => {
@@ -528,7 +632,7 @@ function App() {
       setSeries(result);
 
       const allEpisodes = new Set(
-        Array.from({ length: result.totalEpisodes }, (_, i) => i + 1)
+        Array.from({ length: result.totalEpisodes }, (_, i) => i + 1),
       );
       setSelectedEpisodes(allEpisodes);
 
@@ -556,7 +660,7 @@ function App() {
   const selectAllEpisodes = () => {
     if (series) {
       setSelectedEpisodes(
-        new Set(Array.from({ length: series.totalEpisodes }, (_, i) => i + 1))
+        new Set(Array.from({ length: series.totalEpisodes }, (_, i) => i + 1)),
       );
     }
   };
@@ -567,7 +671,9 @@ function App() {
 
   const refreshFiles = async () => {
     try {
-      const fileList = await invoke<FileInfo[]>("list_files", { dir: settings.outputDir });
+      const fileList = await invoke<FileInfo[]>("list_files", {
+        dir: settings.outputDir,
+      });
       setFiles(fileList);
       log(`Found ${fileList.length} files`);
     } catch (e) {
@@ -634,7 +740,10 @@ function App() {
     setIsDragging(false);
 
     const text = e.dataTransfer.getData("text/plain");
-    if (text && (text.includes("rongyok.com") || text.includes("thongyok.com"))) {
+    if (
+      text &&
+      (text.includes("rongyok.com") || text.includes("thongyok.com"))
+    ) {
       setUrl(text);
       log(`Dropped URL: ${text}`);
       success("URL added from drop");
@@ -645,7 +754,7 @@ function App() {
         const result = await invoke<SeriesInfo>("fetch_series", { url: text });
         setSeries(result);
         const allEpisodes = new Set(
-          Array.from({ length: result.totalEpisodes }, (_, i) => i + 1)
+          Array.from({ length: result.totalEpisodes }, (_, i) => i + 1),
         );
         setSelectedEpisodes(allEpisodes);
         success(`Loaded: ${result.title} (${result.totalEpisodes} episodes)`);
@@ -663,21 +772,87 @@ function App() {
 
   const overallProgress =
     downloadState.totalSelected > 0
-      ? (downloadState.completedEpisodes.length / downloadState.totalSelected) * 100
+      ? (downloadState.completedEpisodes.length / downloadState.totalSelected) *
+        100
       : 0;
 
-  const tabsConfig: { id: TabType; label: string; icon: React.ReactNode; glowColor: string; activeClass: string }[] = [
-    { id: "download", label: "Download", icon: <Download size={16} className="drop-shadow-[0_0_4px_rgba(139,92,246,0.6)]" />, glowColor: "violet", activeClass: "bg-violet-500/20 text-violet-300 border border-violet-500/40" },
-    { id: "files", label: "Files", icon: <HardDrive size={16} className="drop-shadow-[0_0_4px_rgba(59,130,246,0.6)]" />, glowColor: "blue", activeClass: "bg-blue-500/20 text-blue-300 border border-blue-500/40" },
-    { id: "history", label: "History", icon: <Clock size={16} className="drop-shadow-[0_0_4px_rgba(251,191,36,0.6)]" />, glowColor: "amber", activeClass: "bg-amber-500/20 text-amber-300 border border-amber-500/40" },
-    { id: "settings", label: "Settings", icon: <Settings size={16} className="drop-shadow-[0_0_4px_rgba(148,163,184,0.6)]" />, glowColor: "slate", activeClass: "bg-slate-500/20 text-slate-200 border border-slate-500/40" },
-    { id: "logs", label: `Logs (${logs.length})`, icon: <AlertCircle size={16} className="drop-shadow-[0_0_4px_rgba(34,211,238,0.6)]" />, glowColor: "cyan", activeClass: "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40" },
+  const tabsConfig: {
+    id: TabType;
+    label: string;
+    icon: React.ReactNode;
+    glowColor: string;
+    activeClass: string;
+  }[] = [
+    {
+      id: "download",
+      label: "Download",
+      icon: (
+        <Download
+          size={16}
+          className="drop-shadow-[0_0_4px_rgba(139,92,246,0.6)]"
+        />
+      ),
+      glowColor: "violet",
+      activeClass:
+        "bg-violet-500/20 text-violet-300 border border-violet-500/40",
+    },
+    {
+      id: "files",
+      label: "Files",
+      icon: (
+        <HardDrive
+          size={16}
+          className="drop-shadow-[0_0_4px_rgba(59,130,246,0.6)]"
+        />
+      ),
+      glowColor: "blue",
+      activeClass: "bg-blue-500/20 text-blue-300 border border-blue-500/40",
+    },
+    {
+      id: "history",
+      label: "History",
+      icon: (
+        <Clock
+          size={16}
+          className="drop-shadow-[0_0_4px_rgba(251,191,36,0.6)]"
+        />
+      ),
+      glowColor: "amber",
+      activeClass: "bg-amber-500/20 text-amber-300 border border-amber-500/40",
+    },
+    {
+      id: "settings",
+      label: "Settings",
+      icon: (
+        <Settings
+          size={16}
+          className="drop-shadow-[0_0_4px_rgba(148,163,184,0.6)]"
+        />
+      ),
+      glowColor: "slate",
+      activeClass: "bg-slate-500/20 text-slate-200 border border-slate-500/40",
+    },
+    {
+      id: "logs",
+      label: `Logs (${logs.length})`,
+      icon: (
+        <AlertCircle
+          size={16}
+          className="drop-shadow-[0_0_4px_rgba(34,211,238,0.6)]"
+        />
+      ),
+      glowColor: "cyan",
+      activeClass: "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40",
+    },
   ];
 
   return (
     <div
       className="min-h-screen text-white"
-      style={{ background: 'var(--bg-primary, linear-gradient(to bottom right, #0f172a, #1e293b, #0f172a))' }}
+      style={{
+        background:
+          "var(--bg-primary, linear-gradient(to bottom right, #0f172a, #1e293b, #0f172a))",
+      }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -690,7 +865,9 @@ function App() {
               <span className="icon-glow icon-glow-lg icon-glow-violet icon-glow-animated">
                 <Download size={48} />
               </span>
-              <span className="text-xl font-medium text-violet-300">Drop URL here</span>
+              <span className="text-xl font-medium text-violet-300">
+                Drop URL here
+              </span>
             </div>
           </div>
         </div>
@@ -711,7 +888,9 @@ function App() {
                     <span className="text-violet-400 text-[10px]">FFmpeg</span>
                   )}
                   {downloadState.isDownloading && currentSpeed > 0 && (
-                    <span className="text-violet-400 text-[10px]">{(currentSpeed / 1024 / 1024).toFixed(1)} MB/s</span>
+                    <span className="text-violet-400 text-[10px]">
+                      {(currentSpeed / 1024 / 1024).toFixed(1)} MB/s
+                    </span>
                   )}
                 </h1>
               </div>
@@ -720,12 +899,26 @@ function App() {
             {/* Header Actions */}
             <div className="flex items-center gap-1">
               {downloadState.isDownloading && (
-                <button onClick={() => setShowMiniMode(true)} className="p-1.5 hover:bg-slate-700/50 rounded-md" title="Mini Mode">
-                  <Minimize2 size={14} className="text-violet-400 drop-shadow-[0_0_4px_currentColor]" />
+                <button
+                  onClick={() => setShowMiniMode(true)}
+                  className="p-1.5 hover:bg-slate-700/50 rounded-md"
+                  title="Mini Mode"
+                >
+                  <Minimize2
+                    size={14}
+                    className="text-violet-400 drop-shadow-[0_0_4px_currentColor]"
+                  />
                 </button>
               )}
-              <button onClick={() => setShowShortcuts(true)} className="p-1.5 hover:bg-slate-700/50 rounded-md" title="Shortcuts">
-                <Keyboard size={14} className="text-amber-400 drop-shadow-[0_0_4px_currentColor]" />
+              <button
+                onClick={() => setShowShortcuts(true)}
+                className="p-1.5 hover:bg-slate-700/50 rounded-md"
+                title="Shortcuts"
+              >
+                <Keyboard
+                  size={14}
+                  className="text-amber-400 drop-shadow-[0_0_4px_currentColor]"
+                />
               </button>
 
               {/* Tabs */}
@@ -764,13 +957,34 @@ function App() {
                 iconColor="cyan"
                 rightElement={
                   <div className="flex gap-0.5 items-center">
-                    <Button size="sm" variant="ghost" onClick={() => { setUrl(""); setSeries(null); setSelectedEpisodes(new Set()); }} disabled={!url} className="px-1.5">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setUrl("");
+                        setSeries(null);
+                        setSelectedEpisodes(new Set());
+                      }}
+                      disabled={!url}
+                      className="px-1.5"
+                    >
                       <X size={14} />
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={handlePaste} className="px-1.5" title="Paste">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={handlePaste}
+                      className="px-1.5"
+                      title="Paste"
+                    >
                       <Clipboard size={14} />
                     </Button>
-                    <Button size="sm" onClick={handleFetch} isLoading={isFetching} className="px-2">
+                    <Button
+                      size="sm"
+                      onClick={handleFetch}
+                      isLoading={isFetching}
+                      className="px-2"
+                    >
                       <Search size={14} />
                     </Button>
                   </div>
@@ -785,8 +999,22 @@ function App() {
                 iconColor="amber"
                 rightElement={
                   <div className="flex gap-0.5">
-                    <Button size="sm" variant="ghost" onClick={handleSelectOutputFolder} className="px-1.5">📂</Button>
-                    <Button size="sm" variant="ghost" onClick={handleOpenOutputFolder} className="px-1.5">↗</Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleSelectOutputFolder}
+                      className="px-1.5"
+                    >
+                      📂
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleOpenOutputFolder}
+                      className="px-1.5"
+                    >
+                      ↗
+                    </Button>
                   </div>
                 }
               />
@@ -833,18 +1061,28 @@ function App() {
                     <div className="p-2 bg-fuchsia-500/20 rounded-md border border-fuchsia-500/30">
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-fuchsia-300 flex items-center gap-1">
-                          <Merge size={12} className="animate-pulse drop-shadow-[0_0_4px_currentColor]" /> Merging...
+                          <Merge
+                            size={12}
+                            className="animate-pulse drop-shadow-[0_0_4px_currentColor]"
+                          />{" "}
+                          Merging...
                         </span>
-                        <span className="text-fuchsia-400 font-mono">{mergeState.progress.toFixed(0)}%</span>
+                        <span className="text-fuchsia-400 font-mono">
+                          {mergeState.progress.toFixed(0)}%
+                        </span>
                       </div>
                       <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden mt-1">
-                        <div className="h-full bg-gradient-to-r from-fuchsia-500 to-violet-500 rounded-full" style={{ width: `${mergeState.progress}%` }} />
+                        <div
+                          className="h-full bg-gradient-to-r from-fuchsia-500 to-violet-500 rounded-full"
+                          style={{ width: `${mergeState.progress}%` }}
+                        />
                       </div>
                     </div>
                   )}
                   {mergeState.mergedFile && !mergeState.isMerging && (
                     <div className="p-2 bg-emerald-500/20 rounded-md border border-emerald-500/30 text-xs text-emerald-300 flex items-center gap-1">
-                      <span className="text-emerald-400">✅</span> Merged: {mergeState.mergedFile.split('/').pop()}
+                      <span className="text-emerald-400">✅</span> Merged:{" "}
+                      {mergeState.mergedFile.split("/").pop()}
                     </div>
                   )}
                 </div>
@@ -857,7 +1095,9 @@ function App() {
                 queue={queue}
                 onMoveUp={() => {}}
                 onMoveDown={() => {}}
-                onRemove={(id) => setQueue((prev) => prev.filter((q) => q.id !== id))}
+                onRemove={(id) =>
+                  setQueue((prev) => prev.filter((q) => q.id !== id))
+                }
                 onPause={() => {}}
               />
             )}
@@ -872,7 +1112,11 @@ function App() {
                   disabled={!ffmpegAvailable}
                   className="w-3.5 h-3.5 rounded bg-slate-700 border-slate-600 text-violet-600"
                 />
-                <Merge size={12} className="text-fuchsia-400 drop-shadow-[0_0_4px_currentColor]" /> Auto merge
+                <Merge
+                  size={12}
+                  className="text-fuchsia-400 drop-shadow-[0_0_4px_currentColor]"
+                />{" "}
+                Auto merge
               </label>
 
               <div className="flex gap-2">
@@ -888,11 +1132,29 @@ function App() {
                 ) : (
                   <>
                     {!downloadState.isPaused ? (
-                      <Button variant="amber" onClick={handlePause} leftIcon={<Pause size={14} />}>Pause</Button>
+                      <Button
+                        variant="amber"
+                        onClick={handlePause}
+                        leftIcon={<Pause size={14} />}
+                      >
+                        Pause
+                      </Button>
                     ) : (
-                      <Button variant="success" onClick={handleResume} leftIcon={<Play size={14} />}>Resume</Button>
+                      <Button
+                        variant="success"
+                        onClick={handleResume}
+                        leftIcon={<Play size={14} />}
+                      >
+                        Resume
+                      </Button>
                     )}
-                    <Button variant="danger" onClick={handleCancel} leftIcon={<X size={14} />}>Cancel</Button>
+                    <Button
+                      variant="danger"
+                      onClick={handleCancel}
+                      leftIcon={<X size={14} />}
+                    >
+                      Cancel
+                    </Button>
                   </>
                 )}
               </div>
@@ -925,7 +1187,16 @@ function App() {
         )}
 
         {activeTab === "settings" && (
-          <div className="page-transition animate-fade-in">
+          <div className="page-transition animate-fade-in space-y-6">
+            {/* Quick Presets */}
+            <section className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+              <PresetSelector
+                presets={presets}
+                activePresetId={activePresetId}
+                onSelect={applyPreset}
+              />
+            </section>
+
             <SettingsPanel
               settings={settings}
               onUpdate={updateSetting}
