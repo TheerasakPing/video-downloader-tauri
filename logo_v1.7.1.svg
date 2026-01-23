@@ -1,0 +1,95 @@
+<svg width="512" height="512" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Main background gradient -->
+    <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8B5CF6" />
+      <stop offset="40%" stop-color="#A855F7" />
+      <stop offset="70%" stop-color="#D946EF" />
+      <stop offset="100%" stop-color="#EC4899" />
+    </linearGradient>
+
+    <!-- Inner glow gradient -->
+    <radialGradient id="innerGlow" cx="30%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.4)" />
+      <stop offset="100%" stop-color="rgba(255,255,255,0)" />
+    </radialGradient>
+
+    <!-- Play button gradient -->
+    <linearGradient id="playBtnGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#E0E7FF" />
+    </linearGradient>
+
+    <!-- Background gradient for the icon shape -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+
+    <!-- Outer glow filter -->
+    <filter id="outerGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="4" result="blur1" />
+      <feFlood flood-color="#D946EF" flood-opacity="0.6" />
+      <feComposite in2="blur1" operator="in" />
+      <feMerge>
+        <feMergeNode />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Inner element glow -->
+    <filter id="elementGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2" result="blur2" />
+      <feMerge>
+        <feMergeNode in="blur2" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Pulse glow filter -->
+    <filter id="pulseGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="6" result="blur3" />
+      <feFlood flood-color="#A855F7" flood-opacity="0.4" />
+      <feComposite in2="blur3" operator="in" />
+      <feMerge>
+        <feMergeNode />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- App Icon Background (Rounded Square) -->
+  <rect x="0" y="0" width="100" height="100" rx="22" fill="url(#bgGradient)" />
+
+  <!-- Outer glow circle ring -->
+  <circle cx="50" cy="50" r="40" fill="none" stroke="url(#logoGradient)" stroke-width="2" opacity="0.5" filter="url(#pulseGlow)" />
+
+  <!-- Main circle with gradient -->
+  <circle cx="50" cy="50" r="36" fill="url(#logoGradient)" filter="url(#outerGlow)" />
+
+  <!-- Inner highlight -->
+  <circle cx="50" cy="50" r="36" fill="url(#innerGlow)" />
+
+  <!-- Decorative ring -->
+  <circle cx="50" cy="50" r="30" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="1.5" stroke-dasharray="8 4" />
+
+  <!-- Play button triangle (Adjusted size to fit with arrow) -->
+  <path d="M42 32 L42 68 L70 50 Z" fill="url(#playBtnGradient)" filter="url(#elementGlow)" transform="scale(0.9) translate(5, 5)" />
+
+  <!-- Download arrow -->
+  <g filter="url(#elementGlow)" transform="translate(0, 2)">
+     <path d="M50 56 L50 74" stroke="rgba(255,255,255,0.95)" stroke-width="3.5" stroke-linecap="round" />
+     <path d="M43 67 L50 74 L57 67" stroke="rgba(255,255,255,0.95)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+
+  <!-- Sparkles (Static for icon) -->
+  <g opacity="0.9">
+    <circle cx="22" cy="35" r="2.5" fill="white" />
+    <circle cx="78" cy="35" r="2" fill="white" />
+    <circle cx="75" cy="70" r="2.5" fill="white" />
+    <circle cx="25" cy="68" r="2" fill="white" />
+    
+    <!-- Top Sparkle Star -->
+    <path d="M50 8 L51 11 L54 12 L51 13 L50 16 L49 13 L46 12 L49 11 Z" fill="white" opacity="0.9" />
+  </g>
+</svg>

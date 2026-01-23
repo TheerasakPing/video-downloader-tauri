@@ -1,17 +1,20 @@
 # Development Notes
 
 ## Current State
-- **Version**: 1.2.0
-- **Last Updated**: 2026-01-18
-- **Status**: Development (v1.3.0 in progress)
+
+- **Version**: 1.7.1
+- **Last Updated**: 2026-01-23
+- **Status**: Released
 
 ## Tech Stack
+
 - **Frontend**: React 19 + TypeScript + Vite
 - **Backend**: Rust (Tauri v2)
 - **Styling**: Tailwind CSS
 - **Icons**: Lucide React
 
 ## Project Structure
+
 ```
 src/
 ├── App.tsx                 # Main application component
@@ -31,22 +34,21 @@ src/
 │   ├── FileBrowser.tsx    # File management
 │   ├── DownloadQueue.tsx  # Queue management
 │   ├── UpdateDialog.tsx   # OTA update dialog
-│   ├── MiniMode.tsx       # NEW: Floating mini progress window
-│   ├── VideoPreview.tsx   # NEW: Video preview modal
-│   ├── ShortcutsHelp.tsx  # NEW: Keyboard shortcuts dialog
-│   ├── PresetSelector.tsx # NEW: Download preset selector
-│   └── ThemeSelector.tsx  # NEW: Color theme selector
+│   ├── MiniMode.tsx       # Floating mini progress window
+│   ├── VideoPreview.tsx   # Video preview modal
+│   ├── ShortcutsHelp.tsx  # Keyboard shortcuts dialog
+│   ├── PresetSelector.tsx # Download preset selector
+│   └── ThemeSelector.tsx  # Color theme selector
 ├── hooks/
 │   ├── useLogger.ts       # Logging hook
 │   ├── useSettings.ts     # Settings management
 │   ├── useHistory.ts      # Download history
 │   ├── useSpeedGraph.ts   # Speed data tracking
 │   ├── useUpdater.ts      # OTA update functionality
-│   ├── useKeyboardShortcuts.ts  # NEW: Keyboard shortcuts
-│   ├── useDownloadPresets.ts    # NEW: Download presets
-│   ├── useSpeedSchedule.ts      # NEW: Speed limiting schedule
-│   ├── useI18n.tsx              # NEW: Multi-language (Thai/English)
-│   └── useCustomTheme.ts        # NEW: Custom color themes
+│   ├── useKeyboardShortcuts.ts  # Keyboard shortcuts
+│   ├── useDownloadPresets.ts    # Download presets
+│   ├── useI18n.tsx              # Multi-language (Thai/English)
+│   └── useCustomTheme.ts        # Custom color themes
 └── types/
     └── index.ts           # TypeScript type definitions
 
@@ -63,23 +65,23 @@ src-tauri/
 
 ## Key Features Implemented
 
-### v1.3.0 (In Progress) - New Features
-- **Drag & Drop URL**: Drag URL text directly onto app to start download
+### v1.7.1 - Release
+
+- **New App Icon**: Modern violet/fuchsia gradient logo (SVG/PNG/ICNS/ICO)
 - **Keyboard Shortcuts**:
   - `Ctrl+V` - Paste URL
   - `Ctrl+D` - Start download
   - `Space` - Pause/Resume
   - `Escape` - Cancel
   - `Ctrl+M` - Toggle Mini Mode
-  - `Ctrl+Tab/Shift+Tab` - Navigate tabs
-- **Download Presets**: Quick preset buttons (High Quality, Save Bandwidth, Fast Download, Night Mode)
-- **Mini Mode**: Floating mini window showing only download progress
-- **Multi-language**: Thai/English interface (useI18n hook)
-- **Custom Themes**: 5 color themes (Violet, Ocean Blue, Emerald, Rose, Amber)
-- **Video Preview**: Component ready for video preview before download
-- **Speed Schedule**: Hook ready for time-based speed limiting
+  - `Ctrl+Tab` - Navigate tabs
+- **Download Presets**: High Quality, Turbo Mode, Data Saver, Night Mode
+- **Theme System**: 5 Color Themes (Violet, Ocean Blue, Emerald, Amber, Rose)
+- **Mini Mode**: Floating window for monitoring downloads
+- **Multi-language**: Complete Thai/English support
 
 ### v1.2.0 - Glowing Icons
+
 - Added CSS classes in `index.css`:
   - `.icon-glow` - Base glowing icon container
   - `.icon-glow-{color}` - Color variants (violet, fuchsia, emerald, blue, amber, red, cyan, slate)
@@ -89,12 +91,14 @@ src-tauri/
 - Enhanced Logo.tsx with SVG filters and animations
 
 ### v1.1.0 - OTA Updates
+
 - `useUpdater.ts` hook for update checking
 - `UpdateDialog.tsx` for update UI
 - Tauri plugins: `tauri-plugin-updater`, `tauri-plugin-process`
 - GitHub releases endpoint for update checking
 
 ### v1.0.0 - Core Functionality
+
 - Video fetching and parsing from rongyok.com
 - Concurrent download management
 - FFmpeg integration for video merging
@@ -102,6 +106,7 @@ src-tauri/
 - Download history tracking
 
 ## GitHub Actions
+
 - **Workflow**: `.github/workflows/release.yml`
 - **Trigger**: Push tag `v*`
 - **Builds**: Windows (.exe, .msi), macOS Intel/ARM (.dmg), Linux (.deb, .rpm, .AppImage)
@@ -110,18 +115,21 @@ src-tauri/
 ## How to Continue Development
 
 ### Running Locally
+
 ```bash
 cd /Volumes/       DriveE /code_project/_rongyok_video_downloader_rust
 npm run tauri dev
 ```
 
 ### Building
+
 ```bash
 npm run build          # Frontend only
 npm run tauri build    # Full app build
 ```
 
 ### Creating a Release
+
 1. Update version in:
    - `src-tauri/tauri.conf.json`
    - `src-tauri/Cargo.toml`
@@ -131,10 +139,12 @@ npm run tauri build    # Full app build
 4. GitHub Actions will build and publish the release
 
 ## Known Issues
+
 - GitHub Dependabot warning (1 moderate vulnerability)
 - `set-output` deprecation warnings in GitHub Actions
 
 ## Future Improvements
+
 - [ ] Add signing keys for auto-update functionality
 - [ ] Implement actual pause/resume downloads (Rust backend)
 - [ ] Video quality selection

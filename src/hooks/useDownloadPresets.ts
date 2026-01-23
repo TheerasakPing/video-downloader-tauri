@@ -1,136 +1,77 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { Settings } from "./useSettings";
 
 export interface DownloadPreset {
   id: string;
   name: string;
   icon: string;
+  description: string;
   settings: Partial<Settings>;
 }
 
-const DEFAULT_PRESETS: DownloadPreset[] = [
+export const PRESETS: DownloadPreset[] = [
   {
-    id: "high-quality",
+    id: "hq",
     name: "High Quality",
-    icon: "🎬",
-    settings: {
-      concurrentDownloads: 2,
-      speedLimit: 0,
-      autoMerge: true,
-      deleteAfterMerge: true,
-    },
-  },
-  {
-    id: "save-bandwidth",
-    name: "Save Bandwidth",
-    icon: "📶",
+    icon: "💎",
+    description: "Max quality, single download",
     settings: {
       concurrentDownloads: 1,
-      speedLimit: 500,
-      autoMerge: false,
-      deleteAfterMerge: false,
+      speedLimit: 0,
+      autoMerge: true,
     },
   },
   {
-    id: "fast-download",
-    name: "Fast Download",
-    icon: "⚡",
+    id: "turbo",
+    name: "Turbo Mode",
+    icon: "🚀",
+    description: "Max speed, 5 concurrent",
     settings: {
       concurrentDownloads: 5,
       speedLimit: 0,
-      autoMerge: false,
-      deleteAfterMerge: false,
     },
   },
   {
-    id: "night-mode",
+    id: "saver",
+    name: "Data Saver",
+    icon: "🍃",
+    description: "Limited speed (2MB/s)",
+    settings: {
+      speedLimit: 2000 * 1024, // 2MB/s
+    },
+  },
+  {
+    id: "night",
     name: "Night Mode",
     icon: "🌙",
+    description: "Dark theme, silent",
     settings: {
-      concurrentDownloads: 3,
-      speedLimit: 0,
-      autoMerge: true,
-      deleteAfterMerge: true,
+      theme: "dark",
       soundEnabled: false,
-      notificationsEnabled: false,
     },
   },
 ];
 
-const STORAGE_KEY = "rongyok-download-presets";
-
-export function useDownloadPresets() {
-  const [presets, setPresets] = useState<DownloadPreset[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? JSON.parse(saved) : DEFAULT_PRESETS;
-    } catch {
-      return DEFAULT_PRESETS;
-    }
-  });
-
+export const useDownloadPresets = (
+  currentSettings: Settings,
+  onUpdateSettings: (newSettings: Partial<Settings>) => void,
+) => {
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
 
-  // Save to localStorage
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(presets));
-  }, [presets]);
-
-  const addPreset = useCallback((preset: Omit<DownloadPreset, "id">) => {
-    const newPreset: DownloadPreset = {
-      ...preset,
-      id: `preset-${Date.now()}`,
-    };
-    setPresets((prev) => [...prev, newPreset]);
-    return newPreset;
-  }, []);
-
-  const updatePreset = useCallback((id: string, updates: Partial<DownloadPreset>) => {
-    setPresets((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, ...updates } : p))
-    );
-  }, []);
-
-  const deletePreset = useCallback((id: string) => {
-    setPresets((prev) => prev.filter((p) => p.id !== id));
-    if (activePresetId === id) {
-      setActivePresetId(null);
-    }
-  }, [activePresetId]);
-
-  const applyPreset = useCallback((
-    presetId: string,
-    updateSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void
-  ) => {
-    const preset = presets.find((p) => p.id === presetId);
-    if (preset) {
-      Object.entries(preset.settings).forEach(([key, value]) => {
-        updateSetting(key as keyof Settings, value as Settings[keyof Settings]);
-      });
-      setActivePresetId(presetId);
-      return true;
-    }
-    return false;
-  }, [presets]);
-
-  const resetPresets = useCallback(() => {
-    setPresets(DEFAULT_PRESETS);
-    setActivePresetId(null);
-  }, []);
-
-  const getActivePreset = useCallback(() => {
-    return presets.find((p) => p.id === activePresetId) || null;
-  }, [presets, activePresetId]);
+  const applyPreset = useCallback(
+    (presetId: string) => {
+      const preset = PRESETS.find((p) => p.id === presetId);
+      if (preset) {
+        onUpdateSettings(preset.settings);
+        setActivePresetId(presetId);
+      }
+    },
+    [onUpdateSettings],
+  );
 
   return {
-    presets,
+    presets: PRESETS,
     activePresetId,
-    addPreset,
-    updatePreset,
-    deletePreset,
     applyPreset,
-    resetPresets,
-    getActivePreset,
-    setActivePresetId,
   };
-}
+};

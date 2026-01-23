@@ -2,141 +2,107 @@ import { useState, useEffect, useCallback } from "react";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 
-export interface UpdateInfo {
+interface UpdateInfo {
   version: string;
-  currentVersion: string;
-  body: string;
-  date: string;
+  date?: string;
+  body?: string;
 }
 
-export interface UpdateState {
-  checking: boolean;
-  available: boolean;
-  downloading: boolean;
-  progress: number;
-  error: string | null;
-  updateInfo: UpdateInfo | null;
-}
+export const useUpdater = () => {
+  const [checking, setChecking] = useState(false);
+  const [available, setAvailable] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateObject, setUpdateObject] = useState<any>(null);
 
-export function useUpdater() {
-  const [state, setState] = useState<UpdateState>({
-    checking: false,
-    available: false,
-    downloading: false,
-    progress: 0,
-    error: null,
-    updateInfo: null,
-  });
-
-  const checkForUpdates = useCallback(async () => {
-    setState((prev) => ({ ...prev, checking: true, error: null }));
-
+  const checkForUpdates = useCallback(async (silent = false) => {
+    setChecking(true);
+    setError(null);
     try {
       const update = await check();
-
-      if (update) {
-        setState((prev) => ({
-          ...prev,
-          checking: false,
-          available: true,
-          updateInfo: {
-            version: update.version,
-            currentVersion: update.currentVersion,
-            body: update.body || "No release notes available",
-            date: update.date || "",
-          },
-        }));
-        return update;
-      } else {
-        setState((prev) => ({
-          ...prev,
-          checking: false,
-          available: false,
-        }));
-        return null;
+      if (update && update.available) {
+        setAvailable(true);
+        setUpdateInfo({
+          version: update.version,
+          date: update.date,
+          body: update.body,
+        });
+        setUpdateObject(update);
+        return true;
+      } else if (!silent) {
+        setAvailable(false);
       }
-    } catch (error) {
-      setState((prev) => ({
-        ...prev,
-        checking: false,
-        error: error instanceof Error ? error.message : "Failed to check for updates",
-      }));
-      return null;
+      return false;
+    } catch (e) {
+      if (!silent) {
+        setError(
+          e instanceof Error ? e.message : "Failed to check for updates",
+        );
+      }
+      return false;
+    } finally {
+      setChecking(false);
     }
   }, []);
 
   const downloadAndInstall = useCallback(async () => {
-    setState((prev) => ({ ...prev, downloading: true, progress: 0, error: null }));
+    if (!updateObject) return;
+
+    setDownloading(true);
+    setProgress(0);
+    setError(null);
 
     try {
-      const update = await check();
-
-      if (!update) {
-        setState((prev) => ({ ...prev, downloading: false, error: "No update available" }));
-        return;
-      }
-
       let downloaded = 0;
-      let contentLength = 0;
+      let total = 0;
 
-      await update.downloadAndInstall((event) => {
+      await updateObject.downloadAndInstall((event: any) => {
         switch (event.event) {
           case "Started":
-            contentLength = event.data.contentLength || 0;
-            console.log("Update download started, size:", contentLength);
+            total = event.data.contentLength || 0;
             break;
           case "Progress":
             downloaded += event.data.chunkLength;
-            const progress = contentLength > 0 ? (downloaded / contentLength) * 100 : 0;
-            setState((prev) => ({ ...prev, progress }));
+            if (total > 0) {
+              setProgress(Math.round((downloaded / total) * 100));
+            }
             break;
           case "Finished":
-            console.log("Update download finished");
-            setState((prev) => ({ ...prev, progress: 100 }));
+            setProgress(100);
             break;
         }
       });
 
-      // Relaunch the app
+      // Relaunch application
       await relaunch();
-    } catch (error) {
-      console.error("Update download error:", error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      // Provide more helpful error messages
-      let displayError = errorMessage || "Failed to download update";
-      if (errorMessage.includes("signature")) {
-        displayError = "Signature verification failed. Please try again later.";
-      } else if (errorMessage.includes("network") || errorMessage.includes("connect")) {
-        displayError = "Network error. Please check your connection and try again.";
-      } else if (errorMessage.includes("permission")) {
-        displayError = "Permission denied. Try running as administrator.";
-      } else if (errorMessage.includes("Cross-device link") || errorMessage.includes("os error 18")) {
-        displayError = "Update installation failed due to filesystem restrictions. Please download the update manually from GitHub releases.";
-      }
-      setState((prev) => ({
-        ...prev,
-        downloading: false,
-        error: displayError,
-      }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to install update");
+      setDownloading(false);
     }
-  }, []);
+  }, [updateObject]);
 
   const dismissUpdate = useCallback(() => {
-    setState((prev) => ({ ...prev, available: false, updateInfo: null }));
+    setAvailable(false);
+    setUpdateObject(null);
   }, []);
 
-  // Check for updates on mount (with delay to not block startup)
+  // Auto-check on mount (dev mode safe check)
   useEffect(() => {
-    const timer = setTimeout(() => {
-      checkForUpdates();
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, [checkForUpdates]);
+    // Optional: Auto-check
+    // checkForUpdates(true);
+  }, []);
 
   return {
-    ...state,
+    checking,
+    available,
+    downloading,
+    progress,
+    error,
+    updateInfo,
     checkForUpdates,
     downloadAndInstall,
     dismissUpdate,
   };
-}
+};
