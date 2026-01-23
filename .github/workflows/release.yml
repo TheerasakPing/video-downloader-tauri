@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -17,14 +17,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: 'macos-latest'
-            args: '--target aarch64-apple-darwin'
-          - platform: 'macos-latest'
-            args: '--target x86_64-apple-darwin'
-          - platform: 'ubuntu-22.04'
-            args: ''
-          - platform: 'windows-latest'
-            args: ''
+          - platform: "macos-latest"
+            args: "--target aarch64-apple-darwin"
+          - platform: "macos-latest"
+            args: "--target x86_64-apple-darwin"
+          - platform: "ubuntu-22.04"
+            args: ""
+          - platform: "windows-latest"
+            args: ""
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -49,6 +49,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
+      - name: Download Sidecar Binaries (ffmpeg)
+        run: node src-tauri/scripts/download-ffmpeg.cjs ${{ matrix.platform == 'macos-latest' && (matrix.args == '--target aarch64-apple-darwin' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin') || (matrix.platform == 'windows-latest' && 'x86_64-pc-windows-msvc' || 'x86_64-unknown-linux-gnu') }}
+
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -57,7 +60,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'Rongyok Downloader ${{ github.ref_name }}'
+          releaseName: "Rongyok Downloader ${{ github.ref_name }}"
           releaseBody: |
             ## What's New
             - Auto-paste and auto-fetch from clipboard
@@ -177,4 +180,3 @@ jobs:
           gh release upload "$TAG" latest.json --repo "$REPO" --clobber
 
           echo "✅ Uploaded latest.json to release"
-

@@ -61,3 +61,6 @@ temp/
 
 # Local development
 .tauri/
+
+# Tauri resources
+src-tauri/resources/bin/
