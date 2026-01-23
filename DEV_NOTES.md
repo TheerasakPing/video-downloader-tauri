@@ -2,7 +2,7 @@
 
 ## Current State
 
-- **Version**: 1.7.1
+- **Version**: 1.7.2
 - **Last Updated**: 2026-01-23
 - **Status**: Released
 
@@ -65,7 +65,7 @@ src-tauri/
 
 ## Key Features Implemented
 
-### v1.7.1 - Release
+### v1.7.2 - Release
 
 - **New App Icon**: Modern violet/fuchsia gradient logo (SVG/PNG/ICNS/ICO)
 - **Keyboard Shortcuts**:
