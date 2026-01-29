@@ -5,80 +5,87 @@
 ## Naming Patterns
 
 **Files:**
-- **Frontend (TSX/TS):** PascalCase for components (`src/components/Button.tsx`), camelCase for hooks (`src/hooks/useI18n.tsx`) and general logic files.
-- **Backend (Rust):** snake_case for modules and file names (`src-tauri/src/baanjeen_parser.rs`).
+- React Components: `PascalCase.tsx` (e.g., `src/components/Button.tsx`)
+- Hooks: `camelCase.ts` with `use` prefix (e.g., `src/hooks/useLogger.ts`)
+- Rust Modules: `snake_case.rs` (e.g., `src-tauri/src/downloader.rs`)
+- TypeScript Types: `index.ts` (e.g., `src/types/index.ts`)
 
 **Functions:**
-- **Frontend:** camelCase for component functions and hooks (`useI18n`, `fetch_series`).
-- **Backend:** snake_case for functions and methods (`get_series_info`, `is_baanjeen_url`).
+- TypeScript: `camelCase` (e.g., `addLog`, `fetchSeries`)
+- Rust: `snake_case` (e.g., `fetch_series`, `detect_video_url`)
 
 **Variables:**
-- **Frontend:** camelCase for variables and state (`selectedEpisodes`, `ffmpegAvailable`).
-- **Backend:** snake_case for local variables and fields (`series_id`, `poster_url`).
+- TypeScript: `camelCase` (e.g., `baseStyles`, `isLoading`)
+- Rust: `snake_case` (e.g., `series_info`, `video_url`)
 
 **Types:**
-- **Frontend:** PascalCase for Interfaces and Types (`SeriesInfo`, `DownloadProgress`).
-- **Backend:** PascalCase for Structs and Enums (`UnifiedSeriesInfo`, `DownloadState`).
+- TypeScript Interfaces/Types: `PascalCase` (e.g., `ButtonProps`, `SeriesInfo`)
+- Rust Structs/Enums: `PascalCase` (e.g., `UnifiedSeriesInfo`, `DownloadRequest`)
 
 ## Code Style
 
 **Formatting:**
-- **Frontend:** Standard Prettier-like formatting (though no config file found, the code follows consistent indentation).
-- **Backend:** Standard Rust formatting (`rustfmt`).
+- Frontend: Prettier/ESLint (standard TypeScript formatting observed in `src/App.tsx`).
+- Backend: `rustfmt` standard style.
 
 **Linting:**
-- **Frontend:** TypeScript is used for type safety. No ESLint/Biome config found in the root, but `tsconfig.json` enforces strictness.
-- **Backend:** `clippy` and standard compiler warnings.
+- Frontend: TypeScript compiler (`tsc`) used in build script. `tsconfig.json` defines strictness.
+- Backend: Standard Rust compiler lints and `clippy`.
 
 ## Import Organization
 
 **Order:**
-1. React hooks and core libraries (`import { useState, ... } from "react"`)
-2. External packages (`import { Loader2 } from "lucide-react"`)
-3. Internal hooks/types (`import { useI18n } from "./hooks/useI18n"`)
-4. Styles (`import "./index.css"`)
+1. React/Framework imports (`import { useState } from "react"`)
+2. External library imports (`import { Loader2 } from "lucide-react"`)
+3. Local component/hook imports (`import { useLogger } from "../hooks/useLogger"`)
+4. Type/Interface imports (`import { LogEntry } from "../types"`)
 
 **Path Aliases:**
-- Not explicitly detected in `tsconfig.json`. Relative paths are used (e.g., `import { LogEntry } from "../types"`).
+- Not explicitly configured in `tsconfig.json`, uses relative paths (e.g., `../hooks/`).
 
 ## Error Handling
 
 **Patterns:**
-- **Frontend:** `try...catch` blocks for async operations and parsing (`src/hooks/useSettings.ts`). Uses a custom logger hook (`src/hooks/useLogger.ts`) to display errors to users.
-- **Backend:** Uses `Result<T, String>` for tauri commands and `Result<T, E>` for internal logic. Extensively uses the `?` operator and `map_err` to convert errors to strings for frontend consumption (`src-tauri/src/lib.rs`). `anyhow` and `thiserror` are listed in `Cargo.toml`.
+- TypeScript: Uses `try...catch` for async operations. Errors are logged via `useLogger` hook for UI display.
+- Rust:
+    - Commands return `Result<T, String>` to bridge with JavaScript.
+    - Internal logic uses `thiserror` for custom error types and `anyhow` for flexible error handling.
+    - Extensive use of the `?` operator and `map_err(|e| e.to_string())` for IPC compatibility.
 
 ## Logging
 
-**Framework:** Custom `useLogger` hook for UI logs; `eprintln!` for backend console logs.
+**Framework:**
+- Frontend: Custom hook `src/hooks/useLogger.ts` which manages a local log state displayed in `LogPanel.tsx`.
+- Backend: Emits events back to frontend using `app_handle.emit("log-info", ...)` to show logs in the UI.
 
 **Patterns:**
-- Frontend logs are categorized by levels: `info`, `success`, `warning`, `error`.
-- Backend uses prefixed `eprintln!` for debugging (e.g., `eprintln!("[BaanJeen] Fetching page: {}")`).
+- Logs have levels: `info`, `success`, `warning`, `error`.
+- Backend logs critical steps (parsing start, download progress, merge status).
 
 ## Comments
 
 **When to Comment:**
-- High-level logic explanation (e.g., explaining hybrid parsing in `src-tauri/src/lib.rs`).
-- Regex pattern explanations.
-- TODOs for future improvements.
+- Complex logic (e.g., Chrome detection hybrid mode in `src-tauri/src/lib.rs`).
+- Module declarations and helper function purposes.
 
 **JSDoc/TSDoc:**
-- Minimal usage in frontend.
-- Rust uses triple-slash `///` for documentation comments on public methods (`src-tauri/src/baanjeen_parser.rs`).
+- Minimal usage; types are primarily relied upon for documentation. Rust uses `///` for documentation comments.
 
 ## Function Design
 
-**Size:** Components in `src/components/` are generally small and focused. `src/App.tsx` is large (~800 lines) and acts as the main orchestrator.
+**Size:**
+- React components are generally modular. `src/App.tsx` acts as the primary container.
+- Rust functions in `src-tauri/src/lib.rs` coordinate multiple steps and can be longer.
 
-**Parameters:** Prefers destructured props in React components. Rust functions use explicit types and often take references (`&str`, `&AppHandle`).
-
-**Return Values:** React hooks return objects/arrays of state and actions. Rust commands return `Result` types compatible with Tauri's IPC.
+**Parameters:**
+- Frontend: Uses object destructuring for props.
+- Rust: Uses `State` and `AppHandle` for Tauri context, plus request structs for command arguments.
 
 ## Module Design
 
-**Exports:** Named exports for components and hooks. `src-tauri/src/lib.rs` uses `mod` to organize backend logic.
-
-**Barrel Files:** Not used; imports are direct from file paths.
+**Exports:**
+- TypeScript: Named exports for components and hooks. Barrel files (e.g., `src/components/index.ts`) used for cleaner imports.
+- Rust: `pub` visibility for shared structs and modules.
 
 ---
 

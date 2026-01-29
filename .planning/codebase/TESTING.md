@@ -5,12 +5,12 @@
 ## Test Framework
 
 **Runner:**
-- **Frontend:** Playwright (v1.57.0)
-- **Backend:** Native Rust test runner (`cargo test`)
+- Frontend: Playwright `^1.57.0` (configured in `playwright.config.ts`)
+- Backend: Cargo (Built-in Rust test runner)
 
 **Assertion Library:**
-- **Frontend:** Playwright's built-in assertions.
-- **Backend:** Standard Rust `assert_eq!`, `assert!`.
+- Frontend: Playwright built-in assertions (`expect(page).to...`).
+- Backend: Standard Rust `assert!`, `assert_eq!`.
 
 **Run Commands:**
 ```bash
@@ -22,102 +22,77 @@ cargo test             # Run Rust unit tests
 ## Test File Organization
 
 **Location:**
-- **Frontend:** `./tests` directory for Playwright E2E tests.
-- **Backend:** In-file test modules using `#[cfg(test)]`.
+- Frontend: `tests/` directory for E2E and integration tests.
+- Backend: Co-located in source files using `#[cfg(test)]` modules (e.g., `src-tauri/src/parser.rs`).
 
 **Naming:**
-- **Frontend:** `*.spec.ts` (Configured in `playwright.config.ts`).
-- **Backend:** Tests are contained within the source files they test.
-
-**Structure:**
-```
-[root]/
-├── tests/              # Playwright E2E tests
-src-tauri/src/
-├── parser.rs           # Contains mod tests { ... }
-└── baanjeen_parser.rs  # Contains mod tests { ... }
-```
+- Frontend: `*.spec.ts` or `*.test.ts` (configured in `playwright.config.ts`).
+- Backend: `test_` prefix for test functions within source files.
 
 ## Test Structure
 
 **Suite Organization:**
-```typescript
-// Playwright (Frontend)
-import { test, expect } from '@playwright/test';
-test('test name', async ({ page }) => {
-  await page.goto('/');
-  // ...
-});
-
-// Rust (Backend)
+```rust
+// Rust example from src-tauri/src/parser.rs
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
-    fn test_function_name() {
-        assert_eq!(...);
+    fn test_parse_series_url() {
+        assert_eq!(RongyokParser::parse_series_url("..."), Some(1004));
     }
 }
 ```
 
 **Patterns:**
-- **Unit Testing:** Focused on URL parsing and logic in Rust (`src-tauri/src/parser.rs`).
-- **E2E Testing:** Playwright is configured to test the full application flow at `http://localhost:1420`.
+- Unit tests for pure logic like URL parsing and regex matching.
+- E2E tests via Playwright (targeting `http://localhost:1420`).
 
 ## Mocking
 
 **Framework:**
-- **Frontend:** Playwright's network intercepting/mocking capabilities.
-- **Backend:** Not explicitly detected; tests use static inputs.
+- Frontend: Playwright network interception/mocking.
+- Backend: No explicit mocking framework; tests use static inputs/expected values.
 
 **Patterns:**
-- Rust tests use hardcoded URL strings to verify parser logic without making network requests in unit tests.
-
-**What to Mock:**
-- Network responses for series metadata and video URLs.
-- Tauri IPC calls (if testing frontend in isolation).
-
-**What NOT to Mock:**
-- Utility functions (e.g., `sanitize_filename`).
-- URL parsing regex logic.
+- Rust tests use hardcoded URL strings and expected IDs to verify parser logic without network requests.
 
 ## Fixtures and Factories
 
 **Test Data:**
-- Simple string literals for URLs and expected IDs.
+- Hardcoded URLs and expected metadata within test functions.
 
 **Location:**
-- Embedded directly in test functions.
+- Defined inline within `#[test]` functions or as local variables.
 
 ## Coverage
 
-**Requirements:** None enforced.
+**Requirements:**
+- None enforced.
 
 **View Coverage:**
-```bash
-# Rust coverage (requires cargo-tarpaulin or similar)
-cargo tarpaulin
-```
+- Not currently configured in `package.json` or `Cargo.toml`.
 
 ## Test Types
 
 **Unit Tests:**
-- URL parsing logic in `src-tauri/src/parser.rs` and `src-tauri/src/baanjeen_parser.rs`.
+- Focus on `RongyokParser` and `BaanJeenParser` logic in `src-tauri/src/parser.rs` and `src-tauri/src/baanjeen_parser.rs`.
 
 **Integration Tests:**
-- Not explicitly separated in the codebase.
+- Playwright is configured for full-app integration/E2E testing.
 
 **E2E Tests:**
-- Playwright tests in the `tests/` directory (config present, though directory was empty in initial scan, likely used for manual E2E).
+- Playwright tests targeting the Tauri development server.
 
 ## Common Patterns
 
 **Async Testing:**
-- Playwright tests use `async/await`.
-- Rust tests observed so far are synchronous but `tokio::test` would be used for async Rust.
+- Playwright tests are async (`test('...', async ({ page }) => { ... })`).
+- Rust tests found are synchronous (parsing logic).
 
 **Error Testing:**
-- Verifying that invalid URLs return `None` or expected error strings.
+- Verifying that invalid URL formats return `None` or expected errors.
 
 ---
 

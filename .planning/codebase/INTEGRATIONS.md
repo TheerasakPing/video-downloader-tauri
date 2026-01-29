@@ -4,70 +4,74 @@
 
 ## APIs & External Services
 
-**Video Hosting/Streaming:**
-- `xn--82c7abb4jua0l.com` (Rongyok) - Primary source for video content scraping.
-- `baanjeen` - Secondary source for video content scraping.
-- `baiwarp.com` / `play.baiwarp.com` - Embedded video players targeted for URL extraction.
-- `media.vdohls.com` - CDN/Streaming endpoint for video assets.
+**Video Hosting & Content Sources:**
+- `rongyok.com` / `thongyok.com` - Targeted for series metadata and video URL extraction (`src-tauri/src/parser.rs`)
+- `xn--82c7abb4jua0l.com` (บ้านจีน.com) - Targeted for series metadata and video URL extraction (`src-tauri/src/baanjeen_parser.rs`)
+- Embedded players (e.g., `baiwarp.com`) - Targeted for HLS stream URL detection via headless browser
 
-**Update Service:**
-- GitHub Releases - Used as the endpoint for the Tauri updater (`src-tauri/tauri.conf.json`).
+**Software Updates:**
+- GitHub Releases - Endpoint for Tauri's auto-updater plugin
   - Endpoint: `https://github.com/TheerasakPing/video-downloader-tauri/releases/latest/download/latest.json`
+  - Implementation: `src-tauri/tauri.conf.json`
 
 ## Data Storage
 
 **Databases:**
-- None - The application is stateless regarding databases; it operates directly on the filesystem.
+- None active - The application is stateless; `my-database.db` exists in the root but is not referenced in the active Rust source code.
 
 **File Storage:**
-- Local Filesystem - Downloads are saved to user-defined directories.
-- Temporary Directory - Used for intermediate video chunks before merging.
+- Local Filesystem - Downloads are saved to user-selected directories.
+- Implementation: `src-tauri/src/downloader.rs`
 
 **Caching:**
-- Local App Cache - Used for temporary storage and update artifacts (`src-tauri/src/lib.rs`).
+- Local App Cache - Used for temporary file storage during downloads and update artifacts.
+- Implementation: `src-tauri/src/lib.rs` (TMPDIR redirection on macOS)
 
 ## Authentication & Identity
 
 **Auth Provider:**
-- None - The targeted sites appear to be public or handled via session/cookie extraction (though no complex auth logic was found in the core parsers).
+- None - Accesses public content.
+- Implementation: Mimics browser sessions using `User-Agent` and `Referer` headers in HTTP requests (`src-tauri/src/downloader.rs`).
 
 ## Monitoring & Observability
 
 **Error Tracking:**
-- None - Standard logging to console/stderr.
+- None - Relies on local application logs.
 
 **Logs:**
-- Tauri Events - Progress and errors are emitted from Rust to the Frontend via `Emitter`.
+- Tauri Events - Rust backend emits `log-info`, `download-progress`, and `merge-progress` events to the React frontend for UI feedback.
+- Implementation: `src-tauri/src/lib.rs` and `src-tauri/src/downloader.rs`
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- GitHub Releases - Distribution of binaries.
+- GitHub Releases - Distribution of platform-specific binaries.
 
 **CI Pipeline:**
-- Not detected (likely standard GitHub Actions for Tauri).
+- GitHub Actions - Workflow defined in `.github/workflows/release.yml`.
 
 ## Environment Configuration
 
 **Required env vars:**
-- `TMPDIR` - Set internally on macOS to redirect temporary files to the app cache.
+- `TMPDIR` (macOS) - Dynamically set at runtime to the application's cache directory to avoid cross-device link issues.
 
 **Secrets location:**
-- Not applicable - No API keys or secrets found in the codebase. Public scraping methodology.
+- Not applicable - No cloud secrets or API keys are embedded in the client application.
 
 ## Webhooks & Callbacks
 
 **Incoming:**
-- None.
+- None
 
 **Outgoing:**
-- None.
+- None
 
-## Tools & Binaries
+## Multimedia Tools
 
-**Multimedia:**
-- `ffmpeg` - Required for HLS stream downloading and merging TS segments into MP4.
-- `ffprobe` - Used for validating video files and extracting duration.
+**Processing Engine:**
+- `ffmpeg` - External binary used for HLS stream capturing and segment merging.
+- `ffprobe` - External binary used for video validation and duration extraction.
+- Implementation: Binaries are located in `src-tauri/resources/bin/` and invoked as sidecars/external processes.
 
 ---
 

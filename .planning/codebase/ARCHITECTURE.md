@@ -4,92 +4,96 @@
 
 ## Pattern Overview
 
-**Overall:** Tauri-based Desktop Application (Rust Backend + React Frontend)
+**Overall:** Tauri (Rust Backend + React Frontend)
 
 **Key Characteristics:**
-- **Polyglot:** Combines Rust for performance-critical tasks (downloading, parsing, headless browser control) and TypeScript/React for the UI.
-- **Event-Driven:** Uses Tauri's event system (`emit`/`listen`) for real-time progress updates from the Rust backend to the React frontend.
-- **Asynchronous:** Heavily relies on `tokio` in Rust for concurrent downloads and `async/await` in TypeScript for responsive UI.
+- **Asynchronous Execution:** Heavy use of Rust's `tokio` for concurrent downloads and I/O.
+- **Event-Driven Communication:** Frontend and Backend communicate via Tauri's `invoke` (commands) and `emit/listen` (real-time progress events).
+- **Service-Oriented Logic:** Core logic (parsing, downloading, detection) is encapsulated in dedicated Rust modules.
 
 ## Layers
 
 **Frontend (Presentation):**
-- Purpose: User interface and application state management.
+- Purpose: User interface and application control
 - Location: `src/`
-- Contains: React components, hooks, and types.
-- Depends on: Tauri API (@tauri-apps/api), Lucide React (icons), Tailwind CSS (styling).
+- Contains: React components, hooks for state management (settings, history, logger), and Tauri API calls.
+- Depends on: `@tauri-apps/api`, `lucide-react`, `vite`.
 - Used by: End user.
 
-**Tauri Bridge (API):**
-- Purpose: Facilitates communication between Frontend and Backend.
-- Location: `src-tauri/src/lib.rs`
-- Contains: `#[tauri::command]` functions that are invoked from the frontend.
-- Depends on: Backend logic modules.
-- Used by: Frontend via `invoke()`.
-
-**Backend (Business Logic):**
-- Purpose: Core functionality like web scraping, video downloading, and file management.
+**Backend (Core Logic):**
+- Purpose: Heavy lifting - networking, file system, external process management.
 - Location: `src-tauri/src/`
-- Contains: `downloader.rs` (logic), `parser.rs` (Rongyok), `baanjeen_parser.rs` (BaanJeen), `chrome_detector.rs` (Headless browser).
-- Depends on: `reqwest` (HTTP), `tokio` (Async), `headless_chrome`, `scraper` (HTML parsing), `ffmpeg` (external tool).
-- Used by: Tauri Bridge.
+- Contains: Tauri command handlers, video parsers, download manager, and Chrome detector.
+- Depends on: `reqwest`, `headless_chrome`, `tokio`, `serde`, `scraper`.
+- Used by: Frontend via Tauri bridge.
+
+**Integration Layer:**
+- Purpose: Interaction with system tools and external services.
+- Location: `src-tauri/src/downloader.rs`, `src-tauri/src/chrome_detector.rs`
+- Contains: FFmpeg process management, Headless Chrome orchestration.
+- Depends on: System FFmpeg, `headless_chrome` crate.
+- Used by: Backend Core Logic.
 
 ## Data Flow
 
+**Video Fetching Flow:**
+
+1. User enters URL in `src/App.tsx`.
+2. Frontend calls `fetch_series` command in `src-tauri/src/lib.rs`.
+3. Backend chooses parser (`BaanJeenParser` or `RongyokParser`).
+4. If static parsing fails, `ChromeVideoDetector` launches headless Chrome to find video URLs.
+5. `UnifiedSeriesInfo` is returned to Frontend.
+
 **Download Flow:**
 
-1. **User Input:** User enters a URL in `App.tsx`.
-2. **Fetch Info:** Frontend invokes `fetch_series` command. Backend (`parser.rs` or `baanjeen_parser.rs`) scrapes the site and returns `UnifiedSeriesInfo`.
-3. **Selection:** User selects episodes and clicks "Download".
-4. **Start Download:** Frontend invokes `start_download` with a `DownloadRequest`.
-5. **Execution:** Backend (`downloader.rs`) spawns `tokio` tasks for each episode, using `reqwest` for direct downloads or `ffmpeg` for HLS streams.
-6. **Progress Updates:** Backend emits `download-progress` events. Frontend (`App.tsx`) listens and updates state.
-7. **Completion/Merge:** Once episodes are finished, if `autoMerge` is enabled, backend invokes `ffmpeg` to concatenate files and emits `merge-complete`.
+1. User selects episodes and clicks Download in `src/App.tsx`.
+2. Frontend calls `start_download` command.
+3. Backend creates `VideoDownloader` instances and spawns `tokio` tasks.
+4. `VideoDownloader` handles HTTP range requests (direct) or FFmpeg streams (HLS).
+5. Progress events (`download-progress`) are emitted to Frontend in real-time.
+6. Optional: FFmpeg merges downloaded files upon completion.
 
 **State Management:**
-- **Frontend:** Managed via React `useState`, `useEffect`, and custom hooks (`useSettings`, `useHistory`, etc.).
-- **Backend:** Managed via an `AppState` struct stored in Tauri's managed state, using `Mutex` for thread-safe access to shared components (parsers, downloader, detector).
+- **Backend State:** Managed via Tauri's `State` managed object in `AppState` struct (`src-tauri/src/lib.rs`), protected by `Mutex` for thread safety.
+- **Frontend State:** Managed via React `useState` and custom hooks (e.g., `useSettings`, `useHistory`).
 
 ## Key Abstractions
 
-**VideoDownloader:**
-- Purpose: Handles the actual file transfer and progress tracking.
-- Examples: `src-tauri/src/downloader.rs`
-- Pattern: Command pattern (encapsulates a download task).
+**Parsers:**
+- Purpose: Abstracting the extraction of series/episode data from specific websites.
+- Examples: `src-tauri/src/parser.rs` (`RongyokParser`), `src-tauri/src/baanjeen_parser.rs` (`BaanJeenParser`).
+- Pattern: Strategy-like selection based on URL.
 
-**SeriesParser (Trait-like):**
-- Purpose: Common interface (though not an explicit Rust trait here, they follow similar patterns) for different video source sites.
-- Examples: `src-tauri/src/parser.rs`, `src-tauri/src/baanjeen_parser.rs`.
-
-**UnifiedSeriesInfo:**
-- Purpose: A shared data structure that normalizes series data from different sources for the frontend.
-- Examples: Defined in `src-tauri/src/lib.rs`.
+**Downloader:**
+- Purpose: Unified interface for different download methods (Direct vs HLS).
+- Examples: `src-tauri/src/downloader.rs` (`VideoDownloader`).
+- Pattern: Handler that delegates to `reqwest` or `ffmpeg` based on URL content.
 
 ## Entry Points
 
 **Backend Entry Point:**
 - Location: `src-tauri/src/main.rs`
-- Triggers: Application launch.
-- Responsibilities: Calls `tauri_app_lib::run()` which initializes the Tauri app and sets up managed state and command handlers.
+- Triggers: OS application launch.
+- Responsibilities: Initializes Tauri builder, sets up managed state, registers command handlers, and starts the event loop.
 
 **Frontend Entry Point:**
 - Location: `src/main.tsx`
-- Triggers: Webview initialization.
-- Responsibilities: Renders the React `App` component into the DOM.
+- Triggers: Tauri Webview initialization.
+- Responsibilities: Renders React root, provides internationalization context, and mounts the main `App` component.
 
 ## Error Handling
 
-**Strategy:** Result-based error propagation in Rust, caught and displayed as notifications/logs in the Frontend.
+**Strategy:** Results-based error propagation from Rust to TypeScript.
 
 **Patterns:**
-- **Rust `Result<T, String>`:** Command functions return `Result` which Tauri automatically translates to Promise resolve/reject in JS.
-- **Frontend Logger:** A custom `useLogger` hook catches errors and displays them in a dedicated log panel.
+- **Rust `Result<T, String>`:** Tauri commands return Result types which are converted to Promise rejections in JS.
+- **UI Logs:** `useLogger` hook in `src/App.tsx` captures and displays errors/warnings in a dedicated panel.
 
 ## Cross-Cutting Concerns
 
-**Logging:** Backend uses `eprintln!` and emits `log-info` events to the frontend's `LogPanel`.
-**Validation:** `downloader.rs` uses `ffprobe` to validate the integrity of downloaded video files.
-**Authentication:** Not explicitly required for the target sites, but `reqwest` clients use specific User-Agents to mimic browsers.
+**Logging:** Centralized `log-info` event emission from Rust to Frontend logger.
+**Validation:** `downloader.rs` uses `ffprobe` to validate file integrity after download.
+**Authentication:** Not explicitly required for current targets (uses Browser User-Agents).
 
 ---
 

@@ -7,101 +7,90 @@
 ```
 _rongyok_video_downloader_rust/
 ├── src/                # Frontend (React + TypeScript)
-│   ├── assets/         # Images, fonts, etc.
-│   ├── components/     # UI Components (Button, ProgressBar, etc.)
-│   ├── hooks/          # Custom React Hooks (useLogger, useSettings, etc.)
+│   ├── assets/         # UI assets (icons, styles)
+│   ├── components/     # React UI components
+│   ├── hooks/          # Custom React hooks (logic & state)
 │   ├── types/          # TypeScript interface definitions
 │   ├── App.tsx         # Main application container
-│   ├── main.tsx        # React entry point
-│   └── index.css       # Global styles (Tailwind)
-├── src-tauri/          # Backend (Rust + Tauri config)
-│   ├── icons/          # App icons for different platforms
-│   ├── src/            # Rust source code
-│   │   ├── baanjeen_parser.rs   # Scraper for BaanJeen site
-│   │   ├── chrome_detector.rs   # Headless browser detection logic
-│   │   ├── downloader.rs        # Core download/merge logic
-│   │   ├── lib.rs               # Tauri command definitions & app setup
-│   │   ├── main.rs              # App entry point
-│   │   └── parser.rs            # Scraper for Rongyok site
-│   ├── Cargo.toml      # Rust dependencies
-│   └── tauri.conf.json # Tauri configuration
-├── tests/              # E2E tests (Playwright)
-├── public/             # Static assets for the frontend
-├── dist/               # Build output (frontend)
-└── package.json        # Frontend dependencies & scripts
+│   └── main.tsx        # React entry point
+├── src-tauri/          # Backend (Rust + Tauri)
+│   ├── src/            # Rust source files
+│   │   ├── baanjeen_parser.rs # Website-specific scraper
+│   │   ├── chrome_detector.rs # Headless Chrome automation
+│   │   ├── downloader.rs      # Download and FFmpeg engine
+│   │   ├── lib.rs             # Tauri command handlers & app setup
+│   │   ├── main.rs            # Application entry point
+│   │   └── parser.rs          # Website-specific scraper
+│   ├── tauri.conf.json # Tauri configuration
+│   └── Cargo.toml      # Rust package manifest
+├── package.json        # Frontend dependencies & build scripts
+└── tsconfig.json       # TypeScript configuration
 ```
 
 ## Directory Purposes
 
 **src/components/:**
 - Purpose: Atomic and composite UI components.
-- Contains: React components used across the app.
-- Key files: `SeriesCard.tsx`, `EpisodeSelector.tsx`, `LogPanel.tsx`.
+- Contains: Reusable React components like `Button`, `ProgressBar`, `SeriesCard`.
+- Key files: `src/components/index.ts` (barrel file).
 
 **src/hooks/:**
-- Purpose: Logic encapsulation for React.
-- Contains: Hooks for settings, history, logging, and interaction with Tauri events.
-- Key files: `useLogger.ts`, `useSettings.ts`, `useHistory.ts`.
+- Purpose: Logic encapsulation and state management.
+- Contains: Hooks for logger, settings, history, and system integration.
+- Key files: `src/hooks/useLogger.ts`, `src/hooks/useSettings.ts`.
 
 **src-tauri/src/:**
-- Purpose: Backend logic and system integration.
-- Contains: Rust modules for networking, parsing, and file I/O.
-- Key files: `lib.rs` (the hub), `downloader.rs` (the engine).
+- Purpose: Core application backend.
+- Contains: Rust modules for networking, scraping, and process management.
+- Key files: `src-tauri/src/lib.rs` (bridge), `src-tauri/src/downloader.rs` (engine).
 
 ## Key File Locations
 
 **Entry Points:**
-- `src/main.tsx`: Frontend React root.
-- `src-tauri/src/main.rs`: Backend process root.
+- `src/main.tsx`: React application entry.
+- `src-tauri/src/main.rs`: Rust process entry.
 
 **Configuration:**
-- `src-tauri/tauri.conf.json`: Tauri application settings (permissions, window, bundle).
-- `package.json`: Node.js dependencies and build scripts.
-- `Cargo.toml`: Rust dependencies and metadata.
+- `src-tauri/tauri.conf.json`: Main Tauri configuration.
+- `package.json`: Node.js/Vite configuration.
 
 **Core Logic:**
-- `src-tauri/src/downloader.rs`: Manages `reqwest` and `ffmpeg` processes.
-- `src-tauri/src/chrome_detector.rs`: Manages `headless_chrome` for URL extraction.
+- `src-tauri/src/downloader.rs`: Download management.
+- `src-tauri/src/chrome_detector.rs`: Headless browser control.
 
 **Testing:**
-- `tests/`: Contains Playwright test suites for end-to-end verification.
+- `src-tauri/src/baanjeen_parser.rs`: Contains unit tests for parsing.
 
 ## Naming Conventions
 
 **Files:**
-- Frontend: PascalCase for components (`SeriesCard.tsx`), camelCase for hooks (`useLogger.ts`).
+- Frontend: PascalCase for components (`SeriesCard.tsx`), camelCase for hooks (`useSettings.ts`).
 - Backend: snake_case for Rust modules (`chrome_detector.rs`).
 
 **Directories:**
-- Mostly kebab-case or snake_case for system directories, but frontend follows standard React folder patterns.
+- All lowercase, usually kebab-case or simple names (`components`, `src-tauri`).
 
 ## Where to Add New Code
 
 **New Feature:**
-- Frontend Logic: `src/hooks/`
-- UI: `src/components/`
-- Backend Command: `src-tauri/src/lib.rs`
-- Core Engine: New module in `src-tauri/src/`
+- Add command to `src-tauri/src/lib.rs`.
+- Implement core logic in new or existing module in `src-tauri/src/`.
+- Add UI state/interaction in `src/App.tsx` or new hook in `src/hooks/`.
 
 **New Component/Module:**
-- Component: `src/components/` (remember to export from `index.ts` if applicable).
-- Rust Utility: `src-tauri/src/` as a new module.
+- Create in `src/components/`.
+- Export via `src/components/index.ts`.
 
 **Utilities:**
-- Shared helpers (Frontend): `src/utils/` (if created) or inside specific hooks.
-- Shared helpers (Backend): New module or inside `lib.rs`.
+- Rust helpers in `src-tauri/src/lib.rs` or dedicated module.
+- Frontend helpers in a new `src/utils/` (if needed) or relevant hooks.
 
 ## Special Directories
 
 **src-tauri/binaries/:**
-- Purpose: Holds external binaries like `ffmpeg` (if bundled as sidecars).
-- Generated: No
-- Committed: Yes
-
-**dist/:**
-- Purpose: Compiled frontend assets.
-- Generated: Yes (by `npm run build`)
-- Committed: No
+- Purpose: Location for external sidecar binaries (e.g., ffmpeg).
+- Generated: No.
+- Committed: Yes.
 
 ---
 
