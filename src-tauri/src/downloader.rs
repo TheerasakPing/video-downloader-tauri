@@ -126,7 +126,155 @@ impl VideoDownloader {
         download_state: Option<Arc<DownloadState>>,
     ) -> DownloadResult {
         let file_path = self.get_episode_filename(episode);
+        let file_path_str = file_path.to_string_lossy().to_string();
 
+        // Check if it's an HLS stream (m3u8) - require FFmpeg
+        if video_url.contains(".m3u8") {
+            if !check_ffmpeg() {
+                return DownloadResult {
+                    episode,
+                    success: false,
+                    file_path: None,
+                    error: Some("FFmpeg is required for .m3u8 downloads but was not found".to_string()),
+                };
+            }
+            return self.download_hls_stream(episode, video_url, &file_path_str, app_handle, download_state).await;
+        }
+
+        // Direct file download (MP4, etc) using Reqwest
+        self.download_direct_file(episode, video_url, &file_path, app_handle, download_state).await
+    }
+
+    // Helper for downloading HLS streams with FFmpeg
+    async fn download_hls_stream(
+        &self,
+        episode: i32,
+        video_url: &str,
+        file_path: &str,
+        app_handle: &AppHandle,
+        download_state: Option<Arc<DownloadState>>,
+    ) -> DownloadResult {
+        let mut cmd = get_ffmpeg_command();
+
+        // Add headers to mimic a browser + generic referer
+        let headers = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\nReferer: https://google.com/";
+
+        cmd.args([
+            "-y",
+            "-headers", headers,
+            "-i", video_url,
+            "-c", "copy",
+            // Network resilience flags
+            "-reconnect", "1",
+            "-reconnect_at_eof", "1",
+            "-reconnect_streamed", "1",
+            "-reconnect_delay_max", "2",
+            // Skip bsf filter unless needed, usually not for .mp4 from .ts stream if ffmpeg detects it right
+            // "-bsf:a", "aac_adtstoasc",
+            file_path,
+        ]);
+
+        cmd.stderr(Stdio::piped());
+        cmd.stdout(Stdio::null());
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => return DownloadResult {
+                episode,
+                success: false,
+                file_path: None,
+                error: Some(format!("Failed to start FFmpeg: {}", e)),
+            },
+        };
+
+        let stderr = child.stderr.take().unwrap();
+        let reader = BufReader::new(stderr);
+        let mut last_emit = std::time::Instant::now();
+
+        // Capture last error line
+        let mut last_error_line = String::new();
+
+        // Processing loop
+        for line in reader.lines() {
+            // Check cancellation
+            if let Some(ref state) = download_state {
+                if state.is_cancelled.load(Ordering::SeqCst) {
+                    let _ = child.kill();
+                    let _ = fs::remove_file(file_path);
+                    return DownloadResult {
+                        episode,
+                        success: false,
+                        file_path: None,
+                        error: Some("Download cancelled".to_string()),
+                    };
+                }
+            }
+
+            if let Ok(line) = line {
+                // Keep track of potential error messages
+                if line.contains("Error") || line.contains("Failed") || line.contains("Invalid") {
+                    last_error_line = line.clone();
+                }
+
+                if let Some(current_time) = parse_ffmpeg_time(&line) {
+                    if last_emit.elapsed().as_millis() >= 500 {
+                        // For HLS, we often don't know total size, so we'll just show "Downloaded X sec"
+                        let progress = DownloadProgress {
+                            episode,
+                            downloaded: (current_time * 1024.0 * 1024.0) as u64, // Fake bytes based on time just to show movement
+                            total: 0, // Unknown
+                            speed: 0.0,
+                            percentage: 0.0, // Indeterminate
+                        };
+                        let _ = app_handle.emit("download-progress", progress);
+                        last_emit = std::time::Instant::now();
+                    }
+                }
+            }
+        }
+
+        match child.wait() {
+            Ok(status) => {
+                if status.success() {
+                    DownloadResult {
+                        episode,
+                        success: true,
+                        file_path: Some(file_path.to_string()),
+                        error: None,
+                    }
+                } else {
+                    let err_msg = if !last_error_line.is_empty() {
+                        format!("FFmpeg exited with error: {}", last_error_line)
+                    } else {
+                        "FFmpeg exited with error (unknown cause)".to_string()
+                    };
+
+                    DownloadResult {
+                        episode,
+                        success: false,
+                        file_path: None,
+                        error: Some(err_msg),
+                    }
+                }
+            },
+            Err(e) => DownloadResult {
+                episode,
+                success: false,
+                file_path: None,
+                error: Some(format!("Failed to wait for FFmpeg: {}", e)),
+            }
+        }
+    }
+
+    // Existing logic moved to helper method
+    async fn download_direct_file(
+        &self,
+        episode: i32,
+        video_url: &str,
+        file_path: &PathBuf,
+        app_handle: &AppHandle,
+        download_state: Option<Arc<DownloadState>>,
+    ) -> DownloadResult {
         // Check for existing partial download
         let mut start_byte: u64 = 0;
         if file_path.exists() {
@@ -459,6 +607,7 @@ fn validate_video_file(path: &str) -> bool {
 }
 
 /// Merge videos using FFmpeg
+#[allow(dead_code)]
 pub fn merge_videos(video_files: Vec<String>, output_path: &str) -> Result<(), String> {
     merge_videos_with_progress(video_files, output_path, None)
 }

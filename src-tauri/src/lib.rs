@@ -1,8 +1,12 @@
+mod baanjeen_parser;
+mod chrome_detector;
 mod downloader;
 mod parser;
 
+use baanjeen_parser::BaanJeenParser;
+use chrome_detector::ChromeVideoDetector;
 use downloader::{check_ffmpeg, merge_videos_with_progress, sanitize_filename, DownloadConfig, DownloadResult, DownloadState, VideoDownloader};
-use parser::{RongyokParser, SeriesInfo};
+use parser::RongyokParser;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -20,11 +24,25 @@ fn expand_path(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
+// Unified series info that works with both parsers
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnifiedSeriesInfo {
+    pub series_id: i32,
+    pub title: String,
+    pub total_episodes: i32,
+    pub poster_url: Option<String>,
+    pub episode_urls: HashMap<i32, String>,
+    pub source: String, // "rongyok" or "baanjeen"
+}
+
 // App state
 struct AppState {
-    parser: RongyokParser,
+    rongyok_parser: RongyokParser,
+    baanjeen_parser: BaanJeenParser,
+    chrome_detector: Mutex<ChromeVideoDetector>,
     downloader: Mutex<Option<VideoDownloader>>,
-    current_series: Mutex<Option<SeriesInfo>>,
+    current_series: Mutex<Option<UnifiedSeriesInfo>>,
     download_states: Mutex<HashMap<i32, Arc<DownloadState>>>,
 }
 
@@ -44,10 +62,105 @@ struct DownloadRequest {
 // Commands
 
 #[tauri::command]
-async fn fetch_series(url: String, state: State<'_, AppState>) -> Result<SeriesInfo, String> {
-    let series_id = RongyokParser::parse_series_url(&url).ok_or("Invalid URL format")?;
+async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppState>) -> Result<UnifiedSeriesInfo, String> {
+    // Check if URL is a direct video file
+    if url.contains(".m3u8") || url.contains(".mp4") {
+        let mut episode_urls = HashMap::new();
+        episode_urls.insert(1, url.clone());
 
-    let series_info = state.parser.get_series_info(series_id, Some(&url)).await?;
+        // Extract filename from URL as title
+        let title = url.split('/').last()
+            .and_then(|s| s.split('?').next())
+            .unwrap_or("Direct Video")
+            .to_string();
+
+        let series_info = UnifiedSeriesInfo {
+            series_id: 0,
+            title,
+            total_episodes: 1,
+            poster_url: None,
+            episode_urls,
+            source: "direct".to_string(),
+        };
+
+        *state.current_series.lock().unwrap() = Some(series_info.clone());
+        return Ok(series_info);
+    }
+
+    // Check which parser to use based on URL
+    let series_info = if BaanJeenParser::is_baanjeen_url(&url) {
+        // Use BaanJeen parser
+        let mut baanjeen_info = state.baanjeen_parser.get_series_info(&url).await?;
+
+        // HYBRID MODE: If no episodes found with static parsing, try Chrome detector
+        if baanjeen_info.episode_urls.is_empty() {
+            eprintln!("[Hybrid] Static parsing failed, trying Chrome detector on MAIN URL...");
+            let _ = app_handle.emit("log-info", "Static parsing failed, activating Chrome detector...".to_string());
+
+            // Acquire lock and run detection
+            let mut detector = state.chrome_detector.lock().unwrap();
+
+            // 1. Try Main URL
+            let mut found_url = detector.detect_video_url(&url, Some(&app_handle)).ok().flatten();
+
+            // 2. If not found, try Iframes
+            if found_url.is_none() && !baanjeen_info.iframe_urls.is_empty() {
+                eprintln!("[Hybrid] Main URL failed, trying {} iframes...", baanjeen_info.iframe_urls.len());
+                let _ = app_handle.emit("log-info", format!("Main URL failed, scanning {} iframes...", baanjeen_info.iframe_urls.len()));
+
+                for (i, iframe_url) in baanjeen_info.iframe_urls.iter().enumerate() {
+                    let _ = app_handle.emit("log-info", format!("Scanning iframe {}/{}...", i+1, baanjeen_info.iframe_urls.len()));
+                    // Ensure iframe URL is absolute
+                    let target_url = if iframe_url.starts_with("//") {
+                        format!("https:{}", iframe_url)
+                    } else if iframe_url.starts_with("/") {
+                        format!("https://xn--82c7abb4jua0l.com{}", iframe_url)
+                    } else {
+                        iframe_url.clone()
+                    };
+
+                    if let Ok(Some(video_url)) = detector.detect_video_url(&target_url, Some(&app_handle)) {
+                        found_url = Some(video_url);
+                        break;
+                    }
+                }
+            }
+
+            // Process result
+            if let Some(video_url) = found_url {
+                eprintln!("[Hybrid] Chrome detector found URL: {}", video_url);
+                let _ = app_handle.emit("log-info", format!("Chrome detector found video: {}", video_url));
+                baanjeen_info.episode_urls.insert(1, video_url);
+                baanjeen_info.total_episodes = 1;
+            } else {
+                eprintln!("[Hybrid] Chrome detector found no video");
+                let _ = app_handle.emit("log-info", "Chrome detector found no video after checking main page and iframes".to_string());
+            }
+        }
+
+        UnifiedSeriesInfo {
+            series_id: 0, // BaanJeen doesn't use numeric IDs
+            title: baanjeen_info.title,
+            total_episodes: baanjeen_info.total_episodes,
+            poster_url: baanjeen_info.poster_url,
+            episode_urls: baanjeen_info.episode_urls,
+            source: "baanjeen".to_string(),
+        }
+    } else {
+        // Use Rongyok parser
+        let series_id = RongyokParser::parse_series_url(&url).ok_or("Invalid URL format")?;
+        let rongyok_info = state.rongyok_parser.get_series_info(series_id, Some(&url)).await?;
+        UnifiedSeriesInfo {
+            series_id: rongyok_info.series_id,
+            title: rongyok_info.title,
+            total_episodes: rongyok_info.total_episodes,
+            poster_url: rongyok_info.poster_url,
+            episode_urls: rongyok_info.episode_urls,
+            source: "rongyok".to_string(),
+        }
+    };
+
+    let series_info = series_info;
 
     // Store in state
     *state.current_series.lock().unwrap() = Some(series_info.clone());
@@ -58,6 +171,16 @@ async fn fetch_series(url: String, state: State<'_, AppState>) -> Result<SeriesI
 #[tauri::command]
 fn check_ffmpeg_available() -> bool {
     check_ffmpeg()
+}
+
+#[tauri::command]
+async fn auto_detect_video_url(url: String, app_handle: AppHandle, state: State<'_, AppState>) -> Result<Option<String>, String> {
+    eprintln!("[AutoDetect] Starting auto-detection for: {}", url);
+
+    let mut detector = state.chrome_detector.lock().unwrap();
+    let video_url = detector.detect_video_url(&url, Some(&app_handle))?;
+
+    Ok(video_url)
 }
 
 #[tauri::command]
@@ -297,7 +420,7 @@ async fn get_episode_url(
     }
 
     // Fetch fresh
-    let series_info = state.parser.get_series_info(series_id, None).await?;
+    let series_info = state.rongyok_parser.get_series_info(series_id, None).await?;
     series_info
         .episode_urls
         .get(&episode)
@@ -446,7 +569,12 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(AppState {
-            parser: RongyokParser::new(),
+            rongyok_parser: RongyokParser::new(),
+            baanjeen_parser: BaanJeenParser::new(),
+            chrome_detector: Mutex::new(ChromeVideoDetector::new().unwrap_or_else(|e| {
+                eprintln!("Warning: Chrome detector initialization failed: {}", e);
+                ChromeVideoDetector::new().unwrap()
+            })),
             downloader: Mutex::new(None),
             current_series: Mutex::new(None),
             download_states: Mutex::new(HashMap::new()),
@@ -454,6 +582,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             fetch_series,
             check_ffmpeg_available,
+            auto_detect_video_url,
             start_download,
             pause_download,
             resume_download,

@@ -42,3 +42,6 @@ base64 = "0.22"
 # Error handling
 thiserror = "2"
 anyhow = "1"
+
+# Headless browser for auto-detection
+headless_chrome = "1.0"
