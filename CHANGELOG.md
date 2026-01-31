@@ -6,20 +6,41 @@ All notable changes to Rongyok Video Downloader will be documented in this file.
 
 All notable changes to Rongyok Video Downloader will be documented in this file.
 
+## [1.8.0] - 2026-01-31
+
+### Added
+
+- **Smart Queue (Batch Mode)**:
+  - Multi-URL support: Paste multiple links at once.
+  - Auto-fetch: Automatically validates and fetches info for queue items.
+  - **Sequential Downloading**: Auto-processes queue one-by-one.
+- **Auto Capture**: Clipboard monitoring to automatically add copied links to queue.
+- **Smart Queue Bar**: Persistent top bar for queue controls (Play/Pause, Clear, Status).
+- **Status Icons**: Clear visual indicators for queue item status (Pending/Downloading/Completed/Error).
+- **51cg1.com Support**: Beta support for 51cg1.com video downloading.
+
+### Changed
+
+- Refactored App UI to support persistent Queue Bar.
+- Improved error handling in batch processing.
+
 ## [1.6.0] - 2026-01-19
 
 ### Added
+
 - **Pause/Resume Downloads**: Real-time pause and resume for active downloads
 - **Cancel Download**: Cancel active download and delete partial file
 - **Restart Resume**: Downloads automatically resume from partial files on restart
 
 ### Changed
+
 - Refactored download state management with thread-safe atomic flags
 - Improved error handling for pause/resume operations
 
 ## [1.5.3] - 2026-01-19
 
 ### Fixed
+
 - **Updater Signing Pipeline**: All platforms now have working signatures
   - macOS (ARM64 & x86_64): `.app.tar.gz` with valid signatures
   - Linux: `.AppImage` with valid signatures
@@ -28,12 +49,14 @@ All notable changes to Rongyok Video Downloader will be documented in this file.
 - Fixed workflow YAML syntax issues with heredoc
 
 ### Changed
+
 - Replaced heredoc with `jq` for reliable JSON generation in CI
 - Updated signing key format to Tauri v2 compatible format
 
 ## [1.5.0] - 2026-01-19
 
 ### Fixed
+
 - **Updater Configuration**: Added `createUpdaterArtifacts: true` to enable signing
 - Fixed signing key format (base64-encoded full pubkey file)
 - Fixed password configuration for signing keys
@@ -41,17 +64,20 @@ All notable changes to Rongyok Video Downloader will be documented in this file.
 ## [1.4.0] - 2026-01-18
 
 ### Added
+
 - **Auto-paste from Clipboard**: Automatically paste URL when app gains focus
 - **Auto-fetch**: Automatically fetch series info after pasting URL
 - **thongyok.com Support**: Added support for thongyok.com URLs
 - **Improved History Panel**: Now stores up to 500 download records
 
 ### Changed
+
 - Enhanced clipboard integration with Tauri clipboard plugin
 
 ## [1.3.0] - 2026-01-18
 
 ### Added
+
 - **Drag & Drop URL**: Drag URL text directly onto the app window to add it
 - **Keyboard Shortcuts**:
   - `Ctrl+V` - Paste URL from clipboard
@@ -79,12 +105,14 @@ All notable changes to Rongyok Video Downloader will be documented in this file.
 - **Video Preview Component**: Ready for video preview before download
 
 ### Changed
+
 - Settings panel now includes Language and Color Theme sections
 - App entry wrapped with I18nProvider for translation support
 
 ## [1.2.0] - 2026-01-18
 
 ### Added
+
 - **Glowing Icon Effects**: Beautiful glowing icons throughout the app
   - CSS classes for glowing icons with multiple color variants (violet, fuchsia, emerald, blue, amber, red, cyan, slate)
   - Animated pulse glow effect for active/important icons
@@ -94,12 +122,14 @@ All notable changes to Rongyok Video Downloader will be documented in this file.
   - Tab glow effect for active tabs
 
 ### Changed
+
 - Updated Logo component with enhanced visual effects
 - Improved visual feedback on interactive elements
 
 ## [1.1.0] - 2026-01-18
 
 ### Added
+
 - **OTA Update Feature**: Check for updates directly from GitHub releases
   - Auto-check on app startup (3 seconds after launch)
   - Manual check via "Check Now" button in Settings
@@ -110,12 +140,14 @@ All notable changes to Rongyok Video Downloader will be documented in this file.
 - **Custom Logo**: New gradient logo with play button and download arrow design
 
 ### Changed
+
 - Updated header with gradient title styling
 - Improved tab icons
 
 ## [1.0.0] - 2026-01-18
 
 ### Added
+
 - Initial release of Rongyok Video Downloader
 - Video downloading from rongyok.com
 - Episode selection with select all/deselect all

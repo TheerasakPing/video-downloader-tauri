@@ -267,7 +267,13 @@ function App() {
             const result = await invoke<SeriesInfo>("fetch_series", { url });
             setBatchQueue((prev) =>
               prev.map((item, idx) =>
-                idx === i ? { ...item, status: "ready", info: result } : item,
+                idx === i
+                  ? {
+                      ...item,
+                      status: "ready",
+                      info: { ...result, url },
+                    }
+                  : item,
               ),
             );
           } catch (e) {
@@ -314,7 +320,10 @@ function App() {
   }, [log, error, success, isValidSeriesUrl]);
 
   const runDownload = useCallback(
-    async (targetSeries: SeriesInfo, targetEpisodes: Set<number>) => {
+    async (
+      targetSeries: SeriesInfo,
+      targetEpisodes: Set<number>,
+    ): Promise<boolean> => {
       const episodes = Array.from(targetEpisodes).sort((a, b) => a - b);
       log(
         `Starting download of ${episodes.length} episodes for ${targetSeries.title}`,
@@ -355,37 +364,12 @@ function App() {
       resetSpeedGraph();
 
       try {
-        // Must load series into backend state for this to work?
-        // fetch_series does: *state.current_series.lock() = Some(info).
-        // start_download reads: state.current_series.
-        // So checking multiple series: we MUST ensure backend has the "current" series set before downloading.
-        // DOES fetch_series return info (yes) and set state (yes).
-        // If we have multiple series, we must RE-INVOKE fetch_series or set state before start_download.
-        // But fetch_series re-scrapes? No, ideally we cached it?
-        // Backend state only holds ONE series.
-        // So for batch, we might need to re-send the SeriesInfo to backend?
-        // OR re-fetch (fast if cached?).
-        // TitanParser doesn't cache.
-        // BETTER: Update `start_download` to accept SeriesInfo? No, backend specific.
-        // SAFEST: Re-call `fetch_series` (it's fast if we just need to set state) OR add `set_current_series` command.
-        // But `fetch_series` does network.
-        // Actually `start_download` relies on `current_series`.
-        // If I downloaded A, then B.
-        // If I loop:
-        // 1. fetch_series(A.url) -> sets backend state.
-        // 2. start_download(A).
-        // 3. fetch_series(B.url) -> sets backend state.
-        // 4. start_download(B).
-        // This is the robust way.
-        // So `runDownload` should probably accept URL and re-fetch quick?
-        // Or we just rely on `targetSeries` being passed, and we assume we call `fetch_series` right before `start_download`?
-        // Yes, inside `runDownload` we should ensuring backend state.
-        // But `runDownload` is receiving `SeriesInfo`.
-        // Let's assume for now current flow is: User fetched A. Backend has A. User clicks Download A.
-        // For B: We must ensure Backend has B.
-        // So in `handleBatchDownload`, loop:
-        //   await invoke("fetch_series", { url: item.url }); // Set backend state
-        //   await runDownload(item.info, allEpisodes);
+        // Ensure backend has the correct series loaded
+        await invoke("fetch_series", {
+          url:
+            targetSeries.url ||
+            `https://rongyok.com/series/${targetSeries.seriesId}/stub`,
+        });
 
         const results = await invoke<DownloadResult[]>("start_download", {
           request: {
@@ -425,17 +409,21 @@ function App() {
           success(
             `All ${successCount} episodes of ${targetSeries.title} downloaded!`,
           );
+          refreshFiles();
+          return true;
         } else {
           warning(
             `Downloaded ${successCount}/${episodes.length} episodes (${failCount} failed)`,
           );
+          refreshFiles();
+          return false;
         }
-
-        refreshFiles();
       } catch (e) {
         error(`Download failed: ${e}`);
+        return false;
       } finally {
         setDownloadState((prev) => ({ ...prev, isDownloading: false }));
+        // Only clear queue if NOT in batch mode (Batch mode manages its own queue)
         if (!isBatchMode) {
           setQueue([]);
         }
@@ -539,18 +527,18 @@ function App() {
         );
 
         try {
-          // Ensure backend state
-          await invoke("fetch_series", { url: item.url });
-
           const allEpisodes = new Set(
             Array.from({ length: item.info!.totalEpisodes }, (_, i) => i + 1),
           );
 
-          await runDownload(item.info!, allEpisodes);
+          // runDownload now fetches series info internally to ensure consistency
+          const success = await runDownload(item.info!, allEpisodes);
 
           setBatchQueue((prev) =>
             prev.map((it, idx) =>
-              idx === nextIdx ? { ...it, status: "completed" } : it,
+              idx === nextIdx
+                ? { ...it, status: success ? "completed" : "failed" }
+                : it,
             ),
           );
         } catch (e) {

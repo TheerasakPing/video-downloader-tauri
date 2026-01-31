@@ -2,6 +2,7 @@ export interface SeriesInfo {
   seriesId: number;
   title: string;
   totalEpisodes: number;
+  url?: string;
   posterUrl?: string;
   episodeUrls: Record<number, string>;
 }
