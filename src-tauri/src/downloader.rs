@@ -1,3 +1,4 @@
+use crate::utils::sanitize_filename;
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -83,15 +84,7 @@ impl VideoDownloader {
             .expect("Failed to create HTTP client");
 
         // Expand ~ to home directory
-        let expanded_dir = if output_dir.starts_with("~/") {
-            if let Some(home) = dirs::home_dir() {
-                home.join(&output_dir[2..])
-            } else {
-                PathBuf::from(output_dir)
-            }
-        } else {
-            PathBuf::from(output_dir)
-        };
+        let expanded_dir = crate::utils::expand_path(output_dir);
 
         fs::create_dir_all(&expanded_dir).ok();
 
@@ -157,7 +150,8 @@ impl VideoDownloader {
         let mut cmd = get_ffmpeg_command();
 
         // Add headers to mimic a browser + generic referer
-        let headers = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\nReferer: https://google.com/";
+        // Add headers to mimic a browser (removed specific Referer to avoid 403 on some sites)
+        let headers = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
         cmd.args([
             "-y",
@@ -176,6 +170,10 @@ impl VideoDownloader {
 
         cmd.stderr(Stdio::piped());
         cmd.stdout(Stdio::null());
+
+        let cmd_str = format!("{:?} {:?}", cmd.get_program(), cmd.get_args());
+        let _ = app_handle.emit("log-info", format!("Running FFmpeg: {}", cmd_str));
+        eprintln!("[Downloader] Running FFmpeg: {}", cmd_str);
 
         let mut child = match cmd.spawn() {
             Ok(c) => c,
@@ -211,19 +209,27 @@ impl VideoDownloader {
             }
 
             if let Ok(line) = line {
+                // Log the first few lines to see what's happening
+                if last_emit.elapsed().as_secs() < 5 {
+                     let _ = app_handle.emit("log-info", format!("FFmpeg output: {}", line));
+                     eprintln!("[FFmpeg Output] {}", line);
+                }
+                
                 // Keep track of potential error messages
                 if line.contains("Error") || line.contains("Failed") || line.contains("Invalid") {
                     last_error_line = line.clone();
+                    let _ = app_handle.emit("log-info", format!("FFmpeg error found: {}", line));
+                    eprintln!("[FFmpeg Error] {}", line);
                 }
 
-                if let Some(current_time) = parse_ffmpeg_time(&line) {
+                if let Some(stats) = parse_ffmpeg_stats(&line) {
                     if last_emit.elapsed().as_millis() >= 500 {
-                        // For HLS, we often don't know total size, so we'll just show "Downloaded X sec"
+                        let speed_bps = stats.bitrate_kbps * 1024.0 / 8.0; // Convert kbps to Bytes/s roughly
                         let progress = DownloadProgress {
                             episode,
-                            downloaded: (current_time * 1024.0 * 1024.0) as u64, // Fake bytes based on time just to show movement
-                            total: 0, // Unknown
-                            speed: 0.0,
+                            downloaded: stats.size_bytes,
+                            total: 0, // Unknown for HLS usually
+                            speed: speed_bps,
                             percentage: 0.0, // Indeterminate
                         };
                         let _ = app_handle.emit("download-progress", progress);
@@ -628,8 +634,93 @@ fn get_video_duration(path: &str) -> Option<f64> {
 }
 
 /// Parse FFmpeg progress output to extract time in seconds
-fn parse_ffmpeg_time(line: &str) -> Option<f64> {
-    // FFmpeg outputs progress in format: time=00:01:23.45
+struct FFmpegStats {
+    time_seconds: f64,
+    size_bytes: u64,
+    bitrate_kbps: f64,
+}
+
+/// Parse FFmpeg progress output to extract stats
+fn parse_ffmpeg_stats(line: &str) -> Option<FFmpegStats> {
+    // Example: size=    9728KiB time=00:00:29.56 bitrate=2695.9kbits/s speed= 8.4x
+    
+    let mut stats = FFmpegStats {
+        time_seconds: 0.0,
+        size_bytes: 0,
+        bitrate_kbps: 0.0,
+    };
+    let mut found = false;
+
+    // Parse time
+    if let Some(time_start) = line.find("time=") {
+        let time_str = &line[time_start + 5..];
+        if let Some(end) = time_str.find(' ') {
+            let time_part = &time_str[..end];
+            let parts: Vec<&str> = time_part.split(':').collect();
+            if parts.len() == 3 {
+                let hours: f64 = parts[0].parse().unwrap_or(0.0);
+                let minutes: f64 = parts[1].parse().unwrap_or(0.0);
+                let seconds: f64 = parts[2].parse().unwrap_or(0.0);
+                stats.time_seconds = hours * 3600.0 + minutes * 60.0 + seconds;
+                found = true;
+            }
+        }
+    }
+
+    // Parse size
+    if let Some(size_start) = line.find("size=") {
+        let size_str = &line[size_start + 5..];
+        if let Some(end) = size_str.find(' ') {
+            let val_str = size_str[..end].trim();
+            // Check unit
+            if let Some(num_str) = val_str.strip_suffix("KiB") {
+                if let Ok(val) = num_str.trim().parse::<f64>() {
+                    stats.size_bytes = (val * 1024.0) as u64;
+                    found = true;
+                }
+            } else if let Some(num_str) = val_str.strip_suffix("MiB") {
+                if let Ok(val) = num_str.trim().parse::<f64>() {
+                    stats.size_bytes = (val * 1024.0 * 1024.0) as u64;
+                    found = true;
+                }
+            } else if let Some(num_str) = val_str.strip_suffix("kB") {
+                 if let Ok(val) = num_str.trim().parse::<f64>() {
+                    stats.size_bytes = (val * 1000.0) as u64;
+                    found = true;
+                }
+            } else if let Some(num_str) = val_str.strip_suffix("MB") {
+                 if let Ok(val) = num_str.trim().parse::<f64>() {
+                    stats.size_bytes = (val * 1000.0 * 1000.0) as u64;
+                    found = true;
+                }
+            } else if let Ok(val) = val_str.parse::<u64>() {
+                 // Assume bytes if no unit? FFmpeg usually has unit.
+                 stats.size_bytes = val;
+                 found = true;
+            }
+        }
+    }
+
+    // Parse bitrate (kbits/s)
+    if let Some(br_start) = line.find("bitrate=") {
+        let br_str = &line[br_start + 8..];
+        if let Some(end) = br_str.find("kbits/s") {
+             if let Ok(val) = br_str[..end].trim().parse::<f64>() {
+                 stats.bitrate_kbps = val;
+             }
+        }
+    }
+
+    if found {
+        Some(stats)
+    } else {
+        None
+    }
+}
+
+/// Helper for legacy time parsing if needed (kept for compatibility or remove/rename)
+fn parse_ffmpeg_time_legacy(line: &str) -> Option<f64> {
+     // FFmpeg outputs progress in format: time=00:01:23.45
     if let Some(time_start) = line.find("time=") {
         let time_str = &line[time_start + 5..];
         if let Some(end) = time_str.find(' ') {
@@ -733,7 +824,8 @@ pub fn merge_videos_with_progress(video_files: Vec<String>, output_path: &str, a
 
     for line in reader.lines() {
         if let Ok(line) = line {
-            if let Some(current_time) = parse_ffmpeg_time(&line) {
+            if let Some(stats) = parse_ffmpeg_stats(&line) {
+                let current_time = stats.time_seconds;
                 let percentage = if total_duration > 0.0 {
                     (current_time / total_duration * 100.0).min(100.0)
                 } else {
@@ -840,7 +932,7 @@ fn merge_videos_reencode(video_files: Vec<String>, output_path: &str, app_handle
 
     for line in reader.lines() {
         if let Ok(line) = line {
-            if let Some(current_time) = parse_ffmpeg_time(&line) {
+            if let Some(current_time) = parse_ffmpeg_time_legacy(&line) {
                 let percentage = if total_duration > 0.0 {
                     (current_time / total_duration * 100.0).min(100.0)
                 } else {
@@ -881,17 +973,4 @@ fn merge_videos_reencode(video_files: Vec<String>, output_path: &str, app_handle
     }
 }
 
-/// Sanitize filename - handle UTF-8 properly
-pub fn sanitize_filename(name: &str) -> String {
-    let re = regex::Regex::new(r#"[<>:"/\\|?*]"#).unwrap();
-    let clean = re.replace_all(name, "");
-    let clean = clean.trim();
-
-    // Use chars() to properly handle UTF-8 instead of byte slicing
-    let chars: Vec<char> = clean.chars().collect();
-    if chars.len() > 50 {
-        chars[..50].iter().collect()
-    } else {
-        clean.to_string()
-    }
-}
+// Sanitize filename helper moved to utils.rs

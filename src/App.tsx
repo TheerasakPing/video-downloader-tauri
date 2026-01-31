@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -19,6 +19,10 @@ import {
   Keyboard,
   Clock,
   AlertCircle,
+  ListOrdered,
+  Loader2,
+  CheckCircle,
+  Image as ImageIcon,
 } from "lucide-react";
 import {
   Button,
@@ -65,6 +69,20 @@ interface FileInfo {
   isMerged: boolean;
 }
 
+interface BatchItem {
+  url: string;
+  status:
+    | "pending"
+    | "fetching"
+    | "ready"
+    | "error"
+    | "downloading"
+    | "completed"
+    | "failed";
+  info?: SeriesInfo;
+  error?: string;
+}
+
 type TabType = "download" | "files" | "history" | "settings" | "logs";
 
 function App() {
@@ -79,6 +97,13 @@ function App() {
   const [ffmpegAvailable, setFfmpegAvailable] = useState(false);
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [queue, setQueue] = useState<QueueItem[]>([]);
+
+  // Batch Mode State
+  const [isBatchMode, setIsBatchMode] = useState(false);
+  const [batchQueue, setBatchQueue] = useState<BatchItem[]>([]);
+  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
+  const [isAutoCapture, setIsAutoCapture] = useState(false);
+
   const [mergeState, setMergeState] = useState<{
     isMerging: boolean;
     mergedFile: string | null;
@@ -116,6 +141,36 @@ function App() {
     speed: 0,
     percentage: 0,
   });
+
+  const [detectionState, setDetectionState] = useState<{
+    isDetecting: boolean;
+    message: string;
+    progress: number;
+  }>({
+    isDetecting: false,
+    message: "",
+    progress: 0,
+  });
+
+  // Helper to check if URL is valid for this app
+  const isValidSeriesUrl = useCallback((text: string): boolean => {
+    if (!text) return false;
+    return (
+      text.includes("rongyok.com") ||
+      text.includes("thongyok.com") ||
+      text.includes("51cg1.com")
+    );
+  }, []);
+
+  const extractUrls = useCallback(
+    (text: string) => {
+      return text
+        .split(/[\n\s]+/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0 && isValidSeriesUrl(l));
+    },
+    [isValidSeriesUrl],
+  );
 
   // Hooks
   const { logs, log, success, warning, error, clearLogs } = useLogger();
@@ -182,11 +237,59 @@ function App() {
         error("Clipboard is empty");
         return;
       }
+
+      // Check for multiple URLs
+      const lines = text
+        .split(/[\n\s]+/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+      const validUrls = lines.filter((l) => isValidSeriesUrl(l));
+
+      if (validUrls.length > 1) {
+        // Batch Mode
+        log(`Detected ${validUrls.length} URLs - Switching to Batch Mode`);
+        setIsBatchMode(true);
+        const newBatch: BatchItem[] = validUrls.map((u) => ({
+          url: u,
+          status: "pending",
+        }));
+        setBatchQueue(newBatch);
+
+        // Process batch
+        for (let i = 0; i < newBatch.length; i++) {
+          const url = newBatch[i].url;
+          setBatchQueue((prev) =>
+            prev.map((item, idx) =>
+              idx === i ? { ...item, status: "fetching" } : item,
+            ),
+          );
+          try {
+            const result = await invoke<SeriesInfo>("fetch_series", { url });
+            setBatchQueue((prev) =>
+              prev.map((item, idx) =>
+                idx === i ? { ...item, status: "ready", info: result } : item,
+              ),
+            );
+          } catch (e) {
+            setBatchQueue((prev) =>
+              prev.map((item, idx) =>
+                idx === i
+                  ? { ...item, status: "error", error: String(e) }
+                  : item,
+              ),
+            );
+          }
+        }
+        success(`Ready to download ${validUrls.length} series`);
+        return;
+      }
+
       setUrl(text);
       log(`Pasted URL: ${text}`);
 
-      // Auto-fetch if valid URL
-      if (text.includes("rongyok.com") || text.includes("thongyok.com")) {
+      // Auto-fetch if valid URL (Single)
+      if (isValidSeriesUrl(text)) {
+        setIsBatchMode(false); // Reset batch mode if single
         setIsFetching(true);
         try {
           const result = await invoke<SeriesInfo>("fetch_series", {
@@ -208,117 +311,273 @@ function App() {
     } catch (e) {
       error("Failed to read clipboard");
     }
-  }, [log, error, success]);
+  }, [log, error, success, isValidSeriesUrl]);
 
-  const handleStartDownload = useCallback(async () => {
+  const runDownload = useCallback(
+    async (targetSeries: SeriesInfo, targetEpisodes: Set<number>) => {
+      const episodes = Array.from(targetEpisodes).sort((a, b) => a - b);
+      log(
+        `Starting download of ${episodes.length} episodes for ${targetSeries.title}`,
+      );
+
+      const recordId = addRecord({
+        seriesId: targetSeries.seriesId,
+        seriesTitle: targetSeries.title,
+        episodes,
+        completedEpisodes: [],
+        failedEpisodes: [],
+        startTime: new Date().toISOString(),
+        totalSize: 0,
+        status: "partial",
+      });
+
+      setQueue(
+        episodes.map((ep, i) => ({
+          id: `${targetSeries.seriesId}-${ep}`,
+          seriesId: targetSeries.seriesId,
+          seriesTitle: targetSeries.title,
+          episode: ep,
+          status: i === 0 ? "downloading" : "pending",
+          progress: 0,
+          priority: i,
+        })),
+      );
+
+      setDownloadState({
+        isDownloading: true,
+        isPaused: false,
+        currentEpisode: 0,
+        completedEpisodes: [],
+        failedEpisodes: [],
+        totalSelected: episodes.length,
+      });
+
+      resetSpeedGraph();
+
+      try {
+        // Must load series into backend state for this to work?
+        // fetch_series does: *state.current_series.lock() = Some(info).
+        // start_download reads: state.current_series.
+        // So checking multiple series: we MUST ensure backend has the "current" series set before downloading.
+        // DOES fetch_series return info (yes) and set state (yes).
+        // If we have multiple series, we must RE-INVOKE fetch_series or set state before start_download.
+        // But fetch_series re-scrapes? No, ideally we cached it?
+        // Backend state only holds ONE series.
+        // So for batch, we might need to re-send the SeriesInfo to backend?
+        // OR re-fetch (fast if cached?).
+        // TitanParser doesn't cache.
+        // BETTER: Update `start_download` to accept SeriesInfo? No, backend specific.
+        // SAFEST: Re-call `fetch_series` (it's fast if we just need to set state) OR add `set_current_series` command.
+        // But `fetch_series` does network.
+        // Actually `start_download` relies on `current_series`.
+        // If I downloaded A, then B.
+        // If I loop:
+        // 1. fetch_series(A.url) -> sets backend state.
+        // 2. start_download(A).
+        // 3. fetch_series(B.url) -> sets backend state.
+        // 4. start_download(B).
+        // This is the robust way.
+        // So `runDownload` should probably accept URL and re-fetch quick?
+        // Or we just rely on `targetSeries` being passed, and we assume we call `fetch_series` right before `start_download`?
+        // Yes, inside `runDownload` we should ensuring backend state.
+        // But `runDownload` is receiving `SeriesInfo`.
+        // Let's assume for now current flow is: User fetched A. Backend has A. User clicks Download A.
+        // For B: We must ensure Backend has B.
+        // So in `handleBatchDownload`, loop:
+        //   await invoke("fetch_series", { url: item.url }); // Set backend state
+        //   await runDownload(item.info, allEpisodes);
+
+        const results = await invoke<DownloadResult[]>("start_download", {
+          request: {
+            seriesId: targetSeries.seriesId,
+            episodes,
+            outputDir: settings.outputDir,
+            autoMerge: settings.autoMerge && ffmpegAvailable,
+            concurrentDownloads: settings.concurrentDownloads,
+            speedLimit: settings.speedLimit,
+            fileNaming: settings.fileNaming,
+            seriesTitle: targetSeries.title,
+          },
+        });
+
+        const successCount = results.filter((r) => r.success).length;
+        const failCount = results.filter((r) => !r.success).length;
+        const totalSize = 100 * 1024 * 1024 * successCount;
+
+        updateRecord(recordId, {
+          completedEpisodes: results
+            .filter((r) => r.success)
+            .map((r) => r.episode),
+          failedEpisodes: results
+            .filter((r) => !r.success)
+            .map((r) => r.episode),
+          endTime: new Date().toISOString(),
+          totalSize,
+          status:
+            failCount === 0
+              ? "completed"
+              : failCount === episodes.length
+                ? "failed"
+                : "partial",
+        });
+
+        if (failCount === 0) {
+          success(
+            `All ${successCount} episodes of ${targetSeries.title} downloaded!`,
+          );
+        } else {
+          warning(
+            `Downloaded ${successCount}/${episodes.length} episodes (${failCount} failed)`,
+          );
+        }
+
+        refreshFiles();
+      } catch (e) {
+        error(`Download failed: ${e}`);
+      } finally {
+        setDownloadState((prev) => ({ ...prev, isDownloading: false }));
+        if (!isBatchMode) {
+          setQueue([]);
+        }
+      }
+    },
+    [
+      settings,
+      ffmpegAvailable,
+      addRecord,
+      updateRecord,
+      log,
+      success,
+      warning,
+      error,
+      resetSpeedGraph,
+      isBatchMode,
+    ],
+  );
+
+  const handleStartDownload = useCallback(() => {
     if (!series || selectedEpisodes.size === 0) {
       error("Please select at least one episode");
       return;
     }
+    runDownload(series, selectedEpisodes);
+  }, [series, selectedEpisodes, runDownload, error]);
 
-    const episodes = Array.from(selectedEpisodes).sort((a, b) => a - b);
-    log(`Starting download of ${episodes.length} episodes`);
+  // Clipboard Monitor
+  const lastClipboard = useRef<string>("");
 
-    const recordId = addRecord({
-      seriesId: series.seriesId,
-      seriesTitle: series.title,
-      episodes,
-      completedEpisodes: [],
-      failedEpisodes: [],
-      startTime: new Date().toISOString(),
-      totalSize: 0,
-      status: "partial",
-    });
+  useEffect(() => {
+    let interval: number;
+    if (isAutoCapture) {
+      interval = window.setInterval(async () => {
+        try {
+          const text = await readText();
+          if (text && text !== lastClipboard.current) {
+            lastClipboard.current = text;
+            const urls = extractUrls(text);
+            if (urls.length > 0) {
+              log(`Auto-captured ${urls.length} links`);
 
-    setQueue(
-      episodes.map((ep, i) => ({
-        id: `${series.seriesId}-${ep}`,
-        seriesId: series.seriesId,
-        seriesTitle: series.title,
-        episode: ep,
-        status: i === 0 ? "downloading" : "pending",
-        progress: 0,
-        priority: i,
-      })),
-    );
+              // Switch to batch mode if needed
+              setIsBatchMode(true);
 
-    setDownloadState({
-      isDownloading: true,
-      isPaused: false,
-      currentEpisode: 0,
-      completedEpisodes: [],
-      failedEpisodes: [],
-      totalSelected: episodes.length,
-    });
+              // Add unique URLs to queue
+              setBatchQueue((prev) => {
+                const existing = new Set(prev.map((i) => i.url));
+                const newItems = urls
+                  .filter((u) => !existing.has(u))
+                  .map((u) => ({ url: u, status: "pending" }) as BatchItem);
 
-    resetSpeedGraph();
+                if (newItems.length > 0) {
+                  success(`Added ${newItems.length} links to queue`);
+                  return [...prev, ...newItems];
+                }
+                return prev;
+              });
+            }
+          }
+        } catch (e) {
+          // Ignore clipboard errors
+        }
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isAutoCapture, extractUrls, log, success]);
 
-    try {
-      const results = await invoke<DownloadResult[]>("start_download", {
-        request: {
-          seriesId: series.seriesId,
-          episodes,
-          outputDir: settings.outputDir,
-          autoMerge: settings.autoMerge && ffmpegAvailable,
-          concurrentDownloads: settings.concurrentDownloads,
-          speedLimit: settings.speedLimit,
-          fileNaming: settings.fileNaming,
-          seriesTitle: series.title,
-        },
-      });
+  // Taskbar Progress
+  // Call Rust to set progress
+  useEffect(() => {
+    if (downloadState.isDownloading) {
+      invoke("set_taskbar_progress", {
+        progress: Math.round(progress.percentage),
+      }).catch(() => {});
+    } else {
+      invoke("set_taskbar_progress", { progress: -1 }).catch(() => {}); // -1 to clear
+    }
+  }, [downloadState.isDownloading, progress.percentage]);
 
-      const successCount = results.filter((r) => r.success).length;
-      const failCount = results.filter((r) => !r.success).length;
-      const totalSize = 100 * 1024 * 1024 * successCount;
+  // Continuous Batch Processing
+  useEffect(() => {
+    if (!isBatchProcessing) return;
+    if (downloadState.isDownloading) return;
 
-      updateRecord(recordId, {
-        completedEpisodes: results
-          .filter((r) => r.success)
-          .map((r) => r.episode),
-        failedEpisodes: results.filter((r) => !r.success).map((r) => r.episode),
-        endTime: new Date().toISOString(),
-        totalSize,
-        status:
-          failCount === 0
-            ? "completed"
-            : failCount === episodes.length
-              ? "failed"
-              : "partial",
-      });
+    // Check if any item is currently marked as downloading (to prevent double start before downloadState updates)
+    if (batchQueue.some((i) => i.status === "downloading")) return;
 
-      if (failCount === 0) {
-        success(`All ${successCount} episodes downloaded successfully!`);
-        showNotification(
-          "Download Complete",
-          `${successCount} episodes downloaded`,
+    const nextIdx = batchQueue.findIndex((i) => i.status === "ready" && i.info);
+    if (nextIdx !== -1) {
+      const item = batchQueue[nextIdx];
+
+      const processItem = async () => {
+        log(`Processing batch item: ${item.info?.title}`);
+
+        // Mark as downloading
+        setBatchQueue((prev) =>
+          prev.map((it, idx) =>
+            idx === nextIdx ? { ...it, status: "downloading" } : it,
+          ),
         );
-        playNotificationSound();
-      } else {
-        warning(
-          `Downloaded ${successCount}/${episodes.length} episodes (${failCount} failed)`,
-        );
-      }
 
-      refreshFiles();
-    } catch (e) {
-      error(`Download failed: ${e}`);
-    } finally {
-      setDownloadState((prev) => ({ ...prev, isDownloading: false }));
-      setQueue([]);
+        try {
+          // Ensure backend state
+          await invoke("fetch_series", { url: item.url });
+
+          const allEpisodes = new Set(
+            Array.from({ length: item.info!.totalEpisodes }, (_, i) => i + 1),
+          );
+
+          await runDownload(item.info!, allEpisodes);
+
+          setBatchQueue((prev) =>
+            prev.map((it, idx) =>
+              idx === nextIdx ? { ...it, status: "completed" } : it,
+            ),
+          );
+        } catch (e) {
+          error(`Batch item failed: ${e}`);
+          setBatchQueue((prev) =>
+            prev.map((it, idx) =>
+              idx === nextIdx
+                ? { ...it, status: "failed", error: String(e) }
+                : it,
+            ),
+          );
+        }
+      };
+      processItem();
     }
   }, [
-    series,
-    selectedEpisodes,
-    settings,
-    ffmpegAvailable,
-    addRecord,
-    updateRecord,
+    isBatchProcessing,
+    downloadState.isDownloading,
+    batchQueue,
+    runDownload,
     log,
-    success,
-    warning,
     error,
-    resetSpeedGraph,
   ]);
+
+  const toggleBatchProcessing = () => {
+    setIsBatchProcessing((prev) => !prev);
+  };
 
   const handlePause = useCallback(async () => {
     if (downloadState.currentEpisode === 0) {
@@ -389,12 +648,6 @@ function App() {
     isDownloading: downloadState.isDownloading,
     isPaused: downloadState.isPaused,
   });
-
-  // Helper to check if URL is valid for this app
-  const isValidSeriesUrl = useCallback((text: string): boolean => {
-    if (!text) return false;
-    return text.includes("rongyok.com") || text.includes("thongyok.com");
-  }, []);
 
   // Auto-paste and auto-fetch from clipboard
   const autoFetchFromClipboard = useCallback(async () => {
@@ -488,6 +741,23 @@ function App() {
   }, [activeTab]);
 
   const setupEventListeners = async () => {
+    await listen<{ message: string; progress: number }>(
+      "detection-progress",
+      (event) => {
+        setDetectionState({
+          isDetecting: true,
+          message: event.payload.message,
+          progress: event.payload.progress,
+        });
+
+        if (event.payload.progress >= 100) {
+          setTimeout(() => {
+            setDetectionState((prev) => ({ ...prev, isDetecting: false }));
+          }, 2000);
+        }
+      },
+    );
+
     await listen<DownloadProgress>("download-progress", (event) => {
       setProgress(event.payload);
       addDataPoint(event.payload.speed);
@@ -625,6 +895,7 @@ function App() {
     }
 
     setIsFetching(true);
+    setDetectionState({ isDetecting: false, message: "", progress: 0 });
     log(`Fetching: ${url}`);
 
     try {
@@ -742,7 +1013,9 @@ function App() {
     const text = e.dataTransfer.getData("text/plain");
     if (
       text &&
-      (text.includes("rongyok.com") || text.includes("thongyok.com"))
+      (text.includes("rongyok.com") ||
+        text.includes("thongyok.com") ||
+        text.includes("51cg1.com"))
     ) {
       setUrl(text);
       log(`Dropped URL: ${text}`);
@@ -1020,19 +1293,272 @@ function App() {
               />
             </div>
 
-            {/* Series Info - Compact */}
-            <SeriesCard series={series} isLoading={isFetching} />
+            {/* Smart Queue Bar - Always Visible */}
+            <div
+              className={`bg-slate-800/90 backdrop-blur rounded-lg border border-slate-700 p-2 flex items-center justify-between mb-2 shadow-lg shadow-black/20 sticky top-14 z-40 transform transition-all duration-300 ${batchQueue.length === 0 && !isAutoCapture ? "opacity-80 hover:opacity-100" : ""}`}
+            >
+              <div className="flex items-center gap-3 pl-1">
+                <div className="flex items-center gap-2">
+                  <ListOrdered
+                    size={16}
+                    className={`text-emerald-400 ${batchQueue.length > 0 ? "drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]" : "opacity-50"}`}
+                  />
+                  <span className="text-xs font-bold text-slate-200 tracking-wide flex items-center gap-2">
+                    SMART QUEUE
+                    {batchQueue.length > 0 && (
+                      <span className="bg-slate-700 text-slate-300 px-1.5 rounded-full text-[10px]">
+                        {batchQueue.length}
+                      </span>
+                    )}
+                  </span>
+                </div>
+                {isBatchProcessing && (
+                  <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full flex items-center gap-1.5 animate-pulse border border-emerald-500/20 font-medium">
+                    <Loader2 size={10} className="animate-spin" /> RUNNING
+                  </span>
+                )}
+              </div>
 
-            {/* Episode Selector */}
-            {series && (
-              <EpisodeSelector
-                totalEpisodes={series.totalEpisodes}
-                selectedEpisodes={selectedEpisodes}
-                onToggle={toggleEpisode}
-                onSelectAll={selectAllEpisodes}
-                onDeselectAll={deselectAllEpisodes}
-                disabled={downloadState.isDownloading}
-              />
+              <div className="flex items-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant={isAutoCapture ? "cyan" : "ghost"}
+                  onClick={() => setIsAutoCapture((p) => !p)}
+                  title="Clipboard Monitor (Auto Capture)"
+                  className={`h-7 text-xs px-2 ${isAutoCapture ? "ring-1 ring-cyan-500/50 shadow-[0_0_10px_rgba(34,211,238,0.3)]" : "text-slate-400 hover:text-cyan-300"}`}
+                >
+                  <Clipboard
+                    size={14}
+                    className={isAutoCapture ? "animate-pulse" : ""}
+                  />
+                  <span className="ml-1 hidden sm:inline text-[10px] font-bold">
+                    {isAutoCapture ? "ON" : "AUTO"}
+                  </span>
+                </Button>
+
+                <div className="w-px h-4 bg-slate-700 mx-1"></div>
+
+                <Button
+                  size="sm"
+                  variant={isBatchProcessing ? "amber" : "success"}
+                  onClick={toggleBatchProcessing}
+                  title={
+                    isBatchProcessing
+                      ? "Pause Queue"
+                      : "Start Processing Queue (Sequential)"
+                  }
+                  className="h-7 w-7 p-0 shadow-sm"
+                >
+                  {isBatchProcessing ? <Pause size={14} /> : <Play size={14} />}
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant={isBatchMode ? "primary" : "ghost"}
+                  onClick={() => setIsBatchMode((p) => !p)}
+                  title={isBatchMode ? "Hide Queue List" : "Show Queue List"}
+                  className={`h-7 w-7 p-0 ${isBatchMode ? "shadow-md shadow-violet-500/20" : "text-slate-400 hover:text-white"}`}
+                >
+                  {isBatchMode ? (
+                    <Minimize2 size={14} />
+                  ) : (
+                    <ListOrdered size={14} />
+                  )}
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0 text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                  onClick={() => {
+                    if (
+                      batchQueue.length === 0 ||
+                      confirm("Clear entire queue?")
+                    ) {
+                      setBatchQueue([]);
+                      setIsBatchMode(false);
+                      setIsBatchProcessing(false);
+                    }
+                  }}
+                  title="Clear Queue"
+                >
+                  <X size={14} />
+                </Button>
+              </div>
+            </div>
+
+            {/* Detection Progress */}
+            {detectionState.isDetecting && (
+              <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700 animate-pulse">
+                <div className="flex justify-between text-xs text-slate-400 mb-1">
+                  <span className="flex items-center gap-2">
+                    <Search size={12} className="animate-spin" />
+                    {detectionState.message}
+                  </span>
+                  <span>{detectionState.progress}%</span>
+                </div>
+                <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-violet-500 transition-all duration-300"
+                    style={{ width: `${detectionState.progress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Batch Mode UI or Single Series Mode */}
+            {isBatchMode ? (
+              <div className="space-y-4 animate-in slide-in-from-top-2 fade-in duration-200">
+                <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
+                  {batchQueue.map((item, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-2 sm:p-3 rounded border flex gap-3 text-sm group transition-all relative ${item.status === "downloading" ? "bg-slate-800/60 border-violet-500/30 shadow-lg shadow-violet-500/10" : "bg-slate-800/30 border-slate-700/50 hover:bg-slate-700/30"}`}
+                    >
+                      {/* Thumbnail */}
+                      <div className="w-20 h-12 sm:w-24 sm:h-14 bg-slate-900 rounded overflow-hidden flex-shrink-0 border border-slate-700/50 relative">
+                        {item.info?.posterUrl ? (
+                          <img
+                            src={item.info.posterUrl}
+                            alt={item.info.title}
+                            className={`w-full h-full object-cover transition-opacity ${item.status === "completed" ? "opacity-50" : "opacity-100"}`}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-slate-600">
+                            <ImageIcon size={20} />
+                          </div>
+                        )}
+                        {/* Status Overlay */}
+                        <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-all" />
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          {item.status === "completed" && (
+                            <div className="bg-emerald-500/90 rounded-full p-1 shadow-lg backdrop-blur">
+                              <CheckCircle size={16} className="text-white" />
+                            </div>
+                          )}
+                          {item.status === "downloading" && (
+                            <div className="bg-violet-500/90 rounded-full p-1 shadow-lg backdrop-blur animate-spin">
+                              <Loader2 size={16} className="text-white" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`font-medium truncate ${item.status === "ready" ? "text-white" : "text-slate-300"}`}
+                          >
+                            {item.info ? item.info.title : item.url}
+                          </span>
+                        </div>
+                        {/* Icon-based Status Display */}
+                        <div className="flex items-center gap-2 mt-1">
+                          {item.status === "pending" && (
+                            <div
+                              className="flex items-center gap-1.5 text-slate-500"
+                              title="Pending"
+                            >
+                              <Clock size={16} />
+                              <span className="text-xs font-medium">
+                                Pending
+                              </span>
+                            </div>
+                          )}
+                          {item.status === "fetching" && (
+                            <div
+                              className="flex items-center gap-1.5 text-blue-400 animate-pulse"
+                              title="Fetching Info"
+                            >
+                              <Search size={16} className="animate-spin-slow" />
+                              <span className="text-xs font-medium">
+                                Fetching Info...
+                              </span>
+                            </div>
+                          )}
+                          {item.status === "ready" && (
+                            <div
+                              className="flex items-center gap-1.5 text-amber-400"
+                              title="Ready"
+                            >
+                              <ListOrdered size={16} />
+                              <span className="text-xs font-medium">
+                                Ready ({item.info?.totalEpisodes} Eps)
+                              </span>
+                            </div>
+                          )}
+                          {item.status === "downloading" && (
+                            <div
+                              className="flex items-center gap-1.5 text-violet-400"
+                              title="Downloading"
+                            >
+                              <Download size={16} className="animate-bounce" />
+                              <span className="text-xs font-medium">
+                                Downloading...
+                              </span>
+                            </div>
+                          )}
+                          {item.status === "completed" && (
+                            <div
+                              className="flex items-center gap-1.5 text-emerald-400"
+                              title="Completed"
+                            >
+                              <CheckCircle size={16} />
+                              <span className="text-xs font-medium">
+                                Completed
+                              </span>
+                            </div>
+                          )}
+                          {item.status === "error" && (
+                            <div
+                              className="flex items-center gap-1.5 text-red-400"
+                              title={item.error}
+                            >
+                              <AlertCircle size={16} />
+                              <span className="text-xs font-medium truncate max-w-[200px]">
+                                {item.error}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Remove Button */}
+                      <div className="flex flex-col justify-center opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 top-1/2 -translate-y-1/2 bg-slate-800/80 rounded backdrop-blur">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setBatchQueue((prev) =>
+                              prev.filter((_, i) => i !== idx),
+                            );
+                          }}
+                          className="p-1.5 hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-colors rounded"
+                          title="Remove from queue"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Series Info - Compact */}
+                <SeriesCard series={series} isLoading={isFetching} />
+
+                {/* Episode Selector */}
+                {series && (
+                  <EpisodeSelector
+                    totalEpisodes={series.totalEpisodes}
+                    selectedEpisodes={selectedEpisodes}
+                    onToggle={toggleEpisode}
+                    onSelectAll={selectAllEpisodes}
+                    onDeselectAll={deselectAllEpisodes}
+                    disabled={downloadState.isDownloading}
+                  />
+                )}
+              </>
             )}
 
             {/* Speed Graph & Progress - Compact */}

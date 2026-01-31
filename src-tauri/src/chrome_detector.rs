@@ -29,6 +29,8 @@ impl ChromeVideoDetector {
         args.push(std::ffi::OsStr::new("--disable-extensions"));
         args.push(std::ffi::OsStr::new("--window-size=1920,1080"));
         args.push(std::ffi::OsStr::new("--autoplay-policy=no-user-gesture-required"));
+        // Match Python script's User-Agent exactly to ensure same behavior
+        args.push(std::ffi::OsStr::new("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"));
 
         let options = LaunchOptions {
             headless: true,
@@ -192,11 +194,25 @@ impl ChromeVideoDetector {
         // Inject PerformanceObserver immediately after load
         let observer_script = r#"
             (function() {
+                // Increase buffer size to capture all requests (default is often 150-250)
+                if (performance.setResourceTimingBufferSize) {
+                    performance.setResourceTimingBufferSize(5000);
+                }
+
                 if (!window.__FOUND_URLS) {
                     window.__FOUND_URLS = [];
+
+                    const isValidCandidate = (name) => {
+                        return name.includes('.m3u8') ||
+                               name.includes('.mp4') ||
+                               name.includes('video') ||
+                               name.includes('master');
+                    };
+
                     // Check existing entries first
                     performance.getEntriesByType('resource').forEach(e => {
-                        if (e.name.includes('.m3u8') || e.name.includes('.mp4') || e.name.includes('video')) {
+                        if (isValidCandidate(e.name)) {
+                            console.log("Found candidate via getEntries:", e.name);
                             window.__FOUND_URLS.push(e.name);
                         }
                     });
@@ -205,13 +221,14 @@ impl ChromeVideoDetector {
                     try {
                         const observer = new PerformanceObserver((list) => {
                             list.getEntries().forEach((entry) => {
-                                if (entry.name.includes('.m3u8') || entry.name.includes('.mp4') || entry.name.includes('video')) {
+                                if (isValidCandidate(entry.name)) {
+                                    console.log("Found candidate via Observer:", entry.name);
                                     window.__FOUND_URLS.push(entry.name);
                                 }
                             });
                         });
                         observer.observe({ entryTypes: ['resource'] });
-                        console.log("PerformanceObserver attached");
+                        console.log("PerformanceObserver attached with buffer size 5000");
                     } catch(e) {
                         console.error("Observer failed:", e);
                     }
@@ -243,6 +260,17 @@ impl ChromeVideoDetector {
 
         // D. Recursive Iframe Check (if main page failed)
         self.emit_progress(app_handle, "Main page scan finished. Checking internal iframes...", 95);
+
+        // DEBUG: Dump main page HTML
+        let dump_main_script = "document.documentElement.outerHTML";
+        if let Ok(result) = tab.evaluate(dump_main_script, false) {
+           if let Some(value) = result.value {
+               if let Ok(html) = serde_json::from_value::<String>(value) {
+                   let _ = std::fs::write("page_dump.html", html);
+                   eprintln!("[ChromeDetector] Dumped main page HTML to page_dump.html");
+               }
+           }
+        }
 
         // Extract iframe URLs from the page
         let iframe_script = r#"
@@ -312,6 +340,17 @@ impl ChromeVideoDetector {
                                  if let Some(url) = self.check_for_video_url(&tab) {
                                      self.emit_progress(app_handle, "Video URL found in iframe!", 100);
                                      return Ok(Some(url));
+                                 }
+
+                                 // DEBUG: Dump iframe HTML to file to analyze why regex failed
+                                 let dump_script = "document.documentElement.outerHTML";
+                                 if let Ok(result) = tab.evaluate(dump_script, false) {
+                                    if let Some(value) = result.value {
+                                        if let Ok(html) = serde_json::from_value::<String>(value) {
+                                            let _ = std::fs::write("iframe_dump.html", html);
+                                            eprintln!("[ChromeDetector] Dumped iframe HTML to iframe_dump.html");
+                                        }
+                                    }
                                  }
                              }
                          }
@@ -419,17 +458,25 @@ impl ChromeVideoDetector {
             }
         }
 
-        // Method 3: Brute force regex search in HTML
+        // Method 3: Robust Regex Search (Python Parity)
+        // Matches https://...m3u8 inside quotes or whitespace boundaries
         let html_search_code = r#"
             (function() {
                 const html = document.documentElement.outerHTML;
-                // Search for m3u8
-                let match = html.match(/https?:\\\\/\\\\/[^\"'\\s<>]+\\\\.m3u8[^\"'\\s<>]*/);
-                if (match) return match[0];
 
-                // Search for mp4
-                match = html.match(/https?:\\\\/\\\\/[^\"'\\s<>]+\\\\.mp4[^\"'\\s<>]*/);
-                if (match) return match[0];
+                // Pattern 1: URL inside quotes (common in JS vars)
+                // Looks for "http...m3u8..." or 'http...m3u8...'
+                let match = html.match(/["'](https?:[^"']+\.m3u8[^"']*)["']/);
+                if (match) return match[1];
+
+                // Pattern 2: URL inside quotes (escaped slashes)
+                // Looks for "http:\/\/...m3u8..."
+                match = html.match(/["'](https?:\\\/\\\/[^"']+\.m3u8[^"']*)["']/);
+                if (match) return match[1].replace(/\\\//g, '/');
+
+                // Pattern 3: URL without quotes (less common but possible in some attributes)
+                match = html.match(/(https?:\/\/[^\s<>"']+\.m3u8[^\s<>"']*)/);
+                if (match) return match[1];
 
                 return null;
             })()

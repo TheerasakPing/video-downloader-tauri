@@ -2,27 +2,20 @@ mod baanjeen_parser;
 mod chrome_detector;
 mod downloader;
 mod parser;
+mod titan_parser;
+mod utils;
 
 use baanjeen_parser::BaanJeenParser;
 use chrome_detector::ChromeVideoDetector;
-use downloader::{check_ffmpeg, merge_videos_with_progress, sanitize_filename, DownloadConfig, DownloadResult, DownloadState, VideoDownloader};
+use downloader::{check_ffmpeg, merge_videos_with_progress, DownloadConfig, DownloadResult, DownloadState, VideoDownloader};
 use parser::RongyokParser;
 use serde::{Deserialize, Serialize};
+use titan_parser::TitanParser;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
-
-// Helper function to expand ~ to home directory
-fn expand_path(path: &str) -> PathBuf {
-    if path.starts_with("~/") {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(&path[2..]);
-        }
-    }
-    PathBuf::from(path)
-}
+use utils::{expand_path, sanitize_filename};
 
 // Unified series info that works with both parsers
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +33,7 @@ pub struct UnifiedSeriesInfo {
 struct AppState {
     rongyok_parser: RongyokParser,
     baanjeen_parser: BaanJeenParser,
+    titan_parser: TitanParser,
     chrome_detector: Mutex<ChromeVideoDetector>,
     downloader: Mutex<Option<VideoDownloader>>,
     current_series: Mutex<Option<UnifiedSeriesInfo>>,
@@ -146,6 +140,17 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             episode_urls: baanjeen_info.episode_urls,
             source: "baanjeen".to_string(),
         }
+    } else if TitanParser::is_titan_url(&url) {
+        // Use Titan Parser (51cg1)
+        let titan_info = state.titan_parser.get_series_info(&url).await?;
+        UnifiedSeriesInfo {
+            series_id: 0,
+            title: titan_info.title,
+            total_episodes: titan_info.total_episodes,
+            poster_url: titan_info.poster_url,
+            episode_urls: titan_info.episode_urls,
+            source: "titan".to_string(),
+        }
     } else {
         // Use Rongyok parser
         let series_id = RongyokParser::parse_series_url(&url).ok_or("Invalid URL format")?;
@@ -171,6 +176,19 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
 #[tauri::command]
 fn check_ffmpeg_available() -> bool {
     check_ffmpeg()
+}
+
+#[tauri::command]
+fn set_taskbar_progress(app_handle: AppHandle, progress: i32) {
+    use tauri::Manager;
+    if let Some(_window) = app_handle.get_webview_window("main") {
+        // TODO: Implement Taskbar Progress for Tauri v2
+        // API changed: window.set_progress_bar requires specific struct
+        // For now, logging to console
+        if progress >= 0 && progress <= 100 {
+            // println!("Taskbar Progress: {}%", progress);
+        }
+    }
 }
 
 #[tauri::command]
@@ -571,6 +589,7 @@ pub fn run() {
         .manage(AppState {
             rongyok_parser: RongyokParser::new(),
             baanjeen_parser: BaanJeenParser::new(),
+            titan_parser: TitanParser::new(),
             chrome_detector: Mutex::new(ChromeVideoDetector::new().unwrap_or_else(|e| {
                 eprintln!("Warning: Chrome detector initialization failed: {}", e);
                 ChromeVideoDetector::new().unwrap()
@@ -592,6 +611,7 @@ pub fn run() {
             list_files,
             delete_files,
             play_file,
+            set_taskbar_progress,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

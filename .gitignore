@@ -64,3 +64,13 @@ temp/
 
 # Tauri resources
 src-tauri/resources/bin/
+
+# Video downloads
+*.mp4
+*.mkv
+*.avi
+*.part
+*.ytdl
+*.part-Frag*
+iframe_dump.html
+page_dump.html
