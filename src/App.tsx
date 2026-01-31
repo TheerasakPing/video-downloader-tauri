@@ -1205,333 +1205,203 @@ function App() {
       </header>
 
       {/* Main Content - Compact */}
-      <main className="container-responsive py-2 sm:py-3 space-y-2 sm:space-y-3">
+      <main className="flex-1 overflow-hidden relative">
         {activeTab === "download" && (
-          <div className="space-y-2 sm:space-y-3">
-            {/* URL Input - Compact */}
-            <div className="space-y-2">
-              <Input
-                placeholder="https://rongyok.com/watch/?series_id=XXX"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                leftIcon={<Link size={14} />}
-                iconColor="cyan"
-                rightElement={
-                  <div className="flex gap-0.5 items-center">
+          <div className="h-full flex flex-col md:flex-row overflow-hidden">
+            <div className="flex-1 flex flex-col min-w-0 border-r border-slate-700/30 bg-slate-900/50 relative">
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-4">
+                {/* Input Area */}
+                <div className="sticky top-0 z-10 bg-slate-900/90 backdrop-blur pb-4 -mt-2 pt-2">
+                  <Input
+                    placeholder="https://rongyok.com/watch/?series_id=XXX"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    leftIcon={<Link size={14} />}
+                    iconColor="cyan"
+                    rightElement={
+                      <div className="flex gap-0.5 items-center">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setUrl("");
+                            setSeries(null);
+                            setSelectedEpisodes(new Set());
+                          }}
+                          disabled={!url}
+                          className="px-1.5"
+                        >
+                          <X size={14} />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={handlePaste}
+                          className="px-1.5"
+                          title="Paste"
+                        >
+                          <Clipboard size={14} />
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={handleFetch}
+                          isLoading={isFetching}
+                          className="px-2"
+                        >
+                          <Search size={14} />
+                        </Button>
+                      </div>
+                    }
+                  />
+
+                  <Input
+                    placeholder="~/Downloads/rongyok"
+                    value={settings.outputDir}
+                    onChange={(e) => updateSetting("outputDir", e.target.value)}
+                    leftIcon={<FolderOpen size={14} />}
+                    iconColor="amber"
+                    rightElement={
+                      <div className="flex gap-0.5">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={handleSelectOutputFolder}
+                          className="px-1.5"
+                        >
+                          📂
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={handleOpenOutputFolder}
+                          className="px-1.5"
+                        >
+                          ↗
+                        </Button>
+                      </div>
+                    }
+                  />
+                </div>
+
+                {/* Smart Queue Bar - Always Visible */}
+                <div
+                  className={`bg-slate-800/90 backdrop-blur rounded-lg border border-slate-700 p-2 flex items-center justify-between mb-2 shadow-lg shadow-black/20 sticky top-14 z-40 transform transition-all duration-300 ${batchQueue.length === 0 && !isAutoCapture ? "opacity-80 hover:opacity-100" : ""}`}
+                >
+                  <div className="flex items-center gap-3 pl-1">
+                    <div className="flex items-center gap-2">
+                      <ListOrdered
+                        size={16}
+                        className={`text-emerald-400 ${batchQueue.length > 0 ? "drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]" : "opacity-50"}`}
+                      />
+                      <span className="text-xs font-bold text-slate-200 tracking-wide flex items-center gap-2">
+                        SMART QUEUE
+                        {batchQueue.length > 0 && (
+                          <span className="bg-slate-700 text-slate-300 px-1.5 rounded-full text-[10px]">
+                            {batchQueue.length}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    {isBatchProcessing && (
+                      <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full flex items-center gap-1.5 animate-pulse border border-emerald-500/20 font-medium">
+                        <Loader2 size={10} className="animate-spin" /> RUNNING
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      variant={isAutoCapture ? "cyan" : "ghost"}
+                      onClick={() => setIsAutoCapture((p) => !p)}
+                      title="Clipboard Monitor (Auto Capture)"
+                      className={`h-7 text-xs px-2 ${isAutoCapture ? "ring-1 ring-cyan-500/50 shadow-[0_0_10px_rgba(34,211,238,0.3)]" : "text-slate-400 hover:text-cyan-300"}`}
+                    >
+                      <Clipboard
+                        size={14}
+                        className={isAutoCapture ? "animate-pulse" : ""}
+                      />
+                      <span className="ml-1 hidden sm:inline text-[10px] font-bold">
+                        {isAutoCapture ? "ON" : "AUTO"}
+                      </span>
+                    </Button>
+
+                    <div className="w-px h-4 bg-slate-700 mx-1"></div>
+
+                    <Button
+                      size="sm"
+                      variant={isBatchProcessing ? "amber" : "success"}
+                      onClick={toggleBatchProcessing}
+                      title={
+                        isBatchProcessing
+                          ? "Pause Queue"
+                          : "Start Processing Queue (Sequential)"
+                      }
+                      className="h-7 w-7 p-0 shadow-sm"
+                    >
+                      {isBatchProcessing ? (
+                        <Pause size={14} />
+                      ) : (
+                        <Play size={14} />
+                      )}
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant={isBatchMode ? "primary" : "ghost"}
+                      onClick={() => setIsBatchMode((p) => !p)}
+                      title={
+                        isBatchMode ? "Hide Queue List" : "Show Queue List"
+                      }
+                      className={`h-7 w-7 p-0 ${isBatchMode ? "shadow-md shadow-violet-500/20" : "text-slate-400 hover:text-white"}`}
+                    >
+                      {isBatchMode ? (
+                        <Minimize2 size={14} />
+                      ) : (
+                        <ListOrdered size={14} />
+                      )}
+                    </Button>
+
                     <Button
                       size="sm"
                       variant="ghost"
+                      className="h-7 w-7 p-0 text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
                       onClick={() => {
-                        setUrl("");
-                        setSeries(null);
-                        setSelectedEpisodes(new Set());
+                        if (
+                          batchQueue.length === 0 ||
+                          confirm("Clear entire queue?")
+                        ) {
+                          setBatchQueue([]);
+                          setIsBatchMode(false);
+                          setIsBatchProcessing(false);
+                        }
                       }}
-                      disabled={!url}
-                      className="px-1.5"
+                      title="Clear Queue"
                     >
                       <X size={14} />
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={handlePaste}
-                      className="px-1.5"
-                      title="Paste"
-                    >
-                      <Clipboard size={14} />
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleFetch}
-                      isLoading={isFetching}
-                      className="px-2"
-                    >
-                      <Search size={14} />
-                    </Button>
                   </div>
-                }
-              />
+                </div>
 
-              <Input
-                placeholder="~/Downloads/rongyok"
-                value={settings.outputDir}
-                onChange={(e) => updateSetting("outputDir", e.target.value)}
-                leftIcon={<FolderOpen size={14} />}
-                iconColor="amber"
-                rightElement={
-                  <div className="flex gap-0.5">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={handleSelectOutputFolder}
-                      className="px-1.5"
-                    >
-                      📂
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={handleOpenOutputFolder}
-                      className="px-1.5"
-                    >
-                      ↗
-                    </Button>
-                  </div>
-                }
-              />
-            </div>
-
-            {/* Smart Queue Bar - Always Visible */}
-            <div
-              className={`bg-slate-800/90 backdrop-blur rounded-lg border border-slate-700 p-2 flex items-center justify-between mb-2 shadow-lg shadow-black/20 sticky top-14 z-40 transform transition-all duration-300 ${batchQueue.length === 0 && !isAutoCapture ? "opacity-80 hover:opacity-100" : ""}`}
-            >
-              <div className="flex items-center gap-3 pl-1">
-                <div className="flex items-center gap-2">
-                  <ListOrdered
-                    size={16}
-                    className={`text-emerald-400 ${batchQueue.length > 0 ? "drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]" : "opacity-50"}`}
-                  />
-                  <span className="text-xs font-bold text-slate-200 tracking-wide flex items-center gap-2">
-                    SMART QUEUE
-                    {batchQueue.length > 0 && (
-                      <span className="bg-slate-700 text-slate-300 px-1.5 rounded-full text-[10px]">
-                        {batchQueue.length}
+                {/* Detection Progress */}
+                {detectionState.isDetecting && (
+                  <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700 animate-pulse">
+                    <div className="flex justify-between text-xs text-slate-400 mb-1">
+                      <span className="flex items-center gap-2">
+                        <Search size={12} className="animate-spin" />
+                        {detectionState.message}
                       </span>
-                    )}
-                  </span>
-                </div>
-                {isBatchProcessing && (
-                  <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full flex items-center gap-1.5 animate-pulse border border-emerald-500/20 font-medium">
-                    <Loader2 size={10} className="animate-spin" /> RUNNING
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <Button
-                  size="sm"
-                  variant={isAutoCapture ? "cyan" : "ghost"}
-                  onClick={() => setIsAutoCapture((p) => !p)}
-                  title="Clipboard Monitor (Auto Capture)"
-                  className={`h-7 text-xs px-2 ${isAutoCapture ? "ring-1 ring-cyan-500/50 shadow-[0_0_10px_rgba(34,211,238,0.3)]" : "text-slate-400 hover:text-cyan-300"}`}
-                >
-                  <Clipboard
-                    size={14}
-                    className={isAutoCapture ? "animate-pulse" : ""}
-                  />
-                  <span className="ml-1 hidden sm:inline text-[10px] font-bold">
-                    {isAutoCapture ? "ON" : "AUTO"}
-                  </span>
-                </Button>
-
-                <div className="w-px h-4 bg-slate-700 mx-1"></div>
-
-                <Button
-                  size="sm"
-                  variant={isBatchProcessing ? "amber" : "success"}
-                  onClick={toggleBatchProcessing}
-                  title={
-                    isBatchProcessing
-                      ? "Pause Queue"
-                      : "Start Processing Queue (Sequential)"
-                  }
-                  className="h-7 w-7 p-0 shadow-sm"
-                >
-                  {isBatchProcessing ? <Pause size={14} /> : <Play size={14} />}
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant={isBatchMode ? "primary" : "ghost"}
-                  onClick={() => setIsBatchMode((p) => !p)}
-                  title={isBatchMode ? "Hide Queue List" : "Show Queue List"}
-                  className={`h-7 w-7 p-0 ${isBatchMode ? "shadow-md shadow-violet-500/20" : "text-slate-400 hover:text-white"}`}
-                >
-                  {isBatchMode ? (
-                    <Minimize2 size={14} />
-                  ) : (
-                    <ListOrdered size={14} />
-                  )}
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 w-7 p-0 text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                  onClick={() => {
-                    if (
-                      batchQueue.length === 0 ||
-                      confirm("Clear entire queue?")
-                    ) {
-                      setBatchQueue([]);
-                      setIsBatchMode(false);
-                      setIsBatchProcessing(false);
-                    }
-                  }}
-                  title="Clear Queue"
-                >
-                  <X size={14} />
-                </Button>
-              </div>
-            </div>
-
-            {/* Detection Progress */}
-            {detectionState.isDetecting && (
-              <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700 animate-pulse">
-                <div className="flex justify-between text-xs text-slate-400 mb-1">
-                  <span className="flex items-center gap-2">
-                    <Search size={12} className="animate-spin" />
-                    {detectionState.message}
-                  </span>
-                  <span>{detectionState.progress}%</span>
-                </div>
-                <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-violet-500 transition-all duration-300"
-                    style={{ width: `${detectionState.progress}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Batch Mode UI or Single Series Mode */}
-            {isBatchMode ? (
-              <div className="space-y-4 animate-in slide-in-from-top-2 fade-in duration-200">
-                <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
-                  {batchQueue.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className={`p-2 sm:p-3 rounded border flex gap-3 text-sm group transition-all relative ${item.status === "downloading" ? "bg-slate-800/60 border-violet-500/30 shadow-lg shadow-violet-500/10" : "bg-slate-800/30 border-slate-700/50 hover:bg-slate-700/30"}`}
-                    >
-                      {/* Thumbnail */}
-                      <div className="w-20 h-12 sm:w-24 sm:h-14 bg-slate-900 rounded overflow-hidden flex-shrink-0 border border-slate-700/50 relative">
-                        {item.info?.posterUrl ? (
-                          <img
-                            src={item.info.posterUrl}
-                            alt={item.info.title}
-                            className={`w-full h-full object-cover transition-opacity ${item.status === "completed" ? "opacity-50" : "opacity-100"}`}
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-slate-600">
-                            <ImageIcon size={20} />
-                          </div>
-                        )}
-                        {/* Status Overlay */}
-                        <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-all" />
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                          {item.status === "completed" && (
-                            <div className="bg-emerald-500/90 rounded-full p-1 shadow-lg backdrop-blur">
-                              <CheckCircle size={16} className="text-white" />
-                            </div>
-                          )}
-                          {item.status === "downloading" && (
-                            <div className="bg-violet-500/90 rounded-full p-1 shadow-lg backdrop-blur animate-spin">
-                              <Loader2 size={16} className="text-white" />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`font-medium truncate ${item.status === "ready" ? "text-white" : "text-slate-300"}`}
-                          >
-                            {item.info ? item.info.title : item.url}
-                          </span>
-                        </div>
-                        {/* Icon-based Status Display */}
-                        <div className="flex items-center gap-2 mt-1">
-                          {item.status === "pending" && (
-                            <div
-                              className="flex items-center gap-1.5 text-slate-500"
-                              title="Pending"
-                            >
-                              <Clock size={16} />
-                              <span className="text-xs font-medium">
-                                Pending
-                              </span>
-                            </div>
-                          )}
-                          {item.status === "fetching" && (
-                            <div
-                              className="flex items-center gap-1.5 text-blue-400 animate-pulse"
-                              title="Fetching Info"
-                            >
-                              <Search size={16} className="animate-spin-slow" />
-                              <span className="text-xs font-medium">
-                                Fetching Info...
-                              </span>
-                            </div>
-                          )}
-                          {item.status === "ready" && (
-                            <div
-                              className="flex items-center gap-1.5 text-amber-400"
-                              title="Ready"
-                            >
-                              <ListOrdered size={16} />
-                              <span className="text-xs font-medium">
-                                Ready ({item.info?.totalEpisodes} Eps)
-                              </span>
-                            </div>
-                          )}
-                          {item.status === "downloading" && (
-                            <div
-                              className="flex items-center gap-1.5 text-violet-400"
-                              title="Downloading"
-                            >
-                              <Download size={16} className="animate-bounce" />
-                              <span className="text-xs font-medium">
-                                Downloading...
-                              </span>
-                            </div>
-                          )}
-                          {item.status === "completed" && (
-                            <div
-                              className="flex items-center gap-1.5 text-emerald-400"
-                              title="Completed"
-                            >
-                              <CheckCircle size={16} />
-                              <span className="text-xs font-medium">
-                                Completed
-                              </span>
-                            </div>
-                          )}
-                          {item.status === "error" && (
-                            <div
-                              className="flex items-center gap-1.5 text-red-400"
-                              title={item.error}
-                            >
-                              <AlertCircle size={16} />
-                              <span className="text-xs font-medium truncate max-w-[200px]">
-                                {item.error}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Remove Button */}
-                      <div className="flex flex-col justify-center opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 top-1/2 -translate-y-1/2 bg-slate-800/80 rounded backdrop-blur">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setBatchQueue((prev) =>
-                              prev.filter((_, i) => i !== idx),
-                            );
-                          }}
-                          className="p-1.5 hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-colors rounded"
-                          title="Remove from queue"
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
+                      <span>{detectionState.progress}%</span>
                     </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <>
+                    <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-violet-500 transition-all duration-300"
+                        style={{ width: `${detectionState.progress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {/* Series Info - Compact */}
                 <SeriesCard series={series} isLoading={isFetching} />
 
@@ -1546,130 +1416,230 @@ function App() {
                     disabled={downloadState.isDownloading}
                   />
                 )}
-              </>
-            )}
 
-            {/* Speed Graph & Progress - Compact */}
-            {(downloadState.isDownloading || speedData.length > 0) && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-                <SpeedGraph
-                  data={speedData}
-                  currentSpeed={currentSpeed}
-                  avgSpeed={avgSpeed}
-                  peakSpeed={peakSpeed}
-                />
-                <div className="glass rounded-lg p-2 border border-slate-700/50 space-y-2">
-                  <ProgressBar
-                    percentage={progress.percentage}
-                    label={`EP ${progress.episode}`}
-                    sublabel={`${(progress.speed / 1024 / 1024).toFixed(1)} MB/s`}
-                    variant="cyan"
-                  />
-                  <ProgressBar
-                    percentage={overallProgress}
-                    label="Overall"
-                    sublabel={`${downloadState.completedEpisodes.length}/${downloadState.totalSelected}`}
-                    variant="success"
-                  />
-                  {mergeState.isMerging && (
-                    <div className="p-2 bg-fuchsia-500/20 rounded-md border border-fuchsia-500/30">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-fuchsia-300 flex items-center gap-1">
-                          <Merge
-                            size={12}
-                            className="animate-pulse drop-shadow-[0_0_4px_currentColor]"
-                          />{" "}
-                          Merging...
-                        </span>
-                        <span className="text-fuchsia-400 font-mono">
-                          {mergeState.progress.toFixed(0)}%
-                        </span>
-                      </div>
-                      <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden mt-1">
-                        <div
-                          className="h-full bg-gradient-to-r from-fuchsia-500 to-violet-500 rounded-full"
-                          style={{ width: `${mergeState.progress}%` }}
-                        />
-                      </div>
+                {/* Speed Graph & Progress - Compact */}
+                {(downloadState.isDownloading || speedData.length > 0) && (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                    <SpeedGraph
+                      data={speedData}
+                      currentSpeed={currentSpeed}
+                      avgSpeed={avgSpeed}
+                      peakSpeed={peakSpeed}
+                    />
+                    <div className="glass rounded-lg p-2 border border-slate-700/50 space-y-2">
+                      <ProgressBar
+                        percentage={progress.percentage}
+                        label={`EP ${progress.episode}`}
+                        sublabel={`${(progress.speed / 1024 / 1024).toFixed(1)} MB/s`}
+                        variant="cyan"
+                      />
+                      <ProgressBar
+                        percentage={overallProgress}
+                        label="Overall"
+                        sublabel={`${downloadState.completedEpisodes.length}/${downloadState.totalSelected}`}
+                        variant="success"
+                      />
+                      {mergeState.isMerging && (
+                        <div className="p-2 bg-fuchsia-500/20 rounded-md border border-fuchsia-500/30">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-fuchsia-300 flex items-center gap-1">
+                              <Merge
+                                size={12}
+                                className="animate-pulse drop-shadow-[0_0_4px_currentColor]"
+                              />{" "}
+                              Merging...
+                            </span>
+                            <span className="text-fuchsia-400 font-mono">
+                              {mergeState.progress.toFixed(0)}%
+                            </span>
+                          </div>
+                          <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden mt-1">
+                            <div
+                              className="h-full bg-gradient-to-r from-fuchsia-500 to-violet-500 rounded-full"
+                              style={{ width: `${mergeState.progress}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                      {mergeState.mergedFile && !mergeState.isMerging && (
+                        <div className="p-2 bg-emerald-500/20 rounded-md border border-emerald-500/30 text-xs text-emerald-300 flex items-center gap-1">
+                          <span className="text-emerald-400">✅</span> Merged:{" "}
+                          {mergeState.mergedFile.split("/").pop()}
+                        </div>
+                      )}
                     </div>
-                  )}
-                  {mergeState.mergedFile && !mergeState.isMerging && (
-                    <div className="p-2 bg-emerald-500/20 rounded-md border border-emerald-500/30 text-xs text-emerald-300 flex items-center gap-1">
-                      <span className="text-emerald-400">✅</span> Merged:{" "}
-                      {mergeState.mergedFile.split("/").pop()}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+                  </div>
+                )}
 
-            {/* Queue - Compact */}
-            {queue.length > 0 && (
-              <DownloadQueue
-                queue={queue}
-                onMoveUp={() => {}}
-                onMoveDown={() => {}}
-                onRemove={(id) =>
-                  setQueue((prev) => prev.filter((q) => q.id !== id))
-                }
-                onPause={() => {}}
-              />
-            )}
+                {/* Queue - Compact */}
+                {queue.length > 0 && (
+                  <DownloadQueue
+                    queue={queue}
+                    onMoveUp={() => {}}
+                    onMoveDown={() => {}}
+                    onRemove={(id) =>
+                      setQueue((prev) => prev.filter((q) => q.id !== id))
+                    }
+                    onPause={() => {}}
+                  />
+                )}
 
-            {/* Options & Actions - Compact inline */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={settings.autoMerge}
-                  onChange={(e) => updateSetting("autoMerge", e.target.checked)}
-                  disabled={!ffmpegAvailable}
-                  className="w-3.5 h-3.5 rounded bg-slate-700 border-slate-600 text-violet-600"
-                />
-                <Merge
-                  size={12}
-                  className="text-fuchsia-400 drop-shadow-[0_0_4px_currentColor]"
-                />{" "}
-                Auto merge
-              </label>
+                {/* Options & Actions - Compact inline */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={settings.autoMerge}
+                      onChange={(e) =>
+                        updateSetting("autoMerge", e.target.checked)
+                      }
+                      disabled={!ffmpegAvailable}
+                      className="w-3.5 h-3.5 rounded bg-slate-700 border-slate-600 text-violet-600"
+                    />
+                    <Merge
+                      size={12}
+                      className="text-fuchsia-400 drop-shadow-[0_0_4px_currentColor]"
+                    />{" "}
+                    Auto merge
+                  </label>
 
-              <div className="flex gap-2">
-                {!downloadState.isDownloading ? (
-                  <Button
-                    onClick={handleStartDownload}
-                    disabled={!series || selectedEpisodes.size === 0}
-                    leftIcon={<Download size={14} />}
-                    variant="success"
-                  >
-                    Download ({selectedEpisodes.size})
-                  </Button>
-                ) : (
-                  <>
-                    {!downloadState.isPaused ? (
+                  <div className="flex gap-2">
+                    {!downloadState.isDownloading ? (
                       <Button
-                        variant="amber"
-                        onClick={handlePause}
-                        leftIcon={<Pause size={14} />}
+                        onClick={handleStartDownload}
+                        disabled={!series || selectedEpisodes.size === 0}
+                        leftIcon={<Download size={14} />}
+                        variant="success"
                       >
-                        Pause
+                        Download ({selectedEpisodes.size})
                       </Button>
                     ) : (
-                      <Button
-                        variant="success"
-                        onClick={handleResume}
-                        leftIcon={<Play size={14} />}
-                      >
-                        Resume
-                      </Button>
+                      <>
+                        {!downloadState.isPaused ? (
+                          <Button
+                            variant="amber"
+                            onClick={handlePause}
+                            leftIcon={<Pause size={14} />}
+                          >
+                            Pause
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="success"
+                            onClick={handleResume}
+                            leftIcon={<Play size={14} />}
+                          >
+                            Resume
+                          </Button>
+                        )}
+                        <Button
+                          variant="danger"
+                          onClick={handleCancel}
+                          leftIcon={<X size={14} />}
+                        >
+                          Cancel
+                        </Button>
+                      </>
                     )}
-                    <Button
-                      variant="danger"
-                      onClick={handleCancel}
-                      leftIcon={<X size={14} />}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Panel: Smart Queue */}
+            <div className="hidden md:flex w-80 flex-col bg-slate-900/80 border-l border-slate-700/30">
+              <div className="bg-slate-800/90 backdrop-blur p-3 flex items-center justify-between border-b border-slate-700 sticky top-0 z-10">
+                <div className="flex items-center gap-2">
+                  <ListOrdered size={16} className="text-emerald-400" />
+                  <span className="text-xs font-bold text-slate-200 tracking-wide">
+                    SMART QUEUE
+                  </span>
+                  <span className="bg-slate-700 text-slate-300 px-1.5 rounded-full text-[10px]">
+                    {batchQueue.length}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 w-6 p-0"
+                    onClick={() => setBatchQueue([])}
+                    title="Clear"
+                  >
+                    <X size={14} />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2">
+                {batchQueue.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-40">
+                    <ListOrdered size={32} className="mb-2" />
+                    <p className="text-xs">Queue is empty</p>
+                  </div>
+                ) : (
+                  batchQueue.map((item, idx) => (
+                    <div
+                      key={idx}
+                      className="p-2 rounded border border-slate-700/50 bg-slate-800/30 flex gap-2 text-xs relative group"
                     >
-                      Cancel
-                    </Button>
-                  </>
+                      <div className="w-12 h-16 bg-slate-900 rounded overflow-hidden flex-shrink-0 relative">
+                        {item.info?.posterUrl ? (
+                          <img
+                            src={item.info.posterUrl}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <ImageIcon size={14} className="text-slate-600" />
+                          </div>
+                        )}
+                        {item.status === "downloading" && (
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                            <Loader2
+                              size={12}
+                              className="animate-spin text-white"
+                            />
+                          </div>
+                        )}
+                        {item.status === "completed" && (
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                            <CheckCircle
+                              size={12}
+                              className="text-emerald-400"
+                            />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0 flex flex-col gap-1">
+                        <div className="font-medium truncate text-slate-200">
+                          {item.info?.title || item.url}
+                        </div>
+                        <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                          {item.status === "pending" && "Pending"}
+                          {item.status === "fetching" && "Fetching info..."}
+                          {item.status === "ready" &&
+                            `Ready (${item.info?.totalEpisodes})`}
+                          {item.status === "downloading" && "Downloading..."}
+                          {item.status === "completed" && "Completed"}
+                          {item.status === "error" && (
+                            <span className="text-red-400">Error</span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setBatchQueue((prev) =>
+                            prev.filter((_, i) => i !== idx),
+                          );
+                        }}
+                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))
                 )}
               </div>
             </div>
@@ -1701,16 +1671,7 @@ function App() {
         )}
 
         {activeTab === "settings" && (
-          <div className="page-transition animate-fade-in space-y-6">
-            {/* Quick Presets */}
-            <section className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
-              <PresetSelector
-                presets={presets}
-                activePresetId={activePresetId}
-                onSelect={applyPreset}
-              />
-            </section>
-
+          <div className="page-transition animate-fade-in space-y-6 container mx-auto max-w-4xl">
             <SettingsPanel
               settings={settings}
               onUpdate={updateSetting}
@@ -1729,13 +1690,13 @@ function App() {
         )}
 
         {activeTab === "logs" && (
-          <div className="h-[calc(100vh-140px)] sm:h-[calc(100vh-180px)] page-transition animate-fade-in">
+          <div className="h-full overflow-hidden page-transition animate-fade-in flex flex-col">
             <LogPanel logs={logs} onClear={clearLogs} />
           </div>
         )}
       </main>
 
-      {/* Mini Mode */}
+      {/* Mini Mode Overlay */}
       <MiniMode
         isOpen={showMiniMode && downloadState.isDownloading}
         onClose={() => setShowMiniMode(false)}
@@ -1750,13 +1711,13 @@ function App() {
         seriesTitle={series?.title}
       />
 
-      {/* Shortcuts Help */}
+      {/* Shortcuts Help Modal */}
       <ShortcutsHelp
         isOpen={showShortcuts}
         onClose={() => setShowShortcuts(false)}
       />
 
-      {/* Update Dialog */}
+      {/* Update Dialog Modal */}
       <UpdateDialog
         isOpen={updateAvailable}
         updateInfo={updateInfo}

@@ -2,14 +2,11 @@
 
 All notable changes to Rongyok Video Downloader will be documented in this file.
 
-# Changelog
-
-All notable changes to Rongyok Video Downloader will be documented in this file.
-
 ## [1.8.0] - 2026-01-31
 
 ### Added
 
+- **Compact Dashboard**: New 2-column layout with persistent Smart Queue panel.
 - **Smart Queue (Batch Mode)**:
   - Multi-URL support: Paste multiple links at once.
   - Auto-fetch: Automatically validates and fetches info for queue items.
@@ -21,7 +18,7 @@ All notable changes to Rongyok Video Downloader will be documented in this file.
 
 ### Changed
 
-- Refactored App UI to support persistent Queue Bar.
+- Refactored `SeriesCard` and `EpisodeSelector` for density and compactness.
 - Improved error handling in batch processing.
 
 ## [1.6.0] - 2026-01-19

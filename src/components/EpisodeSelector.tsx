@@ -44,22 +44,23 @@ export function EpisodeSelector({
         </div>
       </div>
 
-      <div className="max-h-24 overflow-y-auto scrollbar-hide">
-        <div className="flex flex-wrap gap-1">
+      <div className="max-h-24 overflow-y-auto custom-scrollbar pr-1">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(2rem,1fr))] gap-1">
           {episodes.map((ep) => (
             <button
               key={ep}
               onClick={() => onToggle(ep)}
               disabled={disabled}
               className={`
-                w-7 h-6 text-[10px] font-medium rounded transition-all border
+                h-6 text-[10px] font-medium rounded transition-all border flex items-center justify-center
                 ${
                   selectedEpisodes.has(ep)
-                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.3)]"
-                    : "bg-slate-700/30 text-slate-400 border-slate-600/50 hover:bg-slate-700/50 hover:text-white hover:border-slate-500/50"
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-[0_0_4px_rgba(16,185,129,0.2)]"
+                    : "bg-slate-700/30 text-slate-400 border-slate-600/30 hover:bg-slate-700/50 hover:text-white hover:border-slate-500/50"
                 }
                 disabled:opacity-50 disabled:cursor-not-allowed
               `}
+              title={`Episode ${ep}`}
             >
               {ep}
             </button>

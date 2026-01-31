@@ -24,34 +24,56 @@ export function SeriesCard({ series, isLoading }: SeriesCardProps) {
   if (!series) {
     return (
       <div className="glass rounded-lg p-3 border border-dashed border-slate-600/50 text-center">
-        <Tv size={20} className="mx-auto mb-1 text-violet-400 drop-shadow-[0_0_4px_currentColor]" />
-        <p className="text-slate-500 text-xs">Enter URL and fetch to load series</p>
+        <Tv
+          size={20}
+          className="mx-auto mb-1 text-violet-400 drop-shadow-[0_0_4px_currentColor]"
+        />
+        <p className="text-slate-500 text-xs">
+          Enter URL and fetch to load series
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="glass rounded-lg p-2 border border-slate-700/50">
-      <div className="flex gap-2">
-        {series.posterUrl ? (
-          <img
-            src={series.posterUrl}
-            alt={series.title}
-            className="w-12 h-16 object-cover rounded shadow"
+    <div className="glass rounded-lg p-2 border border-slate-700/50 flex items-center gap-3">
+      {series.posterUrl ? (
+        <img
+          src={series.posterUrl}
+          alt={series.title}
+          className="w-10 h-14 object-cover rounded shadow ring-1 ring-slate-700/50"
+        />
+      ) : (
+        <div className="w-10 h-14 bg-slate-700/50 rounded flex items-center justify-center ring-1 ring-slate-700/50">
+          <Film
+            size={16}
+            className="text-violet-400 drop-shadow-[0_0_4px_currentColor]"
           />
-        ) : (
-          <div className="w-12 h-16 bg-slate-700/50 rounded flex items-center justify-center">
-            <Film size={16} className="text-violet-400 drop-shadow-[0_0_4px_currentColor]" />
+        </div>
+      )}
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between mb-0.5">
+          <h2
+            className="text-sm font-bold text-white truncate pr-2"
+            title={series.title}
+          >
+            {series.title}
+          </h2>
+          <span className="px-1.5 py-0.5 bg-violet-500/10 text-violet-300 rounded text-[10px] border border-violet-500/20 whitespace-nowrap">
+            ID: {series.seriesId}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-3 text-xs text-slate-400">
+          <div className="flex items-center gap-1.5" title="Total Episodes">
+            <Tv size={12} className="text-cyan-400" />
+            <span>{series.totalEpisodes} eps</span>
           </div>
-        )}
-        <div className="flex-1 min-w-0">
-          <h2 className="text-sm font-semibold text-white truncate">{series.title}</h2>
-          <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
-            <span className="px-1.5 py-0.5 bg-violet-500/20 text-violet-300 rounded text-[10px] border border-violet-500/30">
-              ID: {series.seriesId}
-            </span>
-            <span className="text-cyan-400">{series.totalEpisodes} eps</span>
-            <span className="text-emerald-400">{Object.keys(series.episodeUrls).length} cached</span>
+          <div className="w-px h-3 bg-slate-700" />
+          <div className="flex items-center gap-1.5" title="Cached URLs">
+            <Film size={12} className="text-emerald-400" />
+            <span>{Object.keys(series.episodeUrls).length} cached</span>
           </div>
         </div>
       </div>
