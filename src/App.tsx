@@ -47,12 +47,11 @@ import { useHistory } from "./hooks/useHistory";
 import { useSpeedGraph } from "./hooks/useSpeedGraph";
 import { useUpdater } from "./hooks/useUpdater";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
-import { useDownloadPresets } from "./hooks/useDownloadPresets";
+
 import { useI18n } from "./hooks/useI18n";
 import { useCustomTheme } from "./hooks/useCustomTheme";
 import { SeriesInfo, DownloadState, DownloadProgress } from "./types";
 import { QueueItem } from "./components/DownloadQueue";
-import { PresetSelector } from "./components/PresetSelector";
 
 interface DownloadResult {
   episode: number;
@@ -204,16 +203,6 @@ function App() {
   } = useUpdater();
   const { language, setLanguage, t } = useI18n();
   const { themes, activeThemeId, setActiveTheme } = useCustomTheme();
-
-  const { presets, activePresetId, applyPreset } = useDownloadPresets(
-    (newSettings) => {
-      Object.entries(newSettings).forEach(([key, value]) => {
-        // @ts-ignore - dynamic setting update
-        updateSetting(key, value);
-      });
-      success("Preset applied!");
-    },
-  );
 
   // Tab navigation
   const tabs: TabType[] = ["download", "files", "history", "settings", "logs"];
