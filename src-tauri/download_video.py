@@ -374,6 +374,7 @@ def download_video(video_url, output_dir=".", quality="best"):
         '-o', f'{output_dir}/%(title)s.%(ext)s',
         '--no-playlist',
         '--merge-output-format', 'mp4',
+        '--socket-timeout', '30',
         video_url
     ]
 

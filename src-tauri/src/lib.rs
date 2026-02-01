@@ -448,6 +448,21 @@ async fn get_episode_url(
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct UpdateSeriesResponse {
+    success: bool,
+}
+
+#[tauri::command]
+async fn update_series_state(
+    series: UnifiedSeriesInfo,
+    state: State<'_, AppState>,
+) -> Result<UpdateSeriesResponse, String> {
+    *state.current_series.lock().unwrap() = Some(series);
+    Ok(UpdateSeriesResponse { success: true })
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct FileInfo {
     name: String,
     path: String,
@@ -600,6 +615,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             fetch_series,
+            update_series_state,
             check_ffmpeg_available,
             auto_detect_video_url,
             start_download,

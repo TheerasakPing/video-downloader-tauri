@@ -156,6 +156,7 @@ impl VideoDownloader {
         cmd.args([
             "-y",
             "-headers", headers,
+            "-rw_timeout", "30000000", // 30s timeout to prevent hanging
             "-i", video_url,
             "-c", "copy",
             // Network resilience flags
@@ -192,6 +193,8 @@ impl VideoDownloader {
         // Capture last error line
         let mut last_error_line = String::new();
 
+        let mut total_duration: f64 = 0.0;
+
         // Processing loop
         for line in reader.lines() {
             // Check cancellation
@@ -209,6 +212,24 @@ impl VideoDownloader {
             }
 
             if let Ok(line) = line {
+                // Parse Duration if not yet found
+                if total_duration == 0.0 && line.contains("Duration:") {
+                    if let Some(start) = line.find("Duration: ") {
+                        let content = &line[start + 10..]; // Skip "Duration: "
+                        if let Some(end) = content.find(',') {
+                            let time_str = &content[..end];
+                            let parts: Vec<&str> = time_str.split(':').collect();
+                            if parts.len() == 3 {
+                                let h: f64 = parts[0].parse().unwrap_or(0.0);
+                                let m: f64 = parts[1].parse().unwrap_or(0.0);
+                                let s: f64 = parts[2].parse().unwrap_or(0.0);
+                                total_duration = h * 3600.0 + m * 60.0 + s;
+                                let _ = app_handle.emit("log-info", format!("Total Duration parsed: {}s", total_duration));
+                            }
+                        }
+                    }
+                }
+
                 // Log the first few lines to see what's happening
                 if last_emit.elapsed().as_secs() < 5 {
                      let _ = app_handle.emit("log-info", format!("FFmpeg output: {}", line));
@@ -225,12 +246,19 @@ impl VideoDownloader {
                 if let Some(stats) = parse_ffmpeg_stats(&line) {
                     if last_emit.elapsed().as_millis() >= 500 {
                         let speed_bps = stats.bitrate_kbps * 1024.0 / 8.0; // Convert kbps to Bytes/s roughly
+                        
+                        let percentage = if total_duration > 0.0 {
+                            (stats.time_seconds / total_duration * 100.0).min(99.9)
+                        } else {
+                            0.0
+                        };
+
                         let progress = DownloadProgress {
                             episode,
                             downloaded: stats.size_bytes,
                             total: 0, // Unknown for HLS usually
                             speed: speed_bps,
-                            percentage: 0.0, // Indeterminate
+                            percentage, 
                         };
                         let _ = app_handle.emit("download-progress", progress);
                         last_emit = std::time::Instant::now();

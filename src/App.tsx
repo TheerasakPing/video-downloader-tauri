@@ -276,6 +276,7 @@ function App() {
           }
         }
         success(`Ready to download ${validUrls.length} series`);
+        setIsBatchProcessing(true); // Auto-start processing
         return;
       }
 
@@ -353,11 +354,9 @@ function App() {
       resetSpeedGraph();
 
       try {
-        // Ensure backend has the correct series loaded
-        await invoke("fetch_series", {
-          url:
-            targetSeries.url ||
-            `https://rongyok.com/series/${targetSeries.seriesId}/stub`,
+        // Ensure backend has the correct series loaded (sync frontend state to backend)
+        await invoke("update_series_state", {
+          series: targetSeries,
         });
 
         const results = await invoke<DownloadResult[]>("start_download", {
@@ -467,6 +466,7 @@ function App() {
 
                 if (newItems.length > 0) {
                   success(`Added ${newItems.length} links to queue`);
+                  setIsBatchProcessing(true); // Auto-start processing
                   return [...prev, ...newItems];
                 }
                 return prev;
@@ -493,20 +493,77 @@ function App() {
     }
   }, [downloadState.isDownloading, progress.percentage]);
 
+  // Batch Fetcher (Pending -> Ready)
+  useEffect(() => {
+    // Only one fetch at a time
+    const pendingIdx = batchQueue.findIndex((i) => i.status === "pending");
+    if (pendingIdx !== -1 && !isFetching) {
+      const item = batchQueue[pendingIdx];
+      // log(`Batch Fetcher: Fetching info for ${item.url}`);
+
+      const fetchItem = async () => {
+        // Mark as fetching
+        setBatchQueue((prev) =>
+          prev.map((it, idx) =>
+            idx === pendingIdx ? { ...it, status: "fetching" } : it,
+          ),
+        );
+        setIsFetching(true);
+
+        try {
+          // Use invoke directly to fetch series info
+          const result = await invoke<SeriesInfo>("fetch_series", {
+            url: item.url,
+          });
+
+          setBatchQueue((prev) =>
+            prev.map((it, idx) =>
+              idx === pendingIdx
+                ? { ...it, status: "ready", info: result }
+                : it,
+            ),
+          );
+          log(`Queue: Ready - ${result.title}`);
+        } catch (e) {
+          error(`Queue Fetch failed for ${item.url}: ${e}`);
+          setBatchQueue((prev) =>
+            prev.map((it, idx) =>
+              idx === pendingIdx
+                ? { ...it, status: "failed", error: String(e) }
+                : it,
+            ),
+          );
+        } finally {
+          setIsFetching(false);
+        }
+      };
+
+      fetchItem();
+    }
+  }, [batchQueue, isFetching, log, error]);
+
   // Continuous Batch Processing
   useEffect(() => {
+    // Console log is safe (doesn't trigger re-render)
+    // console.log(`Queue Check: Processing=${isBatchProcessing}, Downloading=${downloadState.isDownloading}`);
+
     if (!isBatchProcessing) return;
     if (downloadState.isDownloading) return;
 
-    // Check if any item is currently marked as downloading (to prevent double start before downloadState updates)
-    if (batchQueue.some((i) => i.status === "downloading")) return;
+    // Disabled check to prevent stale status deadlock
+    // const isAnyDownloading = batchQueue.some((i) => i.status === "downloading");
+    // if (isAnyDownloading) return;
 
     const nextIdx = batchQueue.findIndex((i) => i.status === "ready" && i.info);
     if (nextIdx !== -1) {
+      console.log(
+        `Queue Manager: Found next item at index ${nextIdx} (${batchQueue[nextIdx].url})`,
+      );
       const item = batchQueue[nextIdx];
 
       const processItem = async () => {
-        log(`Processing batch item: ${item.info?.title}`);
+        // Use console.log to avoid infinite render loops
+        console.log(`Processing batch item: ${item.info?.title}`);
 
         // Mark as downloading
         setBatchQueue((prev) =>
@@ -523,6 +580,8 @@ function App() {
           // runDownload now fetches series info internally to ensure consistency
           const success = await runDownload(item.info!, allEpisodes);
 
+          console.log(`Batch item finished found success=${success}`);
+
           setBatchQueue((prev) =>
             prev.map((it, idx) =>
               idx === nextIdx
@@ -531,7 +590,8 @@ function App() {
             ),
           );
         } catch (e) {
-          error(`Batch item failed: ${e}`);
+          console.error(`Batch item failed: ${e}`);
+          // Error state update is safe because it breaks the "ready" condition
           setBatchQueue((prev) =>
             prev.map((it, idx) =>
               idx === nextIdx
@@ -541,16 +601,10 @@ function App() {
           );
         }
       };
+
       processItem();
     }
-  }, [
-    isBatchProcessing,
-    downloadState.isDownloading,
-    batchQueue,
-    runDownload,
-    log,
-    error,
-  ]);
+  }, [batchQueue, isBatchProcessing, downloadState.isDownloading, runDownload]);
 
   const toggleBatchProcessing = () => {
     setIsBatchProcessing((prev) => !prev);
@@ -1022,7 +1076,8 @@ function App() {
 
   const overallProgress =
     downloadState.totalSelected > 0
-      ? (downloadState.completedEpisodes.length / downloadState.totalSelected) *
+      ? ((downloadState.completedEpisodes.length + progress.percentage / 100) /
+          downloadState.totalSelected) *
         100
       : 0;
 
@@ -1550,9 +1605,25 @@ function App() {
                 <div className="flex items-center gap-1">
                   <Button
                     size="sm"
+                    variant={isBatchProcessing ? "amber" : "success"}
+                    className="h-6 w-6 p-0"
+                    onClick={toggleBatchProcessing}
+                    title={isBatchProcessing ? "Pause Queue" : "Start Queue"}
+                  >
+                    {isBatchProcessing ? (
+                      <Pause size={12} />
+                    ) : (
+                      <Play size={12} />
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
                     variant="ghost"
                     className="h-6 w-6 p-0"
-                    onClick={() => setBatchQueue([])}
+                    onClick={() => {
+                      setBatchQueue([]);
+                      setIsBatchProcessing(false);
+                    }}
                     title="Clear"
                   >
                     <X size={14} />
@@ -1609,12 +1680,26 @@ function App() {
                           {item.status === "fetching" && "Fetching info..."}
                           {item.status === "ready" &&
                             `Ready (${item.info?.totalEpisodes})`}
-                          {item.status === "downloading" && "Downloading..."}
-                          {item.status === "completed" && "Completed"}
+                          {item.status === "downloading" && (
+                            <span className="text-cyan-400 flex items-center gap-1">
+                              Downloading {progress.percentage.toFixed(0)}%
+                            </span>
+                          )}
+                          {item.status === "completed" && (
+                            <span className="text-emerald-400">Completed</span>
+                          )}
                           {item.status === "error" && (
                             <span className="text-red-400">Error</span>
                           )}
                         </div>
+                        {item.status === "downloading" && (
+                          <div className="h-1 bg-slate-700/50 rounded-full overflow-hidden mt-1 w-full">
+                            <div
+                              className="h-full bg-cyan-400/80 transition-all duration-300 shadow-[0_0_4px_currentColor]"
+                              style={{ width: `${progress.percentage}%` }}
+                            />
+                          </div>
+                        )}
                       </div>
                       <button
                         onClick={(e) => {
