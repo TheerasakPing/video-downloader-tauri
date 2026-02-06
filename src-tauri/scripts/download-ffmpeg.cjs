@@ -137,22 +137,19 @@ const getUrls = (target) => {
       isWin: false,
     };
   } else if (target.includes("apple-darwin")) {
-    if (target.includes("universal")) {
+    if (target === "universal-apple-darwin") {
+      // Universal build needs both architectures - we'll download both and use lipo to merge
       return {
-        isUniversal: true,
-        arm64: {
-          ffmpeg:
-            "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-darwin-arm64",
-          ffprobe:
-            "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffprobe-darwin-arm64",
-        },
-        x64: {
-          ffmpeg:
-            "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-darwin-x64",
-          ffprobe:
-            "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffprobe-darwin-x64",
-        },
+        ffmpeg_arm64:
+          "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-darwin-arm64",
+        ffprobe_arm64:
+          "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffprobe-darwin-arm64",
+        ffmpeg_x64:
+          "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-darwin-x64",
+        ffprobe_x64:
+          "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffprobe-darwin-x64",
         isWin: false,
+        isUniversal: true,
       };
     } else if (target.includes("aarch64")) {
       return {
@@ -200,52 +197,56 @@ const downloadFile = (url, dest, isWin) => {
 const ext = config.isWin ? ".exe" : "";
 
 if (config.isUniversal) {
-  // Download arm64
-  const arm64Ffmpeg = path.join(resourcesDir, `ffmpeg-arm64`);
-  const arm64Ffprobe = path.join(resourcesDir, `ffprobe-arm64`);
-  downloadFile(config.arm64.ffmpeg, arm64Ffmpeg, false);
-  downloadFile(config.arm64.ffprobe, arm64Ffprobe, false);
+  // Universal macOS build - download both architectures and merge with lipo
+  const tempDir = path.join(resourcesDir, "temp_universal");
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
 
-  // Download x64
-  const x64Ffmpeg = path.join(resourcesDir, `ffmpeg-x64`);
-  const x64Ffprobe = path.join(resourcesDir, `ffprobe-x64`);
-  downloadFile(config.x64.ffmpeg, x64Ffmpeg, false);
-  downloadFile(config.x64.ffprobe, x64Ffprobe, false);
+  // Download arm64 binaries
+  const ffmpegArm64 = path.join(tempDir, "ffmpeg-arm64");
+  const ffprobeArm64 = path.join(tempDir, "ffprobe-arm64");
+  downloadFile(config.ffmpeg_arm64, ffmpegArm64, false);
+  downloadFile(config.ffprobe_arm64, ffprobeArm64, false);
 
-  // Lipo ffmpeg
-  const universalFfmpeg = path.join(resourcesDir, `${ffmpegName}${ext}`);
-  console.log(`Creating universal binary for ffmpeg: ${universalFfmpeg}`);
+  // Download x64 binaries
+  const ffmpegX64 = path.join(tempDir, "ffmpeg-x64");
+  const ffprobeX64 = path.join(tempDir, "ffprobe-x64");
+  downloadFile(config.ffmpeg_x64, ffmpegX64, false);
+  downloadFile(config.ffprobe_x64, ffprobeX64, false);
+
+  // Merge with lipo to create universal binaries
+  const universalFfmpeg = path.join(resourcesDir, `${ffmpegName}`);
+  const universalFfprobe = path.join(resourcesDir, `${ffprobeName}`);
+
+  console.log("Creating universal binary with lipo...");
   try {
     execSync(
-      `lipo -create "${arm64Ffmpeg}" "${x64Ffmpeg}" -output "${universalFfmpeg}"`,
+      `lipo -create -output "${universalFfmpeg}" "${ffmpegArm64}" "${ffmpegX64}"`,
     );
     execSync(`chmod +x "${universalFfmpeg}"`);
-    console.log("Success creating universal ffmpeg");
-  } catch (e) {
-    console.error(`Failed to create universal ffmpeg: ${e.message}`);
-    process.exit(1);
-  }
+    console.log(`Success: ${universalFfmpeg}`);
 
-  // Lipo ffprobe
-  const universalFfprobe = path.join(resourcesDir, `${ffprobeName}${ext}`);
-  console.log(`Creating universal binary for ffprobe: ${universalFfprobe}`);
-  try {
     execSync(
-      `lipo -create "${arm64Ffprobe}" "${x64Ffprobe}" -output "${universalFfprobe}"`,
+      `lipo -create -output "${universalFfprobe}" "${ffprobeArm64}" "${ffprobeX64}"`,
     );
     execSync(`chmod +x "${universalFfprobe}"`);
-    console.log("Success creating universal ffprobe");
+    console.log(`Success: ${universalFfprobe}`);
+
+    // Verify universal binaries
+    console.log("Verifying universal binaries...");
+    execSync(`lipo -info "${universalFfmpeg}"`);
+    execSync(`lipo -info "${universalFfprobe}"`);
   } catch (e) {
-    console.error(`Failed to create universal ffprobe: ${e.message}`);
+    console.error(`Failed to create universal binary: ${e.message}`);
     process.exit(1);
   }
 
-  // Cleanup temps
-  fs.unlinkSync(arm64Ffmpeg);
-  fs.unlinkSync(arm64Ffprobe);
-  fs.unlinkSync(x64Ffmpeg);
-  fs.unlinkSync(x64Ffprobe);
+  // Cleanup temp directory
+  fs.rmSync(tempDir, { recursive: true, force: true });
+  console.log("Cleaned up temp files");
 } else {
+  // Regular single-architecture build
   downloadFile(
     config.ffmpeg,
     path.join(resourcesDir, `${ffmpegName}${ext}`),

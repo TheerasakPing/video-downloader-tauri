@@ -18,15 +18,20 @@ jobs:
       matrix:
         include:
           - platform: "macos-latest"
+            args: "--target universal-apple-darwin"
+            target: "universal-apple-darwin"
+          - platform: "macos-latest"
             args: "--target aarch64-apple-darwin"
+            target: "aarch64-apple-darwin"
           - platform: "macos-latest"
             args: "--target x86_64-apple-darwin"
-          - platform: "macos-latest"
-            args: "--target universal-apple-darwin"
+            target: "x86_64-apple-darwin"
           - platform: "ubuntu-22.04"
             args: ""
+            target: "x86_64-unknown-linux-gnu"
           - platform: "windows-latest"
             args: ""
+            target: "x86_64-pc-windows-msvc"
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -52,7 +57,7 @@ jobs:
         run: npm install
 
       - name: Download Sidecar Binaries (ffmpeg)
-        run: node src-tauri/scripts/download-ffmpeg.cjs ${{ matrix.platform == 'macos-latest' && (matrix.args == '--target aarch64-apple-darwin' && 'aarch64-apple-darwin' || (matrix.args == '--target universal-apple-darwin' && 'universal-apple-darwin' || 'x86_64-apple-darwin')) || (matrix.platform == 'windows-latest' && 'x86_64-pc-windows-msvc' || 'x86_64-unknown-linux-gnu') }}
+        run: node src-tauri/scripts/download-ffmpeg.cjs ${{ matrix.target }}
 
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
@@ -70,8 +75,9 @@ jobs:
             - Improved history panel (stores up to 500 records)
 
             ## Download
-            - **macOS (Apple Silicon)**: Download `.dmg` file for M1/M2/M3 Macs
-            - **macOS (Intel)**: Download `x64.dmg` file for Intel Macs
+            - **macOS (Universal)**: Download `universal.dmg` - Works on BOTH Intel and Apple Silicon Macs ⭐ Recommended
+            - **macOS (Apple Silicon)**: Download `aarch64.dmg` file for M1/M2/M3/M4 Macs only
+            - **macOS (Intel)**: Download `x64.dmg` file for Intel Macs only
             - **Windows**: Download `.msi` or `.exe` installer
             - **Linux**: Download `.deb` or `.AppImage`
           releaseDraft: false
@@ -135,10 +141,6 @@ jobs:
           MACOS_X64_SIG=$(read_sig "Rongyok.Downloader_x64.app.tar.gz.sig")
           MACOS_X64_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_x64.app.tar.gz"
 
-          # macOS Universal
-          MACOS_UNIVERSAL_SIG=$(read_sig "Rongyok.Downloader_universal.app.tar.gz.sig")
-          MACOS_UNIVERSAL_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_universal.app.tar.gz"
-
           # Linux - .AppImage (direct, no tar.gz wrapper needed for Tauri v2)
           LINUX_SIG=$(read_sig "Rongyok.Downloader_${VERSION}_amd64.AppImage.sig")
           LINUX_URL="https://github.com/${REPO}/releases/download/${TAG}/Rongyok.Downloader_${VERSION}_amd64.AppImage"
@@ -163,8 +165,6 @@ jobs:
             --arg darwin_aarch64_url "$MACOS_AARCH64_URL" \
             --arg darwin_x64_sig "$MACOS_X64_SIG" \
             --arg darwin_x64_url "$MACOS_X64_URL" \
-            --arg darwin_universal_sig "$MACOS_UNIVERSAL_SIG" \
-            --arg darwin_universal_url "$MACOS_UNIVERSAL_URL" \
             --arg linux_sig "$LINUX_SIG" \
             --arg linux_url "$LINUX_URL" \
             --arg windows_sig "$WINDOWS_SIG" \
@@ -176,7 +176,6 @@ jobs:
               platforms: {
                 "darwin-aarch64": { signature: $darwin_aarch64_sig, url: $darwin_aarch64_url },
                 "darwin-x86_64": { signature: $darwin_x64_sig, url: $darwin_x64_url },
-                "darwin-universal": { signature: $darwin_universal_sig, url: $darwin_universal_url },
                 "linux-x86_64": { signature: $linux_sig, url: $linux_url },
                 "windows-x86_64": { signature: $windows_sig, url: $windows_url }
               }
