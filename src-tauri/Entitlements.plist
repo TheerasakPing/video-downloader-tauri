@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Allow app to inherit its sandbox from parent process (for dev) -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+    
+    <!-- Allow access to user-selected files (via open/save dialogs) -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    
+    <!-- Allow access to Downloads folder -->
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+    
+    <!-- Allow access to removable volumes (USB drives, external disks) -->
+    <key>com.apple.security.files.volumes.removable.read-write</key>
+    <true/>
+    
+    <!-- Allow access to Pictures folder (for saving thumbnails) -->
+    <key>com.apple.security.assets.pictures.read-write</key>
+    <true/>
+    
+    <!-- Allow access to Movies folder (for video downloads) -->
+    <key>com.apple.security.assets.movies.read-write</key>
+    <true/>
+    
+    <!-- Allow outgoing network connections (for downloading) -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+</dict>
+</plist>
