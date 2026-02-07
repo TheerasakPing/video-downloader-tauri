@@ -197,35 +197,59 @@ const downloadFile = (url, dest, isWin) => {
 const ext = config.isWin ? ".exe" : "";
 
 if (config.isUniversal) {
-  // Universal macOS build - Tauri builds each architecture separately, so we need BOTH binaries
-  // with their architecture-specific names. Tauri will find the correct one for each arch build.
-  console.log("Universal build: downloading both arm64 and x64 binaries...");
+  // Universal macOS build requires THREE sets of binaries:
+  // 1. ffmpeg-aarch64-apple-darwin (for arm64 build phase)
+  // 2. ffmpeg-x86_64-apple-darwin (for x64 build phase)
+  // 3. ffmpeg-universal-apple-darwin (for bundling phase)
+  console.log("Universal build: downloading arm64 and x64 binaries...");
 
-  // Download arm64 binaries with correct names
-  downloadFile(
-    config.ffmpeg_arm64,
-    path.join(resourcesDir, "ffmpeg-aarch64-apple-darwin"),
-    false,
+  const ffmpegArm64 = path.join(resourcesDir, "ffmpeg-aarch64-apple-darwin");
+  const ffprobeArm64 = path.join(resourcesDir, "ffprobe-aarch64-apple-darwin");
+  const ffmpegX64 = path.join(resourcesDir, "ffmpeg-x86_64-apple-darwin");
+  const ffprobeX64 = path.join(resourcesDir, "ffprobe-x86_64-apple-darwin");
+
+  // Download arm64 binaries
+  downloadFile(config.ffmpeg_arm64, ffmpegArm64, false);
+  downloadFile(config.ffprobe_arm64, ffprobeArm64, false);
+
+  // Download x64 binaries
+  downloadFile(config.ffmpeg_x64, ffmpegX64, false);
+  downloadFile(config.ffprobe_x64, ffprobeX64, false);
+
+  // Create universal binaries using lipo for the bundling phase
+  const ffmpegUniversal = path.join(
+    resourcesDir,
+    "ffmpeg-universal-apple-darwin",
   );
-  downloadFile(
-    config.ffprobe_arm64,
-    path.join(resourcesDir, "ffprobe-aarch64-apple-darwin"),
-    false,
+  const ffprobeUniversal = path.join(
+    resourcesDir,
+    "ffprobe-universal-apple-darwin",
   );
 
-  // Download x64 binaries with correct names
-  downloadFile(
-    config.ffmpeg_x64,
-    path.join(resourcesDir, "ffmpeg-x86_64-apple-darwin"),
-    false,
-  );
-  downloadFile(
-    config.ffprobe_x64,
-    path.join(resourcesDir, "ffprobe-x86_64-apple-darwin"),
-    false,
-  );
+  console.log("Creating universal binaries with lipo...");
+  try {
+    execSync(
+      `lipo -create -output "${ffmpegUniversal}" "${ffmpegArm64}" "${ffmpegX64}"`,
+    );
+    execSync(`chmod +x "${ffmpegUniversal}"`);
+    console.log(`Success: ${ffmpegUniversal}`);
 
-  console.log("✅ Both architecture binaries downloaded for universal build");
+    execSync(
+      `lipo -create -output "${ffprobeUniversal}" "${ffprobeArm64}" "${ffprobeX64}"`,
+    );
+    execSync(`chmod +x "${ffprobeUniversal}"`);
+    console.log(`Success: ${ffprobeUniversal}`);
+
+    // Verify
+    console.log("Verifying universal binaries:");
+    execSync(`lipo -info "${ffmpegUniversal}"`);
+    execSync(`lipo -info "${ffprobeUniversal}"`);
+  } catch (e) {
+    console.error(`Failed to create universal binary: ${e.message}`);
+    process.exit(1);
+  }
+
+  console.log("✅ All 3 sets of binaries ready for universal build");
 } else {
   // Regular single-architecture build
   downloadFile(
