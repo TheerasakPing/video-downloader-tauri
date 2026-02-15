@@ -554,7 +554,13 @@ pub fn get_ffmpeg_command() -> Command {
         .ok()
         .and_then(|p| p.parent().map(|p| {
             #[cfg(target_os = "windows")]
-            return p.join("ffmpeg.exe");
+            {
+                let path = p.join("ffmpeg-x86_64-pc-windows-msvc.exe");
+                if path.exists() {
+                    return path;
+                }
+                return p.join("ffmpeg.exe");
+            }
             #[cfg(not(target_os = "windows"))]
             return p.join("ffmpeg");
         }))
