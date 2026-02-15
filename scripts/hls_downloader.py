@@ -23,7 +23,7 @@ def get_video_title(m3u8_url):
     
     return "downloaded_video"
 
-def download_hls_video(m3u8_url, output_filename=None, max_retries=3):
+def download_hls_video(m3u8_url, output_filename=None, max_retries=3, headers=None):
     """
     ดาวน์โหลดวิดีโอ HLS (m3u8) และรวมเป็นไฟล์ MP4
     """
@@ -35,103 +35,79 @@ def download_hls_video(m3u8_url, output_filename=None, max_retries=3):
         output_filename = f"{video_title}.mp4"
         print(f"ตั้งชื่อไฟล์อัตโนมัติเป็น: {output_filename}")
     
-    # สร้างโฟลเดอร์ชั่วคราว
-    temp_dir = "temp_segments"
-    if os.path.exists(temp_dir):
-        shutil.rmtree(temp_dir)
-    os.makedirs(temp_dir)
-    
     try:
-        # 1. ดาวน์โหลด Playlist
-        response = requests.get(m3u8_url, timeout=10)
-        response.raise_for_status()
-        playlist_content = response.text
+        # Prepare FFmpeg command
+        # Headers string construction
+        headers_str = ""
+        user_agent = None
         
-        base_url = m3u8_url.rsplit('/', 1)[0] + '/'
+        if headers:
+            for k, v in headers.items():
+                if k.lower() == 'user-agent':
+                    user_agent = v
+                headers_str += f"{k}: {v}\r\n"
         
-        segments = []
-        for line in playlist_content.splitlines():
-            line = line.strip()
-            if line and not line.startswith('#'):
-                # จัดการ Relative URL
-                if not line.startswith('http'):
-                    segment_url = urljoin(base_url, line)
-                else:
-                    segment_url = line
-                segments.append(segment_url)
-        
-        print(f"พบจำนวน Segments: {len(segments)}")
-        
-        if not segments:
-            print("ไม่พบ Segment ใน Playlist หรือรูปแบบไม่ถูกต้อง")
-            return False
+        if not user_agent:
+            user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 
-        # 2. ดาวน์โหลด Segments
-        segment_files = []
-        for i, segment_url in enumerate(segments):
-            segment_filename = os.path.join(temp_dir, f"segment_{i:04d}.ts")
-            segment_files.append(segment_filename)
-            
-            success = False
-            for attempt in range(max_retries):
-                try:
-                    print(f"กำลังดาวน์โหลด Segment {i+1}/{len(segments)}...", end='\r')
-                    seg_response = requests.get(segment_url, stream=True, timeout=10)
-                    seg_response.raise_for_status()
-                    
-                    with open(segment_filename, 'wb') as f:
-                        for chunk in seg_response.iter_content(chunk_size=8192):
-                            f.write(chunk)
-                    success = True
-                    break
-                except requests.RequestException as e:
-                    print(f"\nดาวน์โหลด Segment {i} ล้มเหลว (ครั้งที่ {attempt+1}): {e}")
-            
-            if not success:
-                print(f"\nไม่สามารถดาวน์โหลด Segment {i} ได้หลังจากลอง {max_retries} ครั้ง")
-                return False
-        
-        print("\nดาวน์โหลด Segments ครบถ้วน")
-        
-        # 3. สร้าง File List สำหรับ FFmpeg
-        list_file_path = os.path.join(temp_dir, "file_list.txt")
-        with open(list_file_path, 'w') as f:
-            for seg_file in segment_files:
-                # ต้องใช้ absolute path เพื่อความชัวร์ หรือ relative path ที่ถูกต้อง
-                abs_path = os.path.abspath(seg_file)
-                f.write(f"file '{abs_path}'\n")
-        
-        # 4. รวมไฟล์ด้วย FFmpeg
-        print("กำลังรวมไฟล์เป็น MP4...")
-        
-        # ตรวจสอบว่า output file มีอยู่แล้วหรือไม่ ถ้ามีให้ลบออกก่อน
-        if os.path.exists(output_filename):
-            os.remove(output_filename)
-            
         ffmpeg_cmd = [
             'ffmpeg',
-            '-f', 'concat',
-            '-safe', '0',
-            '-i', list_file_path,
-            '-c', 'copy',
-            '-y', # Overwrite output files without asking
-            output_filename
+            '-user_agent', user_agent,
         ]
+
+        if headers_str:
+             ffmpeg_cmd.extend(['-headers', headers_str])
+
+        # Use temp directory for ffmpeg output to avoid permission issues on some volumes
+        # explicitly use /tmp because TMPDIR env var might be set to project dir which ffmpeg can't write to
+        import platform
+        if platform.system() == "Windows":
+             import tempfile
+             base_temp = tempfile.gettempdir()
+        else:
+             base_temp = "/tmp"
+             
+        temp_output_path = os.path.join(base_temp, os.path.basename(output_filename))
+        print(f"Temporary output path: {temp_output_path}")
+
+        ffmpeg_cmd.extend([
+            '-i', m3u8_url,
+            '-c', 'copy',
+            '-bsf:a', 'aac_adtstoasc',
+            '-y',
+            temp_output_path
+        ])
         
-        subprocess.run(ffmpeg_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        print(f"Executing FFmpeg command: {' '.join(ffmpeg_cmd)}")
         
-        print(f"ดาวน์โหลดเสร็จสมบูรณ์! บันทึกไฟล์ที่: {output_filename}")
+        subprocess.run(ffmpeg_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+        # Move file back to original destination
+        print(f"Moving file from {temp_output_path} to {output_filename}")
+        try:
+            if os.path.exists(output_filename):
+                os.remove(output_filename)
+            shutil.move(temp_output_path, output_filename)
+            print(f"ดาวน์โหลดเสร็จสมบูรณ์! บันทึกไฟล์ที่: {output_filename}")
+        except Exception as move_err:
+            print(f"ดาวน์โหลดเสร็จสิ้น แต่ไม่สามารถย้ายไฟล์ไปที่ {output_filename} ได้ (Permission Error)")
+            print(f"ไฟล์ของคุณอยู่ที่: {temp_output_path}")
+            print(f"Error details: {move_err}")
+            # Do NOT delete temp file here!
+            return True
+            
         return True
+        
+    except subprocess.CalledProcessError as e:
+        error_msg = e.stderr.decode('utf-8')
+        print(f"FFmpeg Error: {error_msg}")
+        # Clean up temp file if needed
+        # if os.path.exists(temp_output_path): os.remove(temp_output_path)
+        return False
         
     except Exception as e:
         print(f"เกิดข้อผิดพลาด: {e}")
         return False
-        
-    finally:
-        # 5. ลบไฟล์ชั่วคราว
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
-            print("ลบไฟล์ชั่วคราวเรียบร้อย")
 
 if __name__ == "__main__":
     target_url = "https://media.vdohls.com/R48Ss-m5w_Tea/video.m3u8"

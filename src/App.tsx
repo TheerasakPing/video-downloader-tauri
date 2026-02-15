@@ -157,7 +157,9 @@ function App() {
     return (
       text.includes("rongyok.com") ||
       text.includes("thongyok.com") ||
-      text.includes("51cg1.com")
+      text.includes("51cg1.com") ||
+      text.includes("357ms.com") ||
+      text.includes("357.com")
     );
   }, []);
 

@@ -3,10 +3,12 @@ mod chrome_detector;
 mod downloader;
 mod parser;
 mod titan_parser;
+mod python_interface;
 mod utils;
 
 use baanjeen_parser::BaanJeenParser;
 use chrome_detector::ChromeVideoDetector;
+use python_interface::fetch_357ms_series;
 use downloader::{check_ffmpeg, merge_videos_with_progress, DownloadConfig, DownloadResult, DownloadState, VideoDownloader};
 use parser::RongyokParser;
 use serde::{Deserialize, Serialize};
@@ -79,6 +81,11 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
 
         *state.current_series.lock().unwrap() = Some(series_info.clone());
         return Ok(series_info);
+    }
+
+    // Check for 357ms
+    if url.contains("357ms.com") || url.contains("357") { // Simple check, might need regex
+         return fetch_357ms_series(&url).map_err(|e| e.to_string());
     }
 
     // Check which parser to use based on URL

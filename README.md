@@ -1,11 +1,12 @@
 # 🎬 Rongyok Video Downloader
 
-> 📥 โปรแกรมดาวน์โหลดวิดีโอจาก rongyok.com แบบครบวงจร
+> 📥 โปรแกรมดาวน์โหลดวิดีโอจากเว็บ Streaming ชั้นนำ (Rongyok, BaanJeen, 357ms) แบบครบวงจร
 
 ![Tauri](https://img.shields.io/badge/Tauri-2.0-blue?logo=tauri)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?logo=typescript)
 ![Rust](https://img.shields.io/badge/Rust-1.75-orange?logo=rust)
+![Python](https://img.shields.io/badge/Python-3.8+-yellow?logo=python)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
@@ -14,6 +15,8 @@
 
 | ฟีเจอร์                   | รายละเอียด                                   |
 | ------------------------- | -------------------------------------------- |
+| 🌐 **Multi-Site Support** | รองรับ Rongyok, BaanJeen, 357ms, และ Direct URL |
+| 🧠 **Hybrid Parsing**     | ระบบตรวจจับวิดีโออัจฉริยะ (Static + Chrome Detector) |
 | 🚀 **Smart Queue**        | จัดการคิวอัตโนมัติ (Sequential Download)     |
 | 📋 **Auto Capture**       | ตรวจจับลิงก์จาก Clipboard อัตโนมัติ          |
 | 🎯 **ดาวน์โหลดหลายตอน**   | เลือกตอนที่ต้องการดาวน์โหลดได้อิสระ          |
@@ -22,12 +25,8 @@
 | 📊 **กราฟความเร็ว**       | แสดงความเร็วดาวน์โหลดแบบ Real-time           |
 | 🎨 **UI สวยงาม**          | 5 ธีมสี (Violet, Blue, Emerald, Amber, Rose) |
 | 🌍 **Multi-language**     | รองรับภาษาไทยและอังกฤษ (TH/EN)               |
-| ⌨️ **Keyboard Shortcuts** | คีย์ลัด (Ctrl+V, Ctrl+D, Space, etc.)        |
 | 🖼️ **Mini Mode**          | โหมดหน้าต่างเล็กสำหรับ Monitor ดาวน์โหลด     |
-| 🖱️ **Drag & Drop**        | ลาก URL มาวางเพื่อเริ่มดาวน์โหลด             |
-| 📱 **Responsive**         | ใช้งานได้ทุกขนาดหน้าจอ                       |
 | 💾 **Resume Download**    | ดาวน์โหลดต่อจากที่ค้างไว้ได้                 |
-| 🚀 **ข้ามแพลตฟอร์ม**      | รองรับ Windows, macOS, Linux                 |
 
 ---
 
@@ -67,13 +66,14 @@
 
 - **Node.js** 18+
 - **Rust** 1.70+
+- **Python** 3.8+ (สำหรับบางเว็บไซต์)
 - **FFmpeg** (ไม่บังคับ - สำหรับรวมไฟล์)
 
 ### 🍎 macOS
 
 ```bash
 # ติดตั้ง FFmpeg (ถ้าต้องการรวมไฟล์)
-brew install ffmpeg
+brew install ffmpeg python
 
 # ดาวน์โหลดและติดตั้ง .dmg จาก Releases
 ```
@@ -82,7 +82,7 @@ brew install ffmpeg
 
 ```bash
 # ติดตั้ง FFmpeg (ถ้าต้องการรวมไฟล์)
-winget install FFmpeg
+winget install FFmpeg Python.Python.3
 
 # ดาวน์โหลดและรัน .msi หรือ .exe จาก Releases
 ```
@@ -91,10 +91,7 @@ winget install FFmpeg
 
 ```bash
 # Ubuntu/Debian
-sudo apt install ffmpeg
-
-# Fedora
-sudo dnf install ffmpeg
+sudo apt install ffmpeg python3
 
 # ดาวน์โหลด .deb, .rpm หรือ .AppImage จาก Releases
 ```
@@ -105,12 +102,14 @@ sudo dnf install ffmpeg
 
 ### 1️⃣ วาง URL
 
-คัดลอก URL จาก rongyok.com แล้ววางในช่อง URL
+คัดลอก URL จากเว็บที่รองรับ แล้ววางในช่อง URL
 
 ```
 รูปแบบที่รองรับ:
-✅ https://rongyok.com/watch/?series_id=12345
-✅ https://rongyok.com/series/12345/ชื่อซีรี่ส์
+✅ https://rongyok.com/watch/?series_id=...
+✅ https://baanjeen.com/...
+✅ https://357ms.com/...
+✅ Direct URL (.mp4, .m3u8)
 ```
 
 ### 2️⃣ กด Fetch
@@ -126,51 +125,6 @@ sudo dnf install ffmpeg
 
 โปรแกรมจะเริ่มดาวน์โหลดและแสดงความคืบหน้า
 
-### 5️⃣ รวมไฟล์ (อัตโนมัติ)
-
-ถ้าติ๊ก ✅ "Merge videos after download" โปรแกรมจะรวมไฟล์อัตโนมัติ
-
----
-
-## ⚙️ ตั้งค่า
-
-| ตัวเลือก                    | คำอธิบาย                                      |
-| --------------------------- | --------------------------------------------- |
-| 📂 **Output Directory**     | โฟลเดอร์สำหรับบันทึกไฟล์                      |
-| 🔢 **Concurrent Downloads** | จำนวนไฟล์ที่ดาวน์โหลดพร้อมกัน (1-5)           |
-| 🐌 **Speed Limit**          | จำกัดความเร็ว (0 = ไม่จำกัด)                  |
-| 📝 **File Naming**          | รูปแบบชื่อไฟล์ (ep_001, episode_1, title_ep1) |
-| 🔀 **Auto Merge**           | รวมไฟล์อัตโนมัติหลังดาวน์โหลด                 |
-| 🌙 **Theme**                | ธีม Dark / Light / System                     |
-| 🔔 **Notifications**        | แจ้งเตือนเมื่อดาวน์โหลดเสร็จ                  |
-| 🔊 **Sound**                | เสียงแจ้งเตือน                                |
-
----
-
-## 🏗️ พัฒนาเอง
-
-### Clone และติดตั้ง
-
-```bash
-git clone https://github.com/your-username/rongyok-downloader.git
-cd rongyok-downloader
-
-# ติดตั้ง dependencies
-npm install
-```
-
-### รันโหมดพัฒนา
-
-```bash
-npm run tauri dev
-```
-
-### Build สำหรับ Production
-
-```bash
-npm run tauri build
-```
-
 ---
 
 ## 📁 โครงสร้างโปรเจค
@@ -179,38 +133,29 @@ npm run tauri build
 rongyok-downloader/
 ├── 📂 src/                    # React Frontend
 │   ├── 📂 components/         # UI Components
-│   │   ├── Button.tsx
-│   │   ├── EpisodeSelector.tsx
-│   │   ├── FileBrowser.tsx
-│   │   ├── ProgressBar.tsx
-│   │   ├── SeriesCard.tsx
-│   │   ├── SettingsPanel.tsx
-│   │   └── SpeedGraph.tsx
 │   ├── 📂 hooks/              # Custom Hooks
-│   │   ├── useHistory.ts
-│   │   ├── useLogger.ts
-│   │   ├── useSettings.ts
-│   │   └── useSpeedGraph.ts
-│   ├── 📂 types/              # TypeScript Types
 │   ├── App.tsx                # Main App
-│   ├── index.css              # Styles + Animations
 │   └── main.tsx               # Entry Point
 │
 ├── 📂 src-tauri/              # Rust Backend
 │   ├── 📂 src/
-│   │   ├── lib.rs             # Tauri Commands
-│   │   ├── downloader.rs      # Download Logic
-│   │   ├── parser.rs          # URL Parser
-│   │   └── main.rs            # Entry Point
+│   │   ├── lib.rs             # Tauri Commands & App State
+│   │   ├── main.rs            # Entry Point
+│   │   ├── downloader.rs      # Download Logic (Async/Stream)
+│   │   ├── parser.rs          # Rongyok Parser
+│   │   ├── baanjeen_parser.rs # BaanJeen Parser
+│   │   ├── titan_parser.rs    # Titan Parser
+│   │   ├── chrome_detector.rs # Hybrid Detection Logic
+│   │   ├── python_interface.rs# Python Bridge (357ms)
+│   │   └── utils.rs           # Helpers
 │   ├── Cargo.toml             # Rust Dependencies
 │   └── tauri.conf.json        # Tauri Config
 │
-├── 📂 .github/workflows/      # CI/CD
-│   ├── ci.yml                 # Test & Build
-│   └── release.yml            # Release All Platforms
+├── 📂 scripts/                # Utility Scripts
+│   ├── 357ms_extractor.py
+│   └── web_video_extractor.py
 │
 ├── package.json
-├── tsconfig.json
 └── vite.config.ts
 ```
 

@@ -10,6 +10,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::time::{sleep, Duration};
+use std::collections::HashMap;
+use crate::python_interface::extract_357ms_video;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -121,8 +123,31 @@ impl VideoDownloader {
         let file_path = self.get_episode_filename(episode);
         let file_path_str = file_path.to_string_lossy().to_string();
 
+        let mut final_url = video_url.to_string();
+        let mut custom_headers = None;
+
+        // Check for 357ms
+        if video_url.contains("357ms.com") || video_url.contains("357") {
+             let _ = app_handle.emit("log-info", format!("Detecting 357ms video for URL: {}", video_url));
+             match extract_357ms_video(video_url) {
+                 Ok((m3u8, headers)) => {
+                     final_url = m3u8;
+                     custom_headers = Some(headers);
+                     let _ = app_handle.emit("log-info", format!("357ms extraction success: {}", final_url));
+                 },
+                 Err(e) => {
+                     return DownloadResult {
+                        episode,
+                        success: false,
+                        file_path: None,
+                        error: Some(format!("357ms extraction failed: {}", e)),
+                    };
+                 }
+             }
+        }
+
         // Check if it's an HLS stream (m3u8) - require FFmpeg
-        if video_url.contains(".m3u8") {
+        if final_url.contains(".m3u8") {
             if !check_ffmpeg() {
                 return DownloadResult {
                     episode,
@@ -131,11 +156,11 @@ impl VideoDownloader {
                     error: Some("FFmpeg is required for .m3u8 downloads but was not found".to_string()),
                 };
             }
-            return self.download_hls_stream(episode, video_url, &file_path_str, app_handle, download_state).await;
+            return self.download_hls_stream(episode, &final_url, &file_path_str, app_handle, download_state, custom_headers).await;
         }
 
         // Direct file download (MP4, etc) using Reqwest
-        self.download_direct_file(episode, video_url, &file_path, app_handle, download_state).await
+        self.download_direct_file(episode, &final_url, &file_path, app_handle, download_state).await
     }
 
     // Helper for downloading HLS streams with FFmpeg
@@ -146,16 +171,28 @@ impl VideoDownloader {
         file_path: &str,
         app_handle: &AppHandle,
         download_state: Option<Arc<DownloadState>>,
+        custom_headers: Option<HashMap<String, String>>,
     ) -> DownloadResult {
         let mut cmd = get_ffmpeg_command();
 
         // Add headers to mimic a browser + generic referer
-        // Add headers to mimic a browser (removed specific Referer to avoid 403 on some sites)
-        let headers = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+        let mut headers_str = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".to_string();
+        let mut user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".to_string();
+
+        if let Some(h) = custom_headers {
+            headers_str = String::new();
+            for (k, v) in h {
+                if k.eq_ignore_ascii_case("user-agent") {
+                    user_agent = v.clone();
+                }
+                headers_str.push_str(&format!("{}: {}\r\n", k, v));
+            }
+        }
 
         cmd.args([
             "-y",
-            "-headers", headers,
+            "-user_agent", &user_agent, // Explicitly set UA
+            "-headers", &headers_str,
             "-rw_timeout", "30000000", // 30s timeout to prevent hanging
             "-i", video_url,
             "-c", "copy",
@@ -164,8 +201,7 @@ impl VideoDownloader {
             "-reconnect_at_eof", "1",
             "-reconnect_streamed", "1",
             "-reconnect_delay_max", "2",
-            // Skip bsf filter unless needed, usually not for .mp4 from .ts stream if ffmpeg detects it right
-            // "-bsf:a", "aac_adtstoasc",
+            // "-bsf:a", "aac_adtstoasc", // Only if needed
             file_path,
         ]);
 
@@ -356,7 +392,7 @@ impl VideoDownloader {
         }
 
         // Open file for writing
-        let mut file = match if start_byte > 0 {
+        let file = match if start_byte > 0 {
             fs::OpenOptions::new().append(true).open(&file_path)
         } else {
             File::create(&file_path)
@@ -371,6 +407,10 @@ impl VideoDownloader {
                 };
             }
         };
+        
+        // Use BufWriter to reduce syscalls and improve disk I/O performance
+        // This makes a HUGE difference for high-speed downloads
+        let mut writer = std::io::BufWriter::with_capacity(1024 * 1024, file); // 1MB buffer
 
         let mut downloaded = start_byte;
         let mut stream = response.bytes_stream();
@@ -417,7 +457,7 @@ impl VideoDownloader {
 
             match chunk_result {
                 Ok(chunk) => {
-                    if let Err(e) = file.write_all(&chunk) {
+                    if let Err(e) = writer.write_all(&chunk) {
                         return DownloadResult {
                             episode,
                             success: false,
@@ -486,6 +526,16 @@ impl VideoDownloader {
                     };
                 }
             }
+        }
+        
+        // Flush buffer at the end
+        if let Err(e) = writer.flush() {
+             return DownloadResult {
+                episode,
+                success: false,
+                file_path: None,
+                error: Some(format!("Failed to flush file: {}", e)),
+            };
         }
 
         DownloadResult {

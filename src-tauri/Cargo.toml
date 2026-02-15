@@ -45,3 +45,4 @@ anyhow = "1"
 
 # Headless browser for auto-detection
 headless_chrome = "1.0"
+url = "2"
