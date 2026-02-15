@@ -12,6 +12,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::time::{sleep, Duration};
 use std::collections::HashMap;
 use crate::python_interface::extract_357ms_video;
+use crate::extractor_357ms;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -113,6 +114,269 @@ impl VideoDownloader {
         self.output_dir.join(filename)
     }
 
+
+    // Helper to handle 357ms encryption with captured key
+    async fn download_encrypted_m3u8(
+        &self,
+        episode: i32,
+        m3u8_url: &str,
+        output_path: &PathBuf,
+        headers: &HashMap<String, String>,
+        key_hex: &str,
+        app_handle: &AppHandle,
+    ) -> DownloadResult {
+        
+        let _ = app_handle.emit("log-info", "Starting encrypted download workflow...");
+
+        // 1. Download m3u8 content
+        let mut request = self.client.get(m3u8_url);
+        for (k, v) in headers {
+            request = request.header(k, v);
+        }
+        
+        let m3u8_content = match request.send().await {
+            Ok(res) => {
+                if !res.status().is_success() {
+                    return DownloadResult {
+                        episode,
+                        success: false,
+                        file_path: None,
+                        error: Some(format!("Failed to fetch m3u8: {}", res.status())),
+                    };
+                }
+                match res.text().await {
+                    Ok(t) => t,
+                    Err(e) => return DownloadResult {
+                        episode,
+                        success: false,
+                        file_path: None,
+                        error: Some(format!("Failed to read m3u8 text: {}", e)),
+                    }
+                }
+            },
+            Err(e) => return DownloadResult {
+                episode,
+                success: false,
+                file_path: None,
+                error: Some(format!("Failed to download m3u8: {}", e)),
+            }
+        };
+
+        // 2. Decode key (Manual hex decode to avoid adding crate)
+        let mut key_bytes = Vec::new();
+        let mut chars = key_hex.chars();
+        while let (Some(h), Some(l)) = (chars.next(), chars.next()) {
+            let h = h.to_digit(16);
+            let l = l.to_digit(16);
+            if let (Some(h), Some(l)) = (h, l) {
+                key_bytes.push((h << 4 | l) as u8);
+            } else {
+                 return DownloadResult {
+                    episode,
+                    success: false,
+                    file_path: None,
+                    error: Some("Invalid hex char".to_string()),
+                };
+            }
+        }
+
+        // 3. Create temp dir for this download
+        let temp_dir = std::env::temp_dir().join("rongyok_cache").join(format!("ep_{}_{}", episode, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_micros()));
+        if let Err(e) = std::fs::create_dir_all(&temp_dir) {
+            return DownloadResult {
+                episode,
+                success: false,
+                file_path: None,
+                error: Some(format!("Failed to create temp dir: {}", e)),
+            };
+        }
+
+        let local_key_path = temp_dir.join("video.key");
+        let local_m3u8_path = temp_dir.join("video.m3u8");
+
+        // 4. Write key file
+        if let Err(e) = std::fs::write(&local_key_path, &key_bytes) {
+             return DownloadResult {
+                episode,
+                success: false,
+                file_path: None,
+                error: Some(format!("Failed to output key file: {}", e)),
+            };
+        }
+
+        // 5. Download segments and rewrite m3u8
+        let mut simple_base = m3u8_url.to_string();
+        if let Ok(u) = url::Url::parse(m3u8_url) {
+             if let Some(_) = u.path_segments() {
+                // remove last segment
+                let mut u2 = u.clone();
+                u2.path_segments_mut().unwrap().pop();
+                simple_base = u2.to_string();
+                if !simple_base.ends_with('/') {
+                    simple_base.push('/');
+                }
+             }
+        }
+
+        let mut new_lines = Vec::new();
+        let mut segment_download_tasks = Vec::new();
+        let mut segment_count = 0;
+        
+        // Report start of segment downloading
+        let _ = app_handle.emit("log-info", "Downloading encrypted segments...");
+        
+        for line in m3u8_content.lines() {
+            if line.starts_with("#EXT-X-KEY") {
+                 if let Some(start) = line.find("URI=\"") {
+                     if let Some(end) = line[start+5..].find('"') {
+                         let before = &line[..start+5];
+                         let after = &line[start+5+end..];
+                         // Rewritten to local video.key
+                         let new_line = format!("{}video.key{}", before, after); 
+                         new_lines.push(new_line);
+                     } else {
+                         new_lines.push(line.to_string());
+                     }
+                 } else {
+                     new_lines.push(line.to_string());
+                 }
+            } else if !line.starts_with('#') && !line.trim().is_empty() {
+                // This is a segment URL
+                let segment_url = if !line.starts_with("http") {
+                    format!("{}{}", simple_base, line)
+                } else {
+                    line.to_string()
+                };
+
+                let segment_filename = format!("segment_{:03}.ts", segment_count);
+                let segment_path = temp_dir.join(&segment_filename);
+                new_lines.push(segment_filename.clone());
+                segment_count += 1;
+
+                // Create download task
+                let client = self.client.clone();
+                let headers_clone = headers.clone();
+                let url = segment_url.clone();
+                
+                segment_download_tasks.push(async move {
+                    // Retry logic (3 times)
+                    for i in 0..3 {
+                        let mut req = client.get(&url);
+                        for (k, v) in &headers_clone {
+                            req = req.header(k, v);
+                        }
+                        
+                        match req.send().await {
+                            Ok(resp) => {
+                                if resp.status().is_success() {
+                                    match resp.bytes().await {
+                                        Ok(bytes) => {
+                                            match tokio::fs::write(&segment_path, &bytes).await {
+                                                Ok(_) => return Ok(()),
+                                                Err(e) => {
+                                                    if i == 2 { return Err(format!("Write error: {}", e)); }
+                                                }
+                                            }
+                                        },
+                                        Err(e) => {
+                                             if i == 2 { return Err(format!("Bytes error: {}", e)); }
+                                        }
+                                    }
+                                } else {
+                                    if i == 2 { return Err(format!("HTTP {}", resp.status())); }
+                                }
+                            },
+                            Err(e) => {
+                                if i == 2 { return Err(format!("Rewest error: {}", e)); }
+                            }
+                        }
+                        // Wait before retry
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                    }
+                    Err(format!("Failed to download {}", url))
+                });
+
+            } else {
+                new_lines.push(line.to_string());
+            }
+        }
+        
+        // Execute downloads concurrently
+        let stream = futures_util::stream::iter(segment_download_tasks)
+            .buffer_unordered(10); // 10 concurrent downloads
+        
+        let results: Vec<_> = stream.collect().await;
+        
+        // Check for failures
+        let mut fail_count = 0;
+        for res in results {
+            if let Err(e) = res {
+                let _ = app_handle.emit("log-error", format!("Segment download failed: {}", e));
+                fail_count += 1;
+            }
+        }
+        
+        if fail_count > 0 {
+             return DownloadResult {
+                episode,
+                success: false,
+                file_path: None,
+                error: Some(format!("Failed to download {} segments", fail_count)),
+            };
+        }
+        
+        let new_m3u8_content = new_lines.join("\n");
+        if let Err(e) = std::fs::write(&local_m3u8_path, &new_m3u8_content) {
+             return DownloadResult {
+                episode,
+                success: false,
+                file_path: None,
+                error: Some(format!("Failed to write modified m3u8: {}", e)),
+            };
+        }
+
+        // 6. Run FFmpeg
+        let mut ffmpeg_cmd = get_ffmpeg_command();
+        
+        ffmpeg_cmd.arg("-y");
+        ffmpeg_cmd.args(&["-allowed_extensions", "ALL"]);
+        // We still need crypto, file, data for local playback
+        ffmpeg_cmd.args(&["-protocol_whitelist", "file,crypto,data"]);
+        ffmpeg_cmd.arg("-i").arg(&local_m3u8_path);
+        ffmpeg_cmd.args(&["-c", "copy"]);
+        ffmpeg_cmd.args(&["-bsf:a", "aac_adtstoasc"]);
+        ffmpeg_cmd.arg(output_path);
+
+         let _ = app_handle.emit("log-info", format!("Running FFmpeg (Encrypted) on: {:?}", local_m3u8_path));
+
+        #[cfg(target_os = "windows")]
+        use std::os::windows::process::CommandExt;
+        #[cfg(target_os = "windows")]
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        #[cfg(target_os = "windows")]
+        ffmpeg_cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let child = match ffmpeg_cmd.stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn() {
+                Ok(c) => c,
+                Err(e) => return DownloadResult {
+                    episode,
+                    success: false,
+                    file_path: None,
+                    error: Some(format!("Failed to spawn FFmpeg: {}", e)),
+                }
+            };
+
+        // Wait for FFmpeg 
+        let result = self.wait_for_ffmpeg(child, episode, app_handle.clone(), None, output_path.to_string_lossy().to_string()).await;
+        
+        // Cleanup temp dir
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        
+        result
+    }
+
     pub async fn download_episode(
         &self,
         episode: i32,
@@ -128,19 +392,59 @@ impl VideoDownloader {
 
         // Check for 357ms
         if video_url.contains("357ms.com") || video_url.contains("357") {
-             let _ = app_handle.emit("log-info", format!("Detecting 357ms video for URL: {}", video_url));
-             match extract_357ms_video(video_url) {
-                 Ok((m3u8, headers)) => {
-                     final_url = m3u8;
-                     custom_headers = Some(headers);
-                     let _ = app_handle.emit("log-info", format!("357ms extraction success: {}", final_url));
+             let _ = app_handle.emit("log-info", format!("Detecting 357ms video (Rust Native) for URL: {}", video_url));
+             
+             let url_clone = video_url.to_string();
+             let extraction_task = tokio::task::spawn_blocking(move || {
+                 match crate::extractor_357ms::Extractor357ms::new() {
+                     Ok(extractor) => extractor.extract_video_info(&url_clone),
+                     Err(e) => Err(anyhow::anyhow!("Failed to init extractor: {}", e))
+                 }
+             });
+
+             match extraction_task.await {
+                 Ok(Ok(info)) => {
+                     if let Some(m3u8) = info.m3u8_url {
+                         final_url = m3u8;
+                         custom_headers = Some(info.headers.clone());
+                         let _ = app_handle.emit("log-info", format!("357ms Rust extraction success: {}", final_url));
+
+                         if let Some(k_hex) = info.key_hex {
+                            let _ = app_handle.emit("log-info", format!("Got 357ms key (hex): {}", k_hex));
+                            // Use special handling for encrypted 357ms
+                            return self.download_encrypted_m3u8(
+                                episode,
+                                &final_url,
+                                &file_path,
+                                &info.headers,
+                                &k_hex,
+                                app_handle
+                            ).await;
+                         }
+                     } else {
+                         return DownloadResult {
+                            episode,
+                            success: false,
+                            file_path: None,
+                            error: Some("357ms extraction returned no m3u8 URL".to_string()),
+                        };
+                     }
                  },
-                 Err(e) => {
-                     return DownloadResult {
+                 Ok(Err(e)) => {
+                      let _ = app_handle.emit("log-error", format!("357ms Rust extraction failed: {}", e));
+                      return DownloadResult {
                         episode,
                         success: false,
                         file_path: None,
                         error: Some(format!("357ms extraction failed: {}", e)),
+                    };
+                 },
+                 Err(e) => {
+                      return DownloadResult {
+                        episode,
+                        success: false,
+                        file_path: None,
+                        error: Some(format!("Task join error: {}", e)),
                     };
                  }
              }
@@ -212,7 +516,7 @@ impl VideoDownloader {
         let _ = app_handle.emit("log-info", format!("Running FFmpeg: {}", cmd_str));
         eprintln!("[Downloader] Running FFmpeg: {}", cmd_str);
 
-        let mut child = match cmd.spawn() {
+        let child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => return DownloadResult {
                 episode,
@@ -222,116 +526,149 @@ impl VideoDownloader {
             },
         };
 
+        self.wait_for_ffmpeg(child, episode, app_handle.clone(), download_state, file_path.to_string()).await
+    }
+
+    // Helper to monitor FFmpeg process
+    async fn wait_for_ffmpeg(
+        &self,
+        mut child: std::process::Child,
+        episode: i32,
+        app_handle: AppHandle,
+        download_state: Option<Arc<DownloadState>>,
+        file_path_str: String,
+    ) -> DownloadResult {
         let stderr = child.stderr.take().unwrap();
         let reader = BufReader::new(stderr);
-        let mut last_emit = std::time::Instant::now();
-
         // Capture last error line
-        let mut last_error_line = String::new();
-
-        let mut total_duration: f64 = 0.0;
-
-        // Processing loop
-        for line in reader.lines() {
-            // Check cancellation
-            if let Some(ref state) = download_state {
-                if state.is_cancelled.load(Ordering::SeqCst) {
-                    let _ = child.kill();
-                    let _ = fs::remove_file(file_path);
-                    return DownloadResult {
-                        episode,
-                        success: false,
-                        file_path: None,
-                        error: Some("Download cancelled".to_string()),
-                    };
+        
+        // We need to read lines in a non-blocking way or spawn a thread.
+        // Since we are in async function, blocking on reader.lines() is bad if it blocks.
+        // But BufReader on ChildStderr blocks.
+        // We should run this in spawn_blocking?
+        // Or use tokio::process::Command?
+        // The current implementation uses std::process::Command.
+        // So we MUST use spawn_blocking for the waiting loop.
+        
+        let file_path_clone = file_path_str.clone();
+        
+        let result = tokio::task::spawn_blocking(move || {
+            let mut reader = reader;
+            let mut total_duration = 0.0;
+            let mut last_emit = std::time::Instant::now();
+            let mut last_error_line = String::new();
+            
+            for line in reader.lines() {
+                // Check cancellation
+                if let Some(ref state) = download_state {
+                    if state.is_cancelled.load(Ordering::SeqCst) {
+                        let _ = child.kill();
+                        let _ = fs::remove_file(&file_path_clone);
+                        return DownloadResult {
+                            episode,
+                            success: false,
+                            file_path: None,
+                            error: Some("Download cancelled".to_string()),
+                        };
+                    }
                 }
-            }
 
-            if let Ok(line) = line {
-                // Parse Duration if not yet found
-                if total_duration == 0.0 && line.contains("Duration:") {
-                    if let Some(start) = line.find("Duration: ") {
-                        let content = &line[start + 10..]; // Skip "Duration: "
-                        if let Some(end) = content.find(',') {
-                            let time_str = &content[..end];
-                            let parts: Vec<&str> = time_str.split(':').collect();
-                            if parts.len() == 3 {
-                                let h: f64 = parts[0].parse().unwrap_or(0.0);
-                                let m: f64 = parts[1].parse().unwrap_or(0.0);
-                                let s: f64 = parts[2].parse().unwrap_or(0.0);
-                                total_duration = h * 3600.0 + m * 60.0 + s;
-                                let _ = app_handle.emit("log-info", format!("Total Duration parsed: {}s", total_duration));
+                if let Ok(line) = line {
+                    // Parse Duration if not yet found
+                    if total_duration == 0.0 && line.contains("Duration:") {
+                        if let Some(start) = line.find("Duration: ") {
+                            let content = &line[start + 10..]; // Skip "Duration: "
+                            if let Some(end) = content.find(',') {
+                                let time_str = &content[..end];
+                                let parts: Vec<&str> = time_str.split(':').collect();
+                                if parts.len() == 3 {
+                                    let h: f64 = parts[0].parse().unwrap_or(0.0);
+                                    let m: f64 = parts[1].parse().unwrap_or(0.0);
+                                    let s: f64 = parts[2].parse().unwrap_or(0.0);
+                                    total_duration = h * 3600.0 + m * 60.0 + s;
+                                    let _ = app_handle.emit("log-info", format!("Total Duration parsed: {}s", total_duration));
+                                }
                             }
                         }
                     }
-                }
 
-                // Log the first few lines to see what's happening
-                if last_emit.elapsed().as_secs() < 5 {
-                     let _ = app_handle.emit("log-info", format!("FFmpeg output: {}", line));
-                     eprintln!("[FFmpeg Output] {}", line);
-                }
-                
-                // Keep track of potential error messages
-                if line.contains("Error") || line.contains("Failed") || line.contains("Invalid") {
-                    last_error_line = line.clone();
-                    let _ = app_handle.emit("log-info", format!("FFmpeg error found: {}", line));
-                    eprintln!("[FFmpeg Error] {}", line);
-                }
+                    // Log the first few lines to see what's happening
+                    if last_emit.elapsed().as_secs() < 5 {
+                         let _ = app_handle.emit("log-info", format!("FFmpeg output: {}", line));
+                         eprintln!("[FFmpeg Output] {}", line);
+                    }
+                    
+                    // Keep track of potential error messages
+                    if line.contains("Error") || line.contains("Failed") || line.contains("Invalid") {
+                        last_error_line = line.clone();
+                        let _ = app_handle.emit("log-info", format!("FFmpeg error found: {}", line));
+                        eprintln!("[FFmpeg Error] {}", line);
+                    }
 
-                if let Some(stats) = parse_ffmpeg_stats(&line) {
-                    if last_emit.elapsed().as_millis() >= 500 {
-                        let speed_bps = stats.bitrate_kbps * 1024.0 / 8.0; // Convert kbps to Bytes/s roughly
-                        
-                        let percentage = if total_duration > 0.0 {
-                            (stats.time_seconds / total_duration * 100.0).min(99.9)
-                        } else {
-                            0.0
-                        };
+                    if let Some(stats) = parse_ffmpeg_stats(&line) {
+                        if last_emit.elapsed().as_millis() >= 500 {
+                            let speed_bps = stats.bitrate_kbps * 1024.0 / 8.0; // Convert kbps to Bytes/s roughly
+                            
+                            let percentage = if total_duration > 0.0 {
+                                (stats.time_seconds / total_duration * 100.0).min(99.9)
+                            } else {
+                                0.0
+                            };
 
-                        let progress = DownloadProgress {
-                            episode,
-                            downloaded: stats.size_bytes,
-                            total: 0, // Unknown for HLS usually
-                            speed: speed_bps,
-                            percentage, 
-                        };
-                        let _ = app_handle.emit("download-progress", progress);
-                        last_emit = std::time::Instant::now();
+                            let progress = DownloadProgress {
+                                episode,
+                                downloaded: stats.size_bytes,
+                                total: 0, // Unknown for HLS usually
+                                speed: speed_bps,
+                                percentage, 
+                            };
+                            let _ = app_handle.emit("download-progress", progress);
+                            last_emit = std::time::Instant::now();
+                        }
                     }
                 }
             }
-        }
 
-        match child.wait() {
-            Ok(status) => {
-                if status.success() {
-                    DownloadResult {
-                        episode,
-                        success: true,
-                        file_path: Some(file_path.to_string()),
-                        error: None,
-                    }
-                } else {
-                    let err_msg = if !last_error_line.is_empty() {
-                        format!("FFmpeg exited with error: {}", last_error_line)
+            match child.wait() {
+                Ok(status) => {
+                    if status.success() {
+                        DownloadResult {
+                            episode,
+                            success: true,
+                            file_path: Some(file_path_clone),
+                            error: None,
+                        }
                     } else {
-                        "FFmpeg exited with error (unknown cause)".to_string()
-                    };
+                        let err_msg = if !last_error_line.is_empty() {
+                            format!("FFmpeg exited with error: {}", last_error_line)
+                        } else {
+                            "FFmpeg exited with error (unknown cause)".to_string()
+                        };
 
-                    DownloadResult {
-                        episode,
-                        success: false,
-                        file_path: None,
-                        error: Some(err_msg),
+                        DownloadResult {
+                            episode,
+                            success: false,
+                            file_path: None,
+                            error: Some(err_msg),
+                        }
                     }
+                },
+                Err(e) => DownloadResult {
+                    episode,
+                    success: false,
+                    file_path: None,
+                    error: Some(format!("Failed to wait for FFmpeg: {}", e)),
                 }
-            },
+            }
+        }).await;
+        
+        match result {
+            Ok(res) => res,
             Err(e) => DownloadResult {
                 episode,
                 success: false,
                 file_path: None,
-                error: Some(format!("Failed to wait for FFmpeg: {}", e)),
+                error: Some(format!("Join error: {}", e)),
             }
         }
     }

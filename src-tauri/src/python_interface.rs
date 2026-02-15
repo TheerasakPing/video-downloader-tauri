@@ -1,158 +1,58 @@
-use headless_chrome::{Browser, LaunchOptions, Tab};
 use std::collections::HashMap;
-use std::time::Duration;
+use std::process::Command;
 use crate::UnifiedSeriesInfo;
 use serde::Deserialize;
+use std::path::Path;
 
-// Helper to initialize browser with specific flags
-fn init_browser() -> Result<Browser, String> {
-    eprintln!("[357ms] Launching headless Chrome...");
+// Helper to call python script
+fn call_python_script(mode: &str, url: &str) -> Result<String, String> {
+    // Try to find the script. Assuming we are in project root or src-tauri
+    let script_locations = [
+        "scripts/357ms_extractor.py",
+        "../scripts/357ms_extractor.py",
+        "/Volumes/Data/code_project/_rongyok_video_downloader_rust/scripts/357ms_extractor.py"
+    ];
 
-    let mut args = Vec::new();
-    args.push(std::ffi::OsStr::new("--no-sandbox"));
-    args.push(std::ffi::OsStr::new("--disable-dev-shm-usage"));
-    args.push(std::ffi::OsStr::new("--disable-gpu"));
-    args.push(std::ffi::OsStr::new("--disable-software-rasterizer"));
-    args.push(std::ffi::OsStr::new("--disable-extensions"));
-    args.push(std::ffi::OsStr::new("--window-size=390,844")); // Mobile viewport size as in Python script
-    args.push(std::ffi::OsStr::new("--autoplay-policy=no-user-gesture-required"));
-    args.push(std::ffi::OsStr::new("--user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"));
+    let script_path = script_locations.iter()
+        .find(|p| Path::new(p).exists())
+        .ok_or_else(|| "Could not find 357ms_extractor.py".to_string())?;
 
-    let options = LaunchOptions {
-        headless: true,
-        sandbox: false,
-        args: args,
-        ..Default::default()
-    };
+    let output = Command::new("python3")
+        .arg(script_path)
+        .arg(mode)
+        .arg(url)
+        .output()
+        .map_err(|e| format!("Failed to execute python: {}", e))?;
 
-    Browser::new(options)
-        .map_err(|e| format!("Failed to launch Chrome: {}", e))
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Python script failed: {}", stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(stdout.to_string())
 }
 
 pub fn fetch_357ms_series(url: &str) -> Result<UnifiedSeriesInfo, String> {
-    let browser = init_browser()?;
-    let tab = browser.new_tab().map_err(|e| format!("Failed to create tab: {}", e))?;
+    eprintln!("[357ms] Fetching series info via Python for: {}", url);
+    let json_output = call_python_script("series", url)?;
 
-    eprintln!("[357ms] Navigating to series: {}", url);
-    tab.navigate_to(url).map_err(|e| format!("Failed to navigate: {}", e))?;
-    tab.wait_until_navigated().map_err(|e| format!("Navigation failed: {}", e))?;
-
-    // Wait for content (Python script waited 5s)
-    std::thread::sleep(Duration::from_secs(5));
-
-    // Script to extract series info
-    let extract_script = r#"
-        (function() {
-            const info = {
-                title: "Unknown Series",
-                cover_url: null,
-                episodes: []
-            };
-
-            // Title
-            let h1 = document.querySelector("h1");
-            if (h1) info.title = h1.innerText.trim();
-            else if (window.seriesTitle) info.title = window.seriesTitle;
-
-            // Cover URL - Try multiple sources
-            // 1. OG Image (Most reliable)
-            const ogImage = document.querySelector('meta[property="og:image"]');
-            if (ogImage && ogImage.content) {
-                info.cover_url = ogImage.content;
-            }
-
-            // 2. Common poster/cover classes if OG failed
-            if (!info.cover_url) {
-                const imgSelectors = [
-                    ".series-cover img", 
-                    ".poster img", 
-                    ".cover img", 
-                    "img.cover", 
-                    "img.poster",
-                    ".movie-poster img",
-                    "div[class*='poster'] img",
-                    "div[class*='cover'] img"
-                ];
-                
-                for (const sel of imgSelectors) {
-                    const img = document.querySelector(sel);
-                    if (img && img.src) {
-                        info.cover_url = img.src;
-                        break;
-                    }
-                }
-            }
-
-            // Episodes
-            const items = document.querySelectorAll("a.ep-card");
-            const seen = new Set();
-            
-            items.forEach(item => {
-                let href = item.getAttribute("href");
-                if (!href) return;
-                
-                if (!href.startsWith("http")) {
-                    href = new URL(href, document.location.href).href;
-                }
-
-                let epText = "0";
-                const epNoEl = item.querySelector(".ep-number");
-                if (epNoEl) {
-                    epText = epNoEl.innerText.replace("EP.", "").trim();
-                } else {
-                    epText = item.getAttribute("data-ep") || "0";
-                }
-
-                let epNum = parseInt(epText);
-                if (isNaN(epNum)) epNum = 0;
-
-                // Dedup by URL
-                if (!seen.has(href)) {
-                    seen.add(href);
-                    info.episodes.push({
-                        number: epNum,
-                        title: epText,
-                        url: href
-                    });
-                }
-            });
-
-            // Sort
-            info.episodes.sort((a, b) => a.number - b.number);
-
-            return JSON.stringify(info);
-        })()
-    "#;
-
-    let remote_object = tab.evaluate(extract_script, false)
-        .map_err(|e| format!("Failed to evaluate script: {}", e))?;
-    
-    let result_json = remote_object.value
-        .ok_or("No value returned from script")?;
-    
     #[derive(Deserialize)]
-    struct JsEpisode {
+    struct PyEpisode {
         number: i32,
-        #[allow(dead_code)]
         title: String,
         url: String,
     }
 
     #[derive(Deserialize)]
-    struct JsSeriesInfo {
+    struct PySeriesInfo {
         title: String,
         cover_url: Option<String>,
-        episodes: Vec<JsEpisode>,
+        episodes: Vec<PyEpisode>,
     }
 
-    // Handle both direct object (if supported) and stringified JSON
-    let info: JsSeriesInfo = if let Some(json_str) = result_json.as_str() {
-        serde_json::from_str(json_str)
-            .map_err(|e| format!("Failed to parse JSON string: {} (Content: {})", e, json_str))?
-    } else {
-        serde_json::from_value(result_json)
-            .map_err(|e| format!("Failed to parse JSON object: {}", e))?
-    };
+    let info: PySeriesInfo = serde_json::from_str(&json_output)
+        .map_err(|e| format!("Failed to parse Python output: {}", e))?;
 
     let mut episode_urls = HashMap::new();
     for ep in info.episodes {
@@ -171,185 +71,33 @@ pub fn fetch_357ms_series(url: &str) -> Result<UnifiedSeriesInfo, String> {
     })
 }
 
-pub fn extract_357ms_video(url: &str) -> Result<(String, HashMap<String, String>), String> {
-    let browser = init_browser()?;
-    let tab = browser.new_tab().map_err(|e| format!("Failed to create tab: {}", e))?;
+// Return type: (m3u8_url, headers, key_hex)
+pub fn extract_357ms_video(url: &str) -> Result<(String, HashMap<String, String>, Option<String>), String> {
+    eprintln!("[357ms] Extracting video via Python for: {}", url);
+    let json_output = call_python_script("video", url)?;
 
-    eprintln!("[357ms] Extracting video for: {}", url);
-
-    // 1. Setup PerformanceObserver to catch m3u8 requests
-    // Using a simpler approach than chrome_detector: just evaluate script to start observing immediately
-    // Ideally we should inject this on new document, but headless_chrome makes that hard synchronously.
-    // We will navigate, then inject, then wait/reload if needed? 
-    // Actually, `ChromeVideoDetector` shows we can just navigate then inject.
-
-    tab.navigate_to(url).map_err(|e| format!("Failed to navigate: {}", e))?;
-    tab.wait_until_navigated().map_err(|e| format!("Navigation failed: {}", e))?;
-
-    let observer_script = r#"
-        (function() {
-            if (performance.setResourceTimingBufferSize) {
-                performance.setResourceTimingBufferSize(5000);
-            }
-            window.__FOUND_URLS = [];
-            const observer = new PerformanceObserver((list) => {
-                list.getEntries().forEach((entry) => {
-                    if (entry.name.includes('.m3u8')) {
-                        window.__FOUND_URLS.push(entry.name);
-                    }
-                });
-            });
-            observer.observe({ entryTypes: ['resource'] });
-            
-            // Also check existing
-            performance.getEntriesByType('resource').forEach(e => {
-                if (e.name.includes('.m3u8')) window.__FOUND_URLS.push(e.name);
-            });
-        })()
-    "#;
-    let _ = tab.evaluate(observer_script, false);
-
-    // Wait for JS to load (iframe to load)
-    std::thread::sleep(Duration::from_secs(5));
-
-    // Try to find m3u8 in captured requests
-    let check_urls_script = "JSON.stringify(window.__FOUND_URLS || [])";
-    if let Ok(res) = tab.evaluate(check_urls_script, false) {
-        if let Some(val) = res.value {
-            // Handle stringified JSON array
-            let urls: Option<Vec<String>> = if let Some(json_str) = val.as_str() {
-                serde_json::from_str(json_str).ok()
-            } else {
-                serde_json::from_value(val).ok()
-            };
-
-            if let Some(urls) = urls {
-                if let Some(m3u8) = urls.last() {
-                    eprintln!("[357ms] Found m3u8 via network: {}", m3u8);
-                    return Ok((m3u8.clone(), get_headers(&tab)));
-                }
-            }
-        }
+    #[derive(Deserialize)]
+    struct PyVideoInfo {
+        m3u8_url: Option<String>,
+        headers: HashMap<String, String>,
+        key_hex: Option<String>,
+        error: Option<String>,
     }
 
-    // 2. If not found, look for iframes (baiwarp) and navigate into them
-    let iframe_script = r#"
-        (function() {
-            const iframes = document.querySelectorAll('iframe');
-            for (let f of iframes) {
-                let src = f.src || f.getAttribute('data-lazy-src');
-                if (src && (src.includes('baiwarp') || src.includes('embed'))) {
-                    return src;
-                }
-            }
-            return null;
-        })()
-    "#;
+    let info: PyVideoInfo = serde_json::from_str(&json_output)
+        .map_err(|e| format!("Failed to parse Python output: {}", e))?;
 
-    if let Ok(res) = tab.evaluate(iframe_script, false) {
-        if let Some(val) = res.value {
-            if let Some(iframe_src) = val.as_str() {
-                let mut target = iframe_src.to_string();
-                if target.starts_with("//") {
-                    target = format!("https:{}", target);
-                }
-                eprintln!("[357ms] Found iframe, navigating to: {}", target);
-                
-                tab.navigate_to(&target).map_err(|e| format!("Failed to navigate to iframe: {}", e))?;
-                tab.wait_until_navigated().map_err(|e| format!("Iframe nav failed: {}", e))?;
-                std::thread::sleep(Duration::from_secs(5));
-
-                // Check for playerConfig
-                let config_script = r#"
-                    (function() {
-                        if (window.playerConfig && window.playerConfig.medias && window.playerConfig.medias.original && window.playerConfig.asset) {
-                            return `https://${window.playerConfig.asset}/${window.playerConfig.medias.original}/video.m3u8`;
-                        }
-                        return null;
-                    })()
-                "#;
-                if let Ok(res) = tab.evaluate(config_script, false) {
-                    if let Some(val) = res.value {
-                         if let Some(m3u8) = val.as_str() {
-                             eprintln!("[357ms] Found m3u8 via playerConfig: {}", m3u8);
-                             return Ok((m3u8.to_string(), get_headers(&tab)));
-                         }
-                    }
-                }
-
-                // Fallback regex on iframe content
-                let regex_script = r#"
-                    (function() {
-                        const html = document.documentElement.outerHTML;
-                        const match = html.match(/["'](https?:[^"']+\.m3u8[^"']*)["']/);
-                        return match ? match[1].replace(/\\\//g, '/') : null;
-                    })()
-                "#;
-                if let Ok(res) = tab.evaluate(regex_script, false) {
-                    if let Some(val) = res.value {
-                         if let Some(m3u8) = val.as_str() {
-                             eprintln!("[357ms] Found m3u8 via regex: {}", m3u8);
-                             return Ok((m3u8.to_string(), get_headers(&tab)));
-                         }
-                    }
-                }
-            }
-        }
+    if let Some(err) = info.error {
+        return Err(format!("Extractor returned error: {}", err));
     }
 
-    // 3. Fallback regex on main page
-    let regex_script = r#"
-        (function() {
-            const html = document.documentElement.outerHTML;
-            const match = html.match(/["'](https?:[^"']+\.m3u8[^"']*)["']/);
-            return match ? match[1].replace(/\\\//g, '/') : null;
-        })()
-    "#;
-    if let Ok(res) = tab.evaluate(regex_script, false) {
-        if let Some(val) = res.value {
-                if let Some(m3u8) = val.as_str() {
-                    eprintln!("[357ms] Found m3u8 via regex on main page: {}", m3u8);
-                    return Ok((m3u8.to_string(), get_headers(&tab)));
-                }
-        }
-    }
-
-    Err("Could not find video URL".to_string())
-}
-
-fn get_headers(tab: &Tab) -> HashMap<String, String> {
-    let mut headers = HashMap::new();
+    let m3u8 = info.m3u8_url.ok_or("No m3u8_url found".to_string())?;
     
-    // Get User-Agent
-    let ua_script = "navigator.userAgent";
-    if let Ok(res) = tab.evaluate(ua_script, false) {
-        if let Some(val) = res.value {
-            if let Some(ua) = val.as_str() {
-                headers.insert("User-Agent".to_string(), ua.to_string());
-            }
-        }
+    // Ensure User-Agent is present
+    let mut headers = info.headers;
+    if !headers.contains_key("User-Agent") {
+        headers.insert("User-Agent".to_string(), "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".to_string());
     }
 
-    // Get Cookies
-    if let Ok(cookies) = tab.get_cookies() {
-        let cookie_str = cookies.iter()
-            .map(|c| format!("{}={}", c.name, c.value))
-            .collect::<Vec<_>>()
-            .join("; ");
-        if !cookie_str.is_empty() {
-             headers.insert("Cookie".to_string(), cookie_str);
-        }
-    }
-    
-    // Referer (Current URL)
-    let url = tab.get_url();
-    headers.insert("Referer".to_string(), url.clone());
-    
-    // Origin
-    if let Ok(parsed) = url::Url::parse(&url) {
-        let origin = format!("{}://{}", parsed.scheme(), parsed.domain().unwrap_or(""));
-        headers.insert("Origin".to_string(), origin);
-    }
-
-    headers
+    Ok((m3u8, headers, info.key_hex))
 }

@@ -4,6 +4,7 @@ mod downloader;
 mod parser;
 mod titan_parser;
 mod python_interface;
+pub mod extractor_357ms;
 mod utils;
 
 use baanjeen_parser::BaanJeenParser;

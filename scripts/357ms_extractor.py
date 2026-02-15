@@ -157,50 +157,126 @@ def fetch_series_info(url):
 
 def extract_video_info(url):
     print(f"Extracting video info for: {url}")
-    # Use existing extract_and_download logic via import
+    
+    video_info = {
+        "m3u8_url": None,
+        "headers": {},
+        "key_url": None,
+        "key_response_status": None
+    }
+
     try:
-        # extract_and_download prints to stdout (which is now stderr), returns (success, m3u8_url)
-        # Note: headers are not returned by extract_and_download in the current version of web_video_extractor
-        # I might need to modify web_video_extractor to return headers or re-implement here.
-        # Let's check web_video_extractor.py content again.
-        # It calls `extract_with_playwright` which returns headers.
-        # But `extract_and_download` returns `success, m3u8_url`. It swallows headers?
-        # Let's re-read web_video_extractor.py quickly.
-        # Line 314: return success, m3u8_url.
-        # Yes, headers are swallowed.
-        # But download_hls_video uses them.
-        # If I need headers for Rust, I should modify web_video_extractor or use a custom version here.
-        # Given I have Playwright here, I can just use `extract_with_playwright` from web_video_extractor directly?
-        # No, `extract_with_playwright` is internal to that script (but python defs are public).
-        # Let's try importing it.
-        from web_video_extractor import extract_with_playwright, extract_and_download
-        
-        # Try extract_with_playwright first as it gives headers
-        try:
-             res = extract_with_playwright(url)
-             if isinstance(res, tuple):
-                 m3u8, headers = res
-                 if m3u8:
-                     return {
-                         "m3u8_url": m3u8,
-                         "headers": headers or {}
-                     }
-        except Exception as e:
-            print(f"Direct Playwright extraction failed: {e}")
-        
-        # Fallback to generic extract_and_download capability (regex etc)
-        success, m3u8 = extract_and_download(url, only_return_url=True)
-        if success and m3u8:
-            return {
-                "m3u8_url": m3u8,
-                "headers": {} # Headers might be missing if using requests regex fallback
-            }
-        
+        with sync_playwright() as p:
+            executable_path = get_playwright_executable()
+            print(f"Launching browser with: {executable_path}")
+            
+            # Setup user data dir
+            base_cache_dir = "/tmp/rongyok_cache"
+            user_data_dir = os.path.join(base_cache_dir, "playwright_357ms_video_context")
+            os.makedirs(user_data_dir, exist_ok=True)
+
+            context = p.chromium.launch_persistent_context(
+                user_data_dir,
+                headless=True,
+                executable_path=executable_path,
+                args=["--no-sandbox", "--disable-setuid-sandbox"],
+                user_agent=DEFAULT_USER_AGENT,
+                viewport={'width': 390, 'height': 844}
+            )
+            
+            page = context.new_page()
+
+            # Network logging
+            def handle_request(route, request):
+                # Continue all requests
+                route.continue_()
+
+            def handle_response(response):
+                url = response.url
+                status = response.status
+                
+                # Ignore common resources
+                if any(ext in url for ext in [".png", ".jpg", ".jpeg", ".gif", ".css", ".woff", ".svg"]):
+                    return
+
+                print(f"Response: {status} {url}")
+                
+                if ".m3u8" in url:
+                    print(f"Found m3u8: {url}")
+                    video_info["m3u8_url"] = url
+                    req = response.request
+                    headers = req.headers
+                    video_info["headers"] = {
+                        "User-Agent": headers.get("user-agent", DEFAULT_USER_AGENT),
+                        "Referer": headers.get("referer", url),
+                        "Cookie": headers.get("cookie", "")
+                    }
+                
+                if "api/v1/hls/config" in url:
+                    print(f"Found CONFIG API: {url}")
+                    try:
+                        print(f"Config Body: {response.text()}")
+                    except:
+                        pass
+
+                # Check for potential key response (small binary or text)
+                # Key is usually 16 bytes.
+                try:
+                    # Only check body for small files or specific types
+                    if "text" in response.headers.get("content-type", "") or "application/octet-stream" in response.headers.get("content-type", "") or "application/json" in response.headers.get("content-type", ""):
+                        body_len = 0
+                        try:
+                            body = response.body()
+                            body_len = len(body)
+                        except:
+                            pass
+                        
+                        if body_len == 16:
+                            print(f"POTENTIAL KEY FOUND (16 bytes): {url}")
+                            print(f"Key Hex: {body.hex()}")
+                            video_info["key_url"] = url
+                            video_info["key_hex"] = body.hex()
+                            
+                except Exception as e:
+                    pass
+
+                if ".key" in url or "fake.key" in url:
+                    print(f"Explicit Key URL: {url} Status: {status}")
+
+
+            # Enable request interception if needed, but for now just events
+            page.on("response", handle_response)
+            
+            try:
+                page.goto(url, timeout=60000, wait_until="domcontentloaded")
+                # Wait for video to load/play. 
+                # 357ms might need a click or just wait.
+                # Usually m3u8 is requested automatically.
+                page.wait_for_timeout(10000) 
+                
+                # Check if we got m3u8
+                if not video_info["m3u8_url"]:
+                    print("m3u8 not captured yet, trying to click play...")
+                    # Try clicking video overlay if exists
+                    try:
+                        page.click(".vjs-big-play-button", timeout=2000)
+                        page.wait_for_timeout(5000)
+                    except:
+                        pass
+                
+                # If we have m3u8 but no key yet, wait a bit more
+                if video_info["m3u8_url"] and not video_info.get("key_hex"):
+                    print("Waiting for key...")
+                    page.wait_for_timeout(5000)
+
+            finally:
+                context.close()
+                
     except Exception as e:
         print(f"Error extracting video: {e}")
         return {"error": str(e)}
-        
-    return {"error": "Video not found"}
+
+    return video_info
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
