@@ -30,7 +30,7 @@ impl RongyokParser {
     }
 
     /// Extract series_id from URL
-    pub fn parse_series_url(url: &str) -> Option<i32> {
+    pub fn parse_series_url(url: &str, _domain: &str) -> Option<i32> {
         // Format 1: ?series_id=XXX
         let re1 = Regex::new(r"series_id=(\d+)").ok()?;
         if let Some(caps) = re1.captures(url) {
@@ -47,8 +47,8 @@ impl RongyokParser {
     }
 
     /// Fetch series information
-    pub async fn get_series_info(&self, series_id: i32, original_url: Option<&str>) -> Result<SeriesInfo, String> {
-        let (url, domain) = Self::construct_series_url(series_id, original_url);
+    pub async fn get_series_info(&self, series_id: i32, original_url: Option<&str>, domain_setting: &str) -> Result<SeriesInfo, String> {
+        let (url, domain) = Self::construct_series_url(series_id, original_url, domain_setting);
         let is_thongyok = url.contains("thongyok.com");
 
         let response = self
@@ -202,24 +202,26 @@ impl RongyokParser {
     }
 
     /// Helper to construct URL and domain
-    fn construct_series_url(series_id: i32, original_url: Option<&str>) -> (String, String) {
+    fn construct_series_url(series_id: i32, original_url: Option<&str>, domain_setting: &str) -> (String, String) {
         let url = if let Some(orig) = original_url {
             if orig.contains("thongyok.com") {
                 orig.to_string()
+            } else if orig.contains(domain_setting) {
+                orig.to_string()
             } else {
-                format!("https://rongyok.com/watch/?series_id={}", series_id)
+                format!("https://{}/watch/?series_id={}", domain_setting, series_id)
             }
         } else {
-            format!("https://rongyok.com/watch/?series_id={}", series_id)
+            format!("https://{}/watch/?series_id={}", domain_setting, series_id)
         };
 
         let domain = if url.contains("thongyok.com") {
-            "https://thongyok.com/"
+            "https://thongyok.com/".to_string()
         } else {
-            "https://rongyok.com/"
+            format!("https://{}/", domain_setting)
         };
 
-        (url, domain.to_string())
+        (url, domain)
     }
 
     /// Extract all episode URLs from JavaScript
@@ -316,38 +318,37 @@ mod tests {
     #[test]
     fn test_parse_series_url() {
         // Rongyok formats
-        assert_eq!(RongyokParser::parse_series_url("https://rongyok.com/watch/?series_id=1004"), Some(1004));
-        assert_eq!(RongyokParser::parse_series_url("https://rongyok.com/series/1004/title"), Some(1004));
+        assert_eq!(RongyokParser::parse_series_url("https://rongyok.com/watch/?series_id=1004", "rongyok.com"), Some(1004));
+        assert_eq!(RongyokParser::parse_series_url("https://rongyok.com/series/1004/title", "rongyok.com"), Some(1004));
 
         // Thongyok format
-        assert_eq!(RongyokParser::parse_series_url("https://thongyok.com/series/1004/%E0%B8%84%E0%B8%B7%E0%B8%99..."), Some(1004));
+        assert_eq!(RongyokParser::parse_series_url("https://thongyok.com/series/1004/%E0%B8%84%E0%B8%B7%E0%B8%99...", "rongyok.com"), Some(1004));
 
         // Invalid
-        assert_eq!(RongyokParser::parse_series_url("https://rongyok.com/invalid"), None);
+        assert_eq!(RongyokParser::parse_series_url("https://rongyok.com/invalid", "rongyok.com"), None);
     }
 
     #[test]
     fn test_construct_series_url() {
         // Case 1: Rongyok URL (standard)
-        let (url, domain) = RongyokParser::construct_series_url(1004, Some("https://rongyok.com/watch/?series_id=1004"));
+        let (url, domain) = RongyokParser::construct_series_url(1004, Some("https://rongyok.com/watch/?series_id=1004"), "rongyok.com");
         assert_eq!(url, "https://rongyok.com/watch/?series_id=1004");
         assert_eq!(domain, "https://rongyok.com/");
 
         // Case 2: Thongyok URL
         let th_url = "https://thongyok.com/series/1004/test-title";
-        let (url, domain) = RongyokParser::construct_series_url(1004, Some(th_url));
+        let (url, domain) = RongyokParser::construct_series_url(1004, Some(th_url), "rongyok.com");
         assert_eq!(url, th_url);
         assert_eq!(domain, "https://thongyok.com/");
 
         // Case 3: None (fallback)
-        let (url, domain) = RongyokParser::construct_series_url(1004, None);
+        let (url, domain) = RongyokParser::construct_series_url(1004, None, "rongyok.com");
         assert_eq!(url, "https://rongyok.com/watch/?series_id=1004");
         assert_eq!(domain, "https://rongyok.com/");
 
-        // Case 4: Other domain/format treated as Rongyok if not explicit Thongyok
-        let (url, domain) = RongyokParser::construct_series_url(1004, Some("https://other.com/1004"));
-        // Current implementation falls back to Rongyok format if not containing "thongyok.com"
-        assert_eq!(url, "https://rongyok.com/watch/?series_id=1004");
-        assert_eq!(domain, "https://rongyok.com/");
+        // Case 4: Custom domain
+        let (url, domain) = RongyokParser::construct_series_url(1004, Some("https://new-rongyok.com/1004"), "new-rongyok.com");
+        assert_eq!(url, "https://new-rongyok.com/1004");
+        assert_eq!(domain, "https://new-rongyok.com/");
     }
 }

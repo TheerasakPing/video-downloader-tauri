@@ -14,8 +14,56 @@ use titan_parser::TitanParser;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, State};
+use std::fs;
+use tauri::{AppHandle, Emitter, State, Manager};
 use utils::{expand_path, sanitize_filename};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DomainSettings {
+    pub titan_domain: String,
+    pub baanjeen_domain: String,
+    pub rongyok_domain: String,
+}
+
+impl Default for DomainSettings {
+    fn default() -> Self {
+        Self {
+            titan_domain: "51cg1.com".to_string(),
+            baanjeen_domain: "xn--82c7abb4jua0l.com".to_string(),
+            rongyok_domain: "rongyok.com".to_string(),
+        }
+    }
+}
+
+fn get_settings_path(app_handle: &AppHandle) -> std::path::PathBuf {
+    let mut path = app_handle.path().app_data_dir().unwrap_or_default();
+    path.push("domain_settings.json");
+    path
+}
+
+#[tauri::command]
+fn get_domain_settings(app_handle: AppHandle) -> DomainSettings {
+    let path = get_settings_path(&app_handle);
+    if let Ok(content) = std::fs::read_to_string(&path) {
+        if let Ok(settings) = serde_json::from_str(&content) {
+            return settings;
+        }
+    }
+    DomainSettings::default()
+}
+
+#[tauri::command]
+fn save_domain_settings(settings: DomainSettings, app_handle: AppHandle) -> Result<(), String> {
+    let path = get_settings_path(&app_handle);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+    std::fs::write(path, json).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 
 // Unified series info that works with both parsers
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,9 +130,11 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
     }
 
     // Check which parser to use based on URL
-    let series_info = if BaanJeenParser::is_baanjeen_url(&url) {
+    let settings = get_domain_settings(app_handle.clone());
+    
+    let series_info = if BaanJeenParser::is_baanjeen_url(&url, &settings.baanjeen_domain) {
         // Use BaanJeen parser
-        let mut baanjeen_info = state.baanjeen_parser.get_series_info(&url).await?;
+        let mut baanjeen_info = state.baanjeen_parser.get_series_info(&url, &settings.baanjeen_domain).await?;
 
         // HYBRID MODE: If no episodes found with static parsing, try Chrome detector
         if baanjeen_info.episode_urls.is_empty() {
@@ -108,7 +158,7 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
                     let target_url = if iframe_url.starts_with("//") {
                         format!("https:{}", iframe_url)
                     } else if iframe_url.starts_with("/") {
-                        format!("https://xn--82c7abb4jua0l.com{}", iframe_url)
+                        format!("https://{}{}", settings.baanjeen_domain, iframe_url)
                     } else {
                         iframe_url.clone()
                     };
@@ -140,9 +190,9 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             episode_urls: baanjeen_info.episode_urls,
             source: "baanjeen".to_string(),
         }
-    } else if TitanParser::is_titan_url(&url) {
-        // Use Titan Parser (51cg1)
-        let titan_info = state.titan_parser.get_series_info(&url).await?;
+    } else if TitanParser::is_titan_url(&url, &settings.titan_domain) {
+        // Use Titan Parser
+        let titan_info = state.titan_parser.get_series_info(&url, &settings.titan_domain).await?;
         UnifiedSeriesInfo {
             series_id: 0,
             title: titan_info.title,
@@ -152,9 +202,9 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             source: "titan".to_string(),
         }
     } else {
-        // Use Rongyok parser
-        let series_id = RongyokParser::parse_series_url(&url).ok_or("Invalid URL format")?;
-        let rongyok_info = state.rongyok_parser.get_series_info(series_id, Some(&url)).await?;
+        // Use Rongyok parser (also passing domain for parsing checks if needed)
+        let series_id = RongyokParser::parse_series_url(&url, &settings.rongyok_domain).ok_or("Invalid URL format")?;
+        let rongyok_info = state.rongyok_parser.get_series_info(series_id, Some(&url), &settings.rongyok_domain).await?;
         UnifiedSeriesInfo {
             series_id: rongyok_info.series_id,
             title: rongyok_info.title,
@@ -427,6 +477,7 @@ async fn get_episode_url(
     series_id: i32,
     episode: i32,
     state: State<'_, AppState>,
+    app_handle: AppHandle,
 ) -> Result<String, String> {
     // Try from cached series first
     if let Some(series) = state.current_series.lock().unwrap().as_ref() {
@@ -438,7 +489,8 @@ async fn get_episode_url(
     }
 
     // Fetch fresh
-    let series_info = state.rongyok_parser.get_series_info(series_id, None).await?;
+    let settings = get_domain_settings(app_handle.clone());
+    let series_info = state.rongyok_parser.get_series_info(series_id, None, &settings.rongyok_domain).await?;
     series_info
         .episode_urls
         .get(&episode)
@@ -614,6 +666,8 @@ pub fn run() {
             download_states: Mutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
+            get_domain_settings,
+            save_domain_settings,
             fetch_series,
             update_series_state,
             check_ffmpeg_available,

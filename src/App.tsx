@@ -47,6 +47,7 @@ import { useHistory } from "./hooks/useHistory";
 import { useSpeedGraph } from "./hooks/useSpeedGraph";
 import { useUpdater } from "./hooks/useUpdater";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { useDomainSettings } from "./hooks/useDomainSettings";
 
 import { useI18n } from "./hooks/useI18n";
 import { useCustomTheme } from "./hooks/useCustomTheme";
@@ -203,6 +204,8 @@ function App() {
   } = useUpdater();
   const { language, setLanguage, t } = useI18n();
   const { themes, activeThemeId, setActiveTheme } = useCustomTheme();
+  const { domainSettings, updateDomainSetting, resetDomainSettings } =
+    useDomainSettings();
 
   // Tab navigation
   const tabs: TabType[] = ["download", "files", "history", "settings", "logs"];
@@ -1759,6 +1762,9 @@ function App() {
               themes={themes}
               activeThemeId={activeThemeId}
               onThemeSelect={setActiveTheme}
+              domainSettings={domainSettings}
+              onUpdateDomain={updateDomainSetting}
+              onResetDomains={resetDomainSettings}
             />
           </div>
         )}

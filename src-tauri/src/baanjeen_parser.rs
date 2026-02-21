@@ -30,9 +30,9 @@ impl BaanJeenParser {
         Self { client }
     }
 
-    /// Check if URL is from บ้านจีน.com (xn--82c7abb4jua0l.com is the punycode for บ้านจีน.com)
-    pub fn is_baanjeen_url(url: &str) -> bool {
-        url.contains("xn--82c7abb4jua0l.com") || url.contains("บ้านจีน.com")
+    /// Check if URL is from บ้านจีน.com or configured dynamic domain
+    pub fn is_baanjeen_url(url: &str, domain: &str) -> bool {
+        url.contains(domain) || url.contains("xn--82c7abb4jua0l.com") || url.contains("บ้านจีน.com")
     }
 
     /// Extract series slug from URL
@@ -47,9 +47,9 @@ impl BaanJeenParser {
         None
     }
 
-    /// Fetch series information from บ้านจีน.com
-    pub async fn get_series_info(&self, series_url: &str) -> Result<BaanJeenSeriesInfo, String> {
-        eprintln!("[BaanJeen] Fetching page: {}", series_url);
+    /// Fetch series information from configured Baanjeen domain
+    pub async fn get_series_info(&self, series_url: &str, domain: &str) -> Result<BaanJeenSeriesInfo, String> {
+        eprintln!("[BaanJeen] Fetching page: {} (Domain config: {})", series_url, domain);
 
         // Fetch the main page
         let response = self
@@ -169,9 +169,9 @@ impl BaanJeenParser {
             } else if script_src.starts_with("//") {
                 format!("https:{}", script_src)
             } else if script_src.starts_with("/") {
-                format!("https://xn--82c7abb4jua0l.com{}", script_src)
+                format!("https://{}{}", domain, script_src)
             } else {
-                format!("https://xn--82c7abb4jua0l.com/{}", script_src)
+                format!("https://{}/{}", domain, script_src)
             };
 
             eprintln!("[BaanJeen] Fetching JS: {}", script_url);
@@ -419,9 +419,10 @@ mod tests {
 
     #[test]
     fn test_is_baanjeen_url() {
-        assert!(BaanJeenParser::is_baanjeen_url("https://xn--82c7abb4jua0l.com/some-series/"));
-        assert!(BaanJeenParser::is_baanjeen_url("https://บ้านจีน.com/some-series/"));
-        assert!(!BaanJeenParser::is_baanjeen_url("https://rongyok.com/watch/?series_id=1004"));
+        assert!(BaanJeenParser::is_baanjeen_url("https://xn--82c7abb4jua0l.com/some-series/", "xn--82c7abb4jua0l.com"));
+        assert!(BaanJeenParser::is_baanjeen_url("https://บ้านจีน.com/some-series/", "xn--82c7abb4jua0l.com"));
+        assert!(!BaanJeenParser::is_baanjeen_url("https://rongyok.com/watch/?series_id=1004", "xn--82c7abb4jua0l.com"));
+        assert!(BaanJeenParser::is_baanjeen_url("https://bjn-new-domain.com/some-series/", "bjn-new-domain.com"));
     }
 
     #[test]

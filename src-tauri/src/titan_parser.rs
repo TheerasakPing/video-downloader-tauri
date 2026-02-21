@@ -30,13 +30,13 @@ impl TitanParser {
         Self { client }
     }
 
-    /// Check if URL is from 51cg1.com
-    pub fn is_titan_url(url: &str) -> bool {
-        url.contains("51cg1.com") || url.contains("51cg")
+    /// Check if URL is from 51cg1.com or dynamic domain
+    pub fn is_titan_url(url: &str, domain: &str) -> bool {
+        url.contains(domain) || url.contains("51cg")
     }
 
-    /// Fetch series information from 51cg1.com
-    pub async fn get_series_info(&self, series_url: &str) -> Result<TitanSeriesInfo, String> {
+    /// Fetch series information from Titan network
+    pub async fn get_series_info(&self, series_url: &str, _domain: &str) -> Result<TitanSeriesInfo, String> {
         eprintln!("[Titan] Fetching page: {}", series_url);
 
         let response = self
