@@ -86,6 +86,13 @@ interface BatchItem {
 type TabType = "download" | "files" | "history" | "settings" | "logs";
 
 function App() {
+  const {
+    domainSettings,
+    updateDomainSetting,
+    resetDomainSettings,
+    isLoaded: domainsLoaded,
+  } = useDomainSettings();
+
   // State
   const [url, setUrl] = useState("");
   const [series, setSeries] = useState<SeriesInfo | null>(null);
@@ -153,14 +160,29 @@ function App() {
   });
 
   // Helper to check if URL is valid for this app
-  const isValidSeriesUrl = useCallback((text: string): boolean => {
-    if (!text) return false;
-    return (
-      text.includes("rongyok.com") ||
-      text.includes("thongyok.com") ||
-      text.includes("51cg1.com")
-    );
-  }, []);
+  const isValidSeriesUrl = useCallback(
+    (text: string): boolean => {
+      if (!text) return false;
+
+      const checkDomains = (settingDomain: string) => {
+        return settingDomain.split(",").some((d) => {
+          const domain = d.trim();
+          return domain.length > 0 && text.includes(domain);
+        });
+      };
+
+      return (
+        checkDomains(domainSettings.rongyokDomain) ||
+        checkDomains(domainSettings.titanDomain) ||
+        checkDomains(domainSettings.baanjeenDomain) ||
+        text.includes("rongyok.com") ||
+        text.includes("thongyok.com") ||
+        text.includes("51cg") || // Titan wildcard fallback
+        text.includes("xn--82c7abb4jua0l.com")
+      );
+    },
+    [domainSettings],
+  );
 
   const extractUrls = useCallback(
     (text: string) => {
@@ -204,8 +226,6 @@ function App() {
   } = useUpdater();
   const { language, setLanguage, t } = useI18n();
   const { themes, activeThemeId, setActiveTheme } = useCustomTheme();
-  const { domainSettings, updateDomainSetting, resetDomainSettings } =
-    useDomainSettings();
 
   // Tab navigation
   const tabs: TabType[] = ["download", "files", "history", "settings", "logs"];
@@ -720,6 +740,7 @@ function App() {
   // Initialize
   const initialized = React.useRef(false);
   useEffect(() => {
+    if (!domainsLoaded) return;
     if (initialized.current) return;
     initialized.current = true;
 
@@ -729,7 +750,8 @@ function App() {
 
     // Auto-paste from clipboard on startup
     autoFetchFromClipboard();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [domainsLoaded, autoFetchFromClipboard]);
 
   // Auto-fetch when window gains focus
   useEffect(() => {

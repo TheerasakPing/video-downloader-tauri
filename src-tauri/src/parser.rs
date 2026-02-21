@@ -206,8 +206,6 @@ impl RongyokParser {
         let url = if let Some(orig) = original_url {
             if orig.contains("thongyok.com") {
                 orig.to_string()
-            } else if orig.contains(domain_setting) {
-                orig.to_string()
             } else {
                 format!("https://{}/watch/?series_id={}", domain_setting, series_id)
             }
@@ -227,6 +225,25 @@ impl RongyokParser {
     /// Extract all episode URLs from JavaScript
     fn extract_all_episode_urls(&self, html: &str) -> HashMap<i32, String> {
         let mut episode_urls = HashMap::new();
+
+        // Pattern 0: Parse JSON `seriesData` object (Most accurate)
+        let pattern0 = Regex::new(r#"const\s+seriesData\s*=\s*(\{.*?\});"#).unwrap();
+        if let Some(caps) = pattern0.captures(html) {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&caps[1]) {
+                if let Some(episodes) = json.get("episodes").and_then(|e| e.as_array()) {
+                    for ep in episodes {
+                        if let (Some(num), Some(url)) = (
+                            ep.get("episode_number").and_then(|n| n.as_i64()),
+                            ep.get("video_url").and_then(|u| u.as_str())
+                        ) {
+                            let mut clean_url = url.replace("\\/", "/");
+                            clean_url = clean_url.replace("\\u0026", "&");
+                            episode_urls.entry(num as i32).or_insert(clean_url);
+                        }
+                    }
+                }
+            }
+        }
 
         // Pattern 1: Discord CDN with numeric filename (e.g., 1.mp4, 2.mp4)
         let pattern1 = Regex::new(
@@ -347,8 +364,8 @@ mod tests {
         assert_eq!(domain, "https://rongyok.com/");
 
         // Case 4: Custom domain
-        let (url, domain) = RongyokParser::construct_series_url(1004, Some("https://new-rongyok.com/1004"), "new-rongyok.com");
-        assert_eq!(url, "https://new-rongyok.com/1004");
+        let (url, domain) = RongyokParser::construct_series_url(1004, Some("https://new-rongyok.com/series/1004/%E0%B8%AA%E0%B8%94%E0%B8%8A"), "new-rongyok.com");
+        assert_eq!(url, "https://new-rongyok.com/watch/?series_id=1004");
         assert_eq!(domain, "https://new-rongyok.com/");
     }
 }

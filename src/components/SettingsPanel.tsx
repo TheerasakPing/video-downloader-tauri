@@ -206,14 +206,16 @@ export function SettingsPanel({
           <div className="flex items-center justify-between">
             <div>
               <label className="text-sm text-white">Titan Server (51cg)</label>
-              <p className="text-xs text-slate-500">Domain for 51cg videos</p>
+              <p className="text-xs text-slate-500">
+                Domains (comma-separated for max 5, e.g. 51cg1.com, 51cm.com)
+              </p>
             </div>
             <input
               type="text"
               value={domainSettings.titanDomain}
               onChange={(e) => onUpdateDomain("titanDomain", e.target.value)}
-              className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white w-48 text-right"
-              placeholder="51cg1.com"
+              className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white w-64 text-right"
+              placeholder="51cg1.com, 51cm.com"
             />
           </div>
 
