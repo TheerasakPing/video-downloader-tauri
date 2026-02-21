@@ -38,3 +38,9 @@ export interface LogEntry {
   level: LogLevel;
   message: string;
 }
+
+export interface DomainSettings {
+  titanDomain: string;
+  baanjeenDomain: string;
+  rongyokDomain: string;
+}

@@ -30,13 +30,22 @@ impl TitanParser {
         Self { client }
     }
 
-    /// Check if URL is from 51cg1.com
-    pub fn is_titan_url(url: &str) -> bool {
-        url.contains("51cg1.com") || url.contains("51cg")
+    /// Check if URL is from 51cg1.com or dynamic domain
+    /// `domains` can be a comma-separated list of domains (e.g. "51cg1.com, 51cm.com")
+    pub fn is_titan_url(url: &str, domains: &str) -> bool {
+        if url.contains("51cg") || url.contains("357ms") {
+            return true;
+        }
+        
+        // Split by comma and trim whitespaces
+        domains.split(',')
+            .map(|d| d.trim())
+            .filter(|d| !d.is_empty())
+            .any(|d| url.contains(d))
     }
 
-    /// Fetch series information from 51cg1.com
-    pub async fn get_series_info(&self, series_url: &str) -> Result<TitanSeriesInfo, String> {
+    /// Fetch series information from Titan network
+    pub async fn get_series_info(&self, series_url: &str, _domain: &str) -> Result<TitanSeriesInfo, String> {
         eprintln!("[Titan] Fetching page: {}", series_url);
 
         let response = self
@@ -217,5 +226,29 @@ impl TitanParser {
         eprintln!("[Titan] Image processed.");
         // Return as data URL
         Some(format!("data:{};base64,{}", content_type, base64_data))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_titan_url() {
+        let domains = "51cg1.com, 51cm.com, titan51.net";
+        
+        // Exact match via comma string
+        assert!(TitanParser::is_titan_url("https://51cm.com/video/123", domains));
+        assert!(TitanParser::is_titan_url("https://titan51.net/video/123", domains));
+        
+        // Hardcoded fallbacks
+        assert!(TitanParser::is_titan_url("https://51cg.com/video/123", domains));
+        assert!(TitanParser::is_titan_url("https://51cg3.com/video/123", domains));
+        assert!(TitanParser::is_titan_url("https://357ms.com/video/123", domains));
+        assert!(TitanParser::is_titan_url("https://357ms1.net/video/123", domains));
+        
+        // Invalid
+        assert!(!TitanParser::is_titan_url("https://youtube.com/video/123", domains));
+        assert!(!TitanParser::is_titan_url("https://51cm.net/video/123", domains)); // .net instead of .com
     }
 }

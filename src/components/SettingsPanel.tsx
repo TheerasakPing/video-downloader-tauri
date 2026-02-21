@@ -12,8 +12,10 @@ import {
   RefreshCw,
   Sparkles,
   Languages,
+  Globe,
 } from "lucide-react";
 import { Settings as SettingsType } from "../hooks/useSettings";
+import { DomainSettings } from "../types";
 import { CustomTheme } from "../hooks/useCustomTheme";
 import { Language } from "../hooks/useI18n";
 import { Button } from "./Button";
@@ -21,7 +23,10 @@ import { ThemeSelector } from "./ThemeSelector";
 
 interface SettingsPanelProps {
   settings: SettingsType;
-  onUpdate: <K extends keyof SettingsType>(key: K, value: SettingsType[K]) => void;
+  onUpdate: <K extends keyof SettingsType>(
+    key: K,
+    value: SettingsType[K],
+  ) => void;
   onReset: () => void;
   onOpenFolder: () => void;
   onCheckUpdates?: () => void;
@@ -34,6 +39,13 @@ interface SettingsPanelProps {
   themes: CustomTheme[];
   activeThemeId: string;
   onThemeSelect: (themeId: string) => void;
+  // Domains
+  domainSettings: DomainSettings;
+  onUpdateDomain: <K extends keyof DomainSettings>(
+    key: K,
+    value: DomainSettings[K],
+  ) => void;
+  onResetDomains: () => void;
 }
 
 export function SettingsPanel({
@@ -49,6 +61,9 @@ export function SettingsPanel({
   themes,
   activeThemeId,
   onThemeSelect,
+  domainSettings,
+  onUpdateDomain,
+  onResetDomains,
 }: SettingsPanelProps) {
   return (
     <div className="space-y-6">
@@ -120,7 +135,10 @@ export function SettingsPanel({
             <select
               value={settings.fileNaming}
               onChange={(e) =>
-                onUpdate("fileNaming", e.target.value as SettingsType["fileNaming"])
+                onUpdate(
+                  "fileNaming",
+                  e.target.value as SettingsType["fileNaming"],
+                )
               }
               className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white"
             >
@@ -171,6 +189,66 @@ export function SettingsPanel({
               />
               <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
             </label>
+          </div>
+        </div>
+      </section>
+
+      {/* Domain Server Configuration */}
+      <section className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+        <h3 className="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
+          <span className="icon-glow icon-glow-sm icon-glow-blue">
+            <Globe size={16} />
+          </span>
+          Server Domains
+        </h3>
+
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-white">Titan Server (51cg)</label>
+              <p className="text-xs text-slate-500">
+                Domains (comma-separated for max 5, e.g. 51cg1.com, 51cm.com)
+              </p>
+            </div>
+            <input
+              type="text"
+              value={domainSettings.titanDomain}
+              onChange={(e) => onUpdateDomain("titanDomain", e.target.value)}
+              className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white w-64 text-right"
+              placeholder="51cg1.com, 51cm.com"
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-white">BaanJeen Server</label>
+              <p className="text-xs text-slate-500">
+                Domain for BaanJeen videos (default punycode)
+              </p>
+            </div>
+            <input
+              type="text"
+              value={domainSettings.baanjeenDomain}
+              onChange={(e) => onUpdateDomain("baanjeenDomain", e.target.value)}
+              className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white w-48 text-right"
+              placeholder="xn--82c7abb4jua0l.com"
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-white">Rongyok Server</label>
+              <p className="text-xs text-slate-500">
+                Domain for Rongyok videos
+              </p>
+            </div>
+            <input
+              type="text"
+              value={domainSettings.rongyokDomain}
+              onChange={(e) => onUpdateDomain("rongyokDomain", e.target.value)}
+              className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white w-48 text-right"
+              placeholder="rongyok.com"
+            />
           </div>
         </div>
       </section>
@@ -248,7 +326,9 @@ export function SettingsPanel({
                 : "bg-slate-700 text-slate-400 hover:bg-slate-600"
             }`}
           >
-            <span className={`icon-glow icon-glow-sm ${settings.theme === "light" ? "icon-glow-amber icon-glow-animated" : ""}`}>
+            <span
+              className={`icon-glow icon-glow-sm ${settings.theme === "light" ? "icon-glow-amber icon-glow-animated" : ""}`}
+            >
               <Sun size={18} />
             </span>
             Light
@@ -261,7 +341,9 @@ export function SettingsPanel({
                 : "bg-slate-700 text-slate-400 hover:bg-slate-600"
             }`}
           >
-            <span className={`icon-glow icon-glow-sm ${settings.theme === "dark" ? "icon-glow-violet icon-glow-animated" : ""}`}>
+            <span
+              className={`icon-glow icon-glow-sm ${settings.theme === "dark" ? "icon-glow-violet icon-glow-animated" : ""}`}
+            >
               <Moon size={18} />
             </span>
             Dark
@@ -274,7 +356,9 @@ export function SettingsPanel({
                 : "bg-slate-700 text-slate-400 hover:bg-slate-600"
             }`}
           >
-            <span className={`icon-glow icon-glow-sm ${settings.theme === "system" ? "icon-glow-cyan icon-glow-animated" : ""}`}>
+            <span
+              className={`icon-glow icon-glow-sm ${settings.theme === "system" ? "icon-glow-cyan icon-glow-animated" : ""}`}
+            >
               <Monitor size={18} />
             </span>
             System
@@ -338,15 +422,18 @@ export function SettingsPanel({
         <div className="flex items-center justify-between">
           <div>
             <label className="text-sm text-white">Check for Updates</label>
-            <p className="text-xs text-slate-500">
-              Current version: 1.3.0
-            </p>
+            <p className="text-xs text-slate-500">Current version: 1.3.0</p>
           </div>
           {onCheckUpdates && (
             <Button
               variant="secondary"
               size="sm"
-              leftIcon={<RefreshCw size={14} className={isCheckingUpdates ? "animate-spin" : ""} />}
+              leftIcon={
+                <RefreshCw
+                  size={14}
+                  className={isCheckingUpdates ? "animate-spin" : ""}
+                />
+              }
               onClick={onCheckUpdates}
               disabled={isCheckingUpdates}
             >
@@ -360,7 +447,11 @@ export function SettingsPanel({
       <div className="flex gap-3">
         <Button
           variant="secondary"
-          leftIcon={<span className="icon-glow icon-glow-sm icon-glow-blue"><FolderOpen size={16} /></span>}
+          leftIcon={
+            <span className="icon-glow icon-glow-sm icon-glow-blue">
+              <FolderOpen size={16} />
+            </span>
+          }
           onClick={onOpenFolder}
           className="flex-1"
         >
@@ -368,8 +459,15 @@ export function SettingsPanel({
         </Button>
         <Button
           variant="danger"
-          leftIcon={<span className="icon-glow icon-glow-sm icon-glow-red"><RotateCcw size={16} /></span>}
-          onClick={onReset}
+          leftIcon={
+            <span className="icon-glow icon-glow-sm icon-glow-red">
+              <RotateCcw size={16} />
+            </span>
+          }
+          onClick={() => {
+            onReset();
+            onResetDomains();
+          }}
           className="btn-glow-red"
         >
           Reset Settings
