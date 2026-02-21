@@ -177,7 +177,8 @@ function App() {
         checkDomains(domainSettings.baanjeenDomain) ||
         text.includes("rongyok.com") ||
         text.includes("thongyok.com") ||
-        text.includes("51cg") || // Titan wildcard fallback
+        text.includes("51cg") ||
+        text.includes("357ms") || // Titan wildcard fallback
         text.includes("xn--82c7abb4jua0l.com")
       );
     },

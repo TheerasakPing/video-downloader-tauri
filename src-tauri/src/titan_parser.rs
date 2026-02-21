@@ -33,7 +33,7 @@ impl TitanParser {
     /// Check if URL is from 51cg1.com or dynamic domain
     /// `domains` can be a comma-separated list of domains (e.g. "51cg1.com, 51cm.com")
     pub fn is_titan_url(url: &str, domains: &str) -> bool {
-        if url.contains("51cg") {
+        if url.contains("51cg") || url.contains("357ms") {
             return true;
         }
         
@@ -241,9 +241,11 @@ mod tests {
         assert!(TitanParser::is_titan_url("https://51cm.com/video/123", domains));
         assert!(TitanParser::is_titan_url("https://titan51.net/video/123", domains));
         
-        // Hardcoded "51cg"
+        // Hardcoded fallbacks
         assert!(TitanParser::is_titan_url("https://51cg.com/video/123", domains));
         assert!(TitanParser::is_titan_url("https://51cg3.com/video/123", domains));
+        assert!(TitanParser::is_titan_url("https://357ms.com/video/123", domains));
+        assert!(TitanParser::is_titan_url("https://357ms1.net/video/123", domains));
         
         // Invalid
         assert!(!TitanParser::is_titan_url("https://youtube.com/video/123", domains));
