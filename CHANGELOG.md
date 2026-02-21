@@ -2,6 +2,13 @@
 
 All notable changes to Rongyok Video Downloader will be documented in this file.
 
+## [1.10.0] - 2026-02-21
+
+### Added
+
+- **Release for 3 OS**: Official support and release artifacts for macOS, Windows, and Linux.
+- **Version Release Tag**: Automated release management via GitHub tags.
+
 ## [1.8.0] - 2026-01-31
 
 ### Added
