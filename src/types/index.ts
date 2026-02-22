@@ -43,4 +43,5 @@ export interface DomainSettings {
   titanDomain: string;
   baanjeenDomain: string;
   rongyokDomain: string;
+  groupByDomain: boolean;
 }

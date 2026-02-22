@@ -14,7 +14,6 @@ use titan_parser::TitanParser;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::fs;
 use tauri::{AppHandle, Emitter, State, Manager};
 use utils::{expand_path, sanitize_filename};
 
@@ -24,6 +23,7 @@ pub struct DomainSettings {
     pub titan_domain: String,
     pub baanjeen_domain: String,
     pub rongyok_domain: String,
+    pub group_by_domain: bool,
 }
 
 impl Default for DomainSettings {
@@ -32,6 +32,7 @@ impl Default for DomainSettings {
             titan_domain: "51cg1.com".to_string(),
             baanjeen_domain: "xn--82c7abb4jua0l.com".to_string(),
             rongyok_domain: "rongyok.com".to_string(),
+            group_by_domain: false,
         }
     }
 }
@@ -264,14 +265,29 @@ async fn start_download(
         .clone()
         .ok_or("No series loaded")?;
 
-    // Create downloader with config
+    // Adjust output directory if group_by_domain is enabled
+    let domain_settings = get_domain_settings(app_handle.clone());
+    let final_output_dir = if domain_settings.group_by_domain {
+        let subfolder = match series.source.as_str() {
+            "baanjeen" => "BaanJeen".to_string(),
+            "rongyok" => "Rongyok".to_string(),
+            "titan" => "Titan".to_string(),
+            "direct" => "Direct".to_string(),
+            _ => sanitize_filename(&series.source),
+        };
+        let mut path = std::path::PathBuf::from(&request.output_dir);
+        path.push(subfolder);
+        path.to_string_lossy().to_string()
+    } else {
+        request.output_dir.clone()
+    };
+
     let config = DownloadConfig {
         speed_limit_kbps: request.speed_limit,
         file_naming: request.file_naming.clone(),
         series_title: request.series_title.clone(),
     };
-    let _downloader = VideoDownloader::with_config(&request.output_dir, config.clone());
-    *state.downloader.lock().unwrap() = Some(VideoDownloader::with_config(&request.output_dir, config));
+    *state.downloader.lock().unwrap() = Some(VideoDownloader::with_config(&final_output_dir, config.clone()));
 
     let mut results = Vec::new();
     let mut successful_files = Vec::new();
@@ -291,7 +307,7 @@ async fn start_download(
 
             let app = app_handle.clone();
             let dl = VideoDownloader::with_config(
-                &request.output_dir,
+                &final_output_dir,
                 DownloadConfig {
                     speed_limit_kbps: request.speed_limit,
                     file_naming: request.file_naming.clone(),
@@ -373,7 +389,7 @@ async fn start_download(
         let _ = app_handle.emit("log-info", format!("Series title: {}", series.title));
         let output_filename = sanitize_filename(&series.title);
         let _ = app_handle.emit("log-info", format!("Output filename: {}", output_filename));
-        let expanded_output_dir = expand_path(&request.output_dir);
+        let expanded_output_dir = expand_path(&final_output_dir);
         let _ = app_handle.emit("log-info", format!("Expanded dir: {:?}", expanded_output_dir));
         let output_path = expanded_output_dir.join(format!("{}.mp4", output_filename));
         let output_path_str = output_path.to_string_lossy().to_string();

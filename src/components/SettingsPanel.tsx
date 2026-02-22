@@ -250,6 +250,26 @@ export function SettingsPanel({
               placeholder="rongyok.com"
             />
           </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-slate-700/50">
+            <div>
+              <label className="text-sm text-white">Group by Website</label>
+              <p className="text-xs text-slate-500">
+                Automatically create subfolders for each source website
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={domainSettings.groupByDomain}
+                onChange={(e) =>
+                  onUpdateDomain("groupByDomain", e.target.checked)
+                }
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
+            </label>
+          </div>
         </div>
       </section>
 
