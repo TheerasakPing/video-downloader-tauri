@@ -416,8 +416,17 @@ async fn start_download(
             let mut sorted_files = successful_files.clone();
             sorted_files.sort();
 
-            match merge_videos_with_progress(sorted_files.clone(), &output_path_str, Some(&app_handle)) {
-                Ok(_) => {
+            let app_for_merge = app_handle.clone();
+            let output_path_for_merge = output_path_str.clone();
+            let files_for_merge = sorted_files.clone();
+
+            // Run FFmpeg merge in a blocking thread so UI stays responsive
+            let merge_result = tokio::task::spawn_blocking(move || {
+                merge_videos_with_progress(files_for_merge, &output_path_for_merge, Some(&app_for_merge))
+            }).await;
+
+            match merge_result {
+                Ok(Ok(_)) => {
                     let _ = app_handle.emit("log-info", "Merge complete, deleting individual files...".to_string());
                     // Delete individual files after successful merge
                     for file in &sorted_files {
@@ -425,8 +434,11 @@ async fn start_download(
                     }
                     let _ = app_handle.emit("merge-complete", output_path_str);
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     let _ = app_handle.emit("merge-error", e);
+                }
+                Err(e) => {
+                    let _ = app_handle.emit("merge-error", format!("Merge task panicked: {}", e));
                 }
             }
         }

@@ -2,6 +2,14 @@
 
 All notable changes to Rongyok Video Downloader will be documented in this file.
 
+## [1.11.0] - 2026-02-22
+
+### Fixed
+
+- **FFmpeg Merge Issue**: Fixed a bug where the UI would freeze during long video merging processes by offloading the task to a separate background thread.
+- **Filename Sanitization**: Improved sanitization to strip newline, carriage return, and tab characters from series titles, ensuring FFmpeg paths are not corrupted.
+- **Merge Performance**: Improved merging speed and reliability by preventing unnecessary re-encoding caused by path corruption.
+
 ## [1.10.0] - 2026-02-21
 
 ### Added
