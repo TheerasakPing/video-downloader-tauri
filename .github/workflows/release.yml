@@ -69,10 +69,10 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "Rongyok Downloader ${{ github.ref_name }}"
           releaseBody: |
-            ## What's New
-            - Auto-paste and auto-fetch from clipboard
-            - Support for thongyok.com URLs
-            - Improved history panel (stores up to 500 records)
+            ## What's New in v1.11.0
+            - **FFmpeg Merge Fix**: Resolved UI freezing during long video merging processes.
+            - **Filename Sanitization**: Fixed issues with special characters in series titles that corrupted FFmpeg paths.
+            - **Improved Performance**: Prevented unnecessary re-encoding by ensuring correct path handling.
 
             ## Download
             - **macOS (Universal)**: Download `universal.dmg` - Works on BOTH Intel and Apple Silicon Macs ⭐ Recommended
@@ -159,7 +159,7 @@ jobs:
           cd ..
           jq -n \
             --arg version "$VERSION" \
-            --arg notes "Auto-paste and auto-fetch from clipboard, Support for thongyok.com URLs, Improved history panel" \
+            --arg notes "Fixed FFmpeg merge freeze and filename sanitization for special characters." \
             --arg pub_date "$RELEASE_DATE" \
             --arg darwin_aarch64_sig "$MACOS_AARCH64_SIG" \
             --arg darwin_aarch64_url "$MACOS_AARCH64_URL" \
