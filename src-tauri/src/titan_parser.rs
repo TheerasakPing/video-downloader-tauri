@@ -33,7 +33,7 @@ impl TitanParser {
     /// Check if URL is from 51cg1.com or dynamic domain
     /// `domains` can be a comma-separated list of domains (e.g. "51cg1.com, 51cm.com")
     pub fn is_titan_url(url: &str, domains: &str) -> bool {
-        if url.contains("51cg") || url.contains("357ms") {
+        if url.contains("51cg") {
             return true;
         }
         

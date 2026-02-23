@@ -3,6 +3,7 @@ mod chrome_detector;
 mod downloader;
 mod parser;
 mod titan_parser;
+mod ms357_parser;
 mod utils;
 
 use baanjeen_parser::BaanJeenParser;
@@ -11,6 +12,7 @@ use downloader::{check_ffmpeg, merge_videos_with_progress, DownloadConfig, Downl
 use parser::RongyokParser;
 use serde::{Deserialize, Serialize};
 use titan_parser::TitanParser;
+use ms357_parser::Ms357Parser;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -83,6 +85,7 @@ struct AppState {
     rongyok_parser: RongyokParser,
     baanjeen_parser: BaanJeenParser,
     titan_parser: TitanParser,
+    ms357_parser: Ms357Parser,
     chrome_detector: Mutex<ChromeVideoDetector>,
     downloader: Mutex<Option<VideoDownloader>>,
     current_series: Mutex<Option<UnifiedSeriesInfo>>,
@@ -190,6 +193,16 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             poster_url: baanjeen_info.poster_url,
             episode_urls: baanjeen_info.episode_urls,
             source: "baanjeen".to_string(),
+        }
+    } else if Ms357Parser::is_ms357_url(&url) {
+        let ms357_info = state.ms357_parser.get_series_info(&url).await?;
+        UnifiedSeriesInfo {
+            series_id: 0,
+            title: ms357_info.title,
+            total_episodes: ms357_info.total_episodes,
+            poster_url: ms357_info.poster_url,
+            episode_urls: ms357_info.episode_urls,
+            source: "ms357".to_string(),
         }
     } else if TitanParser::is_titan_url(&url, &settings.titan_domain) {
         // Use Titan Parser
@@ -685,6 +698,7 @@ pub fn run() {
             rongyok_parser: RongyokParser::new(),
             baanjeen_parser: BaanJeenParser::new(),
             titan_parser: TitanParser::new(),
+            ms357_parser: Ms357Parser::new(),
             chrome_detector: Mutex::new(ChromeVideoDetector::new().unwrap_or_else(|e| {
                 eprintln!("Warning: Chrome detector initialization failed: {}", e);
                 ChromeVideoDetector::new().unwrap()
