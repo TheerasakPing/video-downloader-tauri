@@ -2,6 +2,15 @@
 
 All notable changes to Rongyok Video Downloader will be documented in this file.
 
+## [1.12.0] - 2026-02-25
+
+### Added
+
+- **357ms.com Support**: Added robust support for downloading encrypted HLS video streams from 357ms.com, including custom AES-128 decryption.
+- **Thumbnail Extraction**: Automatically extracts and displays thumbnail/poster cover images from 357ms.com links via HTML DOM parsing.
+- **Grouped Folders**: Added a new setting "Group by Website" to automatically organize downloads into subfolders based on the source website domain.
+- **Improved Parsing**: Enhanced regex extraction for determining the total number of episodes accurately.
+
 ## [1.11.0] - 2026-02-22
 
 ### Fixed
