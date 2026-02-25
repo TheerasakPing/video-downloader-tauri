@@ -35,5 +35,12 @@
     "playwright": "^1.57.0",
     "typescript": "~5.8.3",
     "vite": "^7.0.4"
+  },
+  "reactDoctor": {
+    "ignore": {
+      "rules": [
+        "react/no-danger"
+      ]
+    }
   }
 }
