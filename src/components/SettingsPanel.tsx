@@ -80,12 +80,13 @@ export function SettingsPanel({
           {/* Concurrent Downloads */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">Concurrent Downloads</label>
+              <label htmlFor="concurrent-downloads" className="text-sm text-white">Concurrent Downloads</label>
               <p className="text-xs text-slate-500">
                 Number of episodes to download at once
               </p>
             </div>
             <select
+              id="concurrent-downloads"
               value={settings.concurrentDownloads}
               onChange={(e) =>
                 onUpdate("concurrentDownloads", parseInt(e.target.value))
@@ -103,7 +104,7 @@ export function SettingsPanel({
           {/* Speed Limit */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white flex items-center gap-2">
+              <label htmlFor="speed-limit" className="text-sm text-white flex items-center gap-2">
                 <span className="icon-glow icon-glow-sm icon-glow-cyan">
                   <Gauge size={14} />
                 </span>
@@ -113,6 +114,7 @@ export function SettingsPanel({
             </div>
             <div className="flex items-center gap-2">
               <input
+                id="speed-limit"
                 type="number"
                 min="0"
                 step="100"
@@ -129,10 +131,11 @@ export function SettingsPanel({
           {/* File Naming */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">File Naming</label>
+              <label htmlFor="file-naming" className="text-sm text-white">File Naming</label>
               <p className="text-xs text-slate-500">Format for episode files</p>
             </div>
             <select
+              id="file-naming"
               value={settings.fileNaming}
               onChange={(e) =>
                 onUpdate(
@@ -151,26 +154,27 @@ export function SettingsPanel({
           {/* Auto Merge */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">Auto Merge</label>
+              <label htmlFor="auto-merge" className="text-sm text-white">Auto Merge</label>
               <p className="text-xs text-slate-500">
                 Merge videos after download
               </p>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
+            <span className="relative inline-flex items-center cursor-pointer">
               <input
+                id="auto-merge"
                 type="checkbox"
                 checked={settings.autoMerge}
                 onChange={(e) => onUpdate("autoMerge", e.target.checked)}
                 className="sr-only peer"
               />
               <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
-            </label>
+            </span>
           </div>
 
           {/* Delete After Merge */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white flex items-center gap-2">
+              <label htmlFor="delete-after-merge" className="text-sm text-white flex items-center gap-2">
                 <span className="icon-glow icon-glow-sm icon-glow-red">
                   <Trash2 size={14} />
                 </span>
@@ -180,15 +184,16 @@ export function SettingsPanel({
                 Remove episode files after merging
               </p>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
+            <span className="relative inline-flex items-center cursor-pointer">
               <input
+                id="delete-after-merge"
                 type="checkbox"
                 checked={settings.deleteAfterMerge}
                 onChange={(e) => onUpdate("deleteAfterMerge", e.target.checked)}
                 className="sr-only peer"
               />
               <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
-            </label>
+            </span>
           </div>
         </div>
       </section>
@@ -205,12 +210,13 @@ export function SettingsPanel({
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">Titan Server (51cg)</label>
+              <label htmlFor="titan-domain" className="text-sm text-white">Titan Server (51cg)</label>
               <p className="text-xs text-slate-500">
                 Domains (comma-separated for max 5, e.g. 51cg1.com, 51cm.com)
               </p>
             </div>
             <input
+              id="titan-domain"
               type="text"
               value={domainSettings.titanDomain}
               onChange={(e) => onUpdateDomain("titanDomain", e.target.value)}
@@ -221,12 +227,13 @@ export function SettingsPanel({
 
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">BaanJeen Server</label>
+              <label htmlFor="baanjeen-domain" className="text-sm text-white">BaanJeen Server</label>
               <p className="text-xs text-slate-500">
                 Domain for BaanJeen videos (default punycode)
               </p>
             </div>
             <input
+              id="baanjeen-domain"
               type="text"
               value={domainSettings.baanjeenDomain}
               onChange={(e) => onUpdateDomain("baanjeenDomain", e.target.value)}
@@ -237,12 +244,13 @@ export function SettingsPanel({
 
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">Rongyok Server</label>
+              <label htmlFor="rongyok-domain" className="text-sm text-white">Rongyok Server</label>
               <p className="text-xs text-slate-500">
                 Domain for Rongyok videos
               </p>
             </div>
             <input
+              id="rongyok-domain"
               type="text"
               value={domainSettings.rongyokDomain}
               onChange={(e) => onUpdateDomain("rongyokDomain", e.target.value)}
@@ -253,13 +261,14 @@ export function SettingsPanel({
 
           <div className="flex items-center justify-between pt-2 border-t border-slate-700/50">
             <div>
-              <label className="text-sm text-white">Group by Website</label>
+              <label htmlFor="group-by-domain" className="text-sm text-white">Group by Website</label>
               <p className="text-xs text-slate-500">
                 Automatically create subfolders for each source website
               </p>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
+            <span className="relative inline-flex items-center cursor-pointer">
               <input
+                id="group-by-domain"
                 type="checkbox"
                 checked={domainSettings.groupByDomain}
                 onChange={(e) =>
@@ -268,7 +277,7 @@ export function SettingsPanel({
                 className="sr-only peer"
               />
               <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
-            </label>
+            </span>
           </div>
         </div>
       </section>
@@ -286,13 +295,14 @@ export function SettingsPanel({
           {/* System Notifications */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">System Notifications</label>
+              <label htmlFor="notifications-enabled" className="text-sm text-white">System Notifications</label>
               <p className="text-xs text-slate-500">
                 Show notification when download completes
               </p>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
+            <span className="relative inline-flex items-center cursor-pointer">
               <input
+                id="notifications-enabled"
                 type="checkbox"
                 checked={settings.notificationsEnabled}
                 onChange={(e) =>
@@ -301,13 +311,13 @@ export function SettingsPanel({
                 className="sr-only peer"
               />
               <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
-            </label>
+            </span>
           </div>
 
           {/* Sound */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white flex items-center gap-2">
+              <label htmlFor="sound-enabled" className="text-sm text-white flex items-center gap-2">
                 <span className="icon-glow icon-glow-sm icon-glow-blue">
                   <Volume2 size={14} />
                 </span>
@@ -315,15 +325,16 @@ export function SettingsPanel({
               </label>
               <p className="text-xs text-slate-500">Play sound when done</p>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
+            <span className="relative inline-flex items-center cursor-pointer">
               <input
+                id="sound-enabled"
                 type="checkbox"
                 checked={settings.soundEnabled}
                 onChange={(e) => onUpdate("soundEnabled", e.target.checked)}
                 className="sr-only peer"
               />
               <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
-            </label>
+            </span>
           </div>
         </div>
       </section>
@@ -441,7 +452,7 @@ export function SettingsPanel({
 
         <div className="flex items-center justify-between">
           <div>
-            <label className="text-sm text-white">Check for Updates</label>
+            <span className="text-sm text-white">Check for Updates</span>
             <p className="text-xs text-slate-500">Current version: 1.3.0</p>
           </div>
           {onCheckUpdates && (

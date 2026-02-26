@@ -482,19 +482,16 @@ function App() {
               setIsBatchMode(true);
 
               // Add unique URLs to queue
-              setBatchQueue((prev) => {
-                const existing = new Set(prev.map((i) => i.url));
-                const newItems = urls
-                  .filter((u) => !existing.has(u))
-                  .map((u) => ({ url: u, status: "pending" }) as BatchItem);
+              const existing = new Set(batchQueue.map((i) => i.url));
+              const newItems = urls
+                .filter((u) => !existing.has(u))
+                .map((u) => ({ url: u, status: "pending" }) as BatchItem);
 
-                if (newItems.length > 0) {
-                  success(`Added ${newItems.length} links to queue`);
-                  setIsBatchProcessing(true); // Auto-start processing
-                  return [...prev, ...newItems];
-                }
-                return prev;
-              });
+              if (newItems.length > 0) {
+                setBatchQueue((prev) => [...prev, ...newItems]);
+                success(`Added ${newItems.length} links to queue`);
+                setIsBatchProcessing(true); // Auto-start processing
+              }
             }
           }
         } catch (e) {
@@ -798,116 +795,118 @@ function App() {
   }, [activeTab]);
 
   const setupEventListeners = async () => {
-    await listen<{ message: string; progress: number }>(
-      "detection-progress",
-      (event) => {
-        setDetectionState({
-          isDetecting: true,
-          message: event.payload.message,
-          progress: event.payload.progress,
-        });
+    await Promise.all([
+      listen<{ message: string; progress: number }>(
+        "detection-progress",
+        (event) => {
+          setDetectionState({
+            isDetecting: true,
+            message: event.payload.message,
+            progress: event.payload.progress,
+          });
 
-        if (event.payload.progress >= 100) {
-          setTimeout(() => {
-            setDetectionState((prev) => ({ ...prev, isDetecting: false }));
-          }, 2000);
+          if (event.payload.progress >= 100) {
+            setTimeout(() => {
+              setDetectionState((prev) => ({ ...prev, isDetecting: false }));
+            }, 2000);
+          }
+        },
+      ),
+
+      listen<DownloadProgress>("download-progress", (event) => {
+        setProgress(event.payload);
+        addDataPoint(event.payload.speed);
+        setDownloadState((prev) => ({
+          ...prev,
+          currentEpisode: event.payload.episode,
+        }));
+      }),
+
+      listen<DownloadResult>("download-result", (event) => {
+        const result = event.payload;
+        if (result.success) {
+          setDownloadState((prev) => ({
+            ...prev,
+            completedEpisodes: [...prev.completedEpisodes, result.episode],
+          }));
+          success(`Episode ${result.episode} downloaded`);
+        } else {
+          setDownloadState((prev) => ({
+            ...prev,
+            failedEpisodes: [...prev.failedEpisodes, result.episode],
+          }));
+          error(`Episode ${result.episode} failed: ${result.error}`);
         }
-      },
-    );
 
-    await listen<DownloadProgress>("download-progress", (event) => {
-      setProgress(event.payload);
-      addDataPoint(event.payload.speed);
-      setDownloadState((prev) => ({
-        ...prev,
-        currentEpisode: event.payload.episode,
-      }));
-    });
+        setQueue((prev) =>
+          prev.map((q) =>
+            q.episode === result.episode
+              ? {
+                  ...q,
+                  status: result.success ? "completed" : "failed",
+                  progress: 100,
+                }
+              : q,
+          ),
+        );
+      }),
 
-    await listen<DownloadResult>("download-result", (event) => {
-      const result = event.payload;
-      if (result.success) {
-        setDownloadState((prev) => ({
+      listen("merge-started", () => {
+        log("Merging videos...");
+        setMergeState({
+          isMerging: true,
+          mergedFile: null,
+          mergeError: null,
+          progress: 0,
+          currentTime: 0,
+          totalDuration: 0,
+        });
+      }),
+
+      listen<{
+        percentage: number;
+        currentTime: number;
+        totalDuration: number;
+      }>("merge-progress", (event) => {
+        setMergeState((prev) => ({
           ...prev,
-          completedEpisodes: [...prev.completedEpisodes, result.episode],
+          progress: event.payload.percentage,
+          currentTime: event.payload.currentTime,
+          totalDuration: event.payload.totalDuration,
         }));
-        success(`Episode ${result.episode} downloaded`);
-      } else {
-        setDownloadState((prev) => ({
-          ...prev,
-          failedEpisodes: [...prev.failedEpisodes, result.episode],
-        }));
-        error(`Episode ${result.episode} failed: ${result.error}`);
-      }
+      }),
 
-      setQueue((prev) =>
-        prev.map((q) =>
-          q.episode === result.episode
-            ? {
-                ...q,
-                status: result.success ? "completed" : "failed",
-                progress: 100,
-              }
-            : q,
-        ),
-      );
-    });
+      listen<string>("merge-complete", (event) => {
+        success(`Merged to: ${event.payload}`);
+        setMergeState({
+          isMerging: false,
+          mergedFile: event.payload,
+          mergeError: null,
+          progress: 100,
+          currentTime: 0,
+          totalDuration: 0,
+        });
+        playNotificationSound();
+        showNotification("Merge Complete", "Videos merged successfully!");
+        refreshFiles();
+      }),
 
-    await listen("merge-started", () => {
-      log("Merging videos...");
-      setMergeState({
-        isMerging: true,
-        mergedFile: null,
-        mergeError: null,
-        progress: 0,
-        currentTime: 0,
-        totalDuration: 0,
-      });
-    });
+      listen<string>("merge-error", (event) => {
+        error(`Merge failed: ${event.payload}`);
+        setMergeState({
+          isMerging: false,
+          mergedFile: null,
+          mergeError: event.payload,
+          progress: 0,
+          currentTime: 0,
+          totalDuration: 0,
+        });
+      }),
 
-    await listen<{
-      percentage: number;
-      currentTime: number;
-      totalDuration: number;
-    }>("merge-progress", (event) => {
-      setMergeState((prev) => ({
-        ...prev,
-        progress: event.payload.percentage,
-        currentTime: event.payload.currentTime,
-        totalDuration: event.payload.totalDuration,
-      }));
-    });
-
-    await listen<string>("merge-complete", (event) => {
-      success(`Merged to: ${event.payload}`);
-      setMergeState({
-        isMerging: false,
-        mergedFile: event.payload,
-        mergeError: null,
-        progress: 100,
-        currentTime: 0,
-        totalDuration: 0,
-      });
-      playNotificationSound();
-      showNotification("Merge Complete", "Videos merged successfully!");
-      refreshFiles();
-    });
-
-    await listen<string>("merge-error", (event) => {
-      error(`Merge failed: ${event.payload}`);
-      setMergeState({
-        isMerging: false,
-        mergedFile: null,
-        mergeError: event.payload,
-        progress: 0,
-        currentTime: 0,
-        totalDuration: 0,
-      });
-    });
-
-    await listen<string>("log-info", (event) => {
-      log(event.payload);
-    });
+      listen<string>("log-info", (event) => {
+        log(event.payload);
+      }),
+    ]);
   };
 
   const checkFFmpeg = async () => {
@@ -1666,13 +1665,14 @@ function App() {
                 ) : (
                   batchQueue.map((item, idx) => (
                     <div
-                      key={idx}
+                      key={item.url}
                       className="p-2 rounded border border-slate-700/50 bg-slate-800/30 flex gap-2 text-xs relative group"
                     >
                       <div className="w-12 h-16 bg-slate-900 rounded overflow-hidden flex-shrink-0 relative">
                         {item.info?.posterUrl ? (
                           <img
                             src={item.info.posterUrl}
+                            alt={item.info.title ?? ""}
                             className="w-full h-full object-cover"
                           />
                         ) : (
