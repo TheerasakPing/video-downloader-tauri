@@ -115,13 +115,19 @@ impl VideoDownloader {
         &self,
         episode: i32,
         video_url: &str,
+        hls_key_info: Option<crate::titan_parser::HlsKeyInfo>,
         app_handle: &AppHandle,
         download_state: Option<Arc<DownloadState>>,
     ) -> DownloadResult {
         let file_path = self.get_episode_filename(episode);
         let file_path_str = file_path.to_string_lossy().to_string();
 
-        // Check if it's an HLS stream (m3u8) - require FFmpeg
+        // Titan encrypted HLS: download + decrypt manually
+        if let Some(key_info) = hls_key_info {
+            return self.download_titan_hls(episode, video_url, &key_info, &file_path_str, app_handle, download_state).await;
+        }
+
+        // Standard HLS stream (m3u8 without encryption metadata)
         if video_url.contains(".m3u8") {
             if !check_ffmpeg() {
                 return DownloadResult {
@@ -138,6 +144,281 @@ impl VideoDownloader {
         self.download_direct_file(episode, video_url, &file_path, app_handle, download_state).await
     }
 
+    /// Download and decrypt AES-128-CBC encrypted HLS stream (Titan/357ms.com pattern).
+    ///
+    /// Strategy:
+    /// 1. Fetch variant M3U8 (H.264 v1) from `hls_base_url/v1/index.m3u8`
+    /// 2. Download each .ts segment using reqwest with proper Referer
+    /// 3. Decrypt each segment with AES-128-CBC (key from API)
+    /// 4. Concatenate decrypted segments into .ts file
+    /// 5. Use FFmpeg to convert the .ts → .mp4
+    async fn download_titan_hls(
+        &self,
+        episode: i32,
+        _stream_url: &str,
+        key_info: &crate::titan_parser::HlsKeyInfo,
+        output_path: &str,
+        app_handle: &AppHandle,
+        download_state: Option<Arc<DownloadState>>,
+    ) -> DownloadResult {
+        use aes::cipher::{BlockDecryptMut, KeyIvInit, block_padding::NoPadding};
+        use base64::Engine as _;
+
+        type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
+
+        let referer = Self::derive_referer_from_hls_url(&key_info.hls_base_url);
+
+        // Build reqwest client with Referer
+        let client = Client::builder()
+            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .build()
+            .unwrap_or_default();
+
+        // ── Decode key + IV ─────────────────────────────────────────────
+        let key_bytes = match base64::engine::general_purpose::STANDARD.decode(&key_info.key_b64) {
+            Ok(b) if b.len() == 16 => b,
+            _ => {
+                return DownloadResult {
+                    episode,
+                    success: false,
+                    file_path: None,
+                    error: Some("Invalid HLS key (must be 16 bytes after base64 decode)".to_string()),
+                };
+            }
+        };
+        let iv_bytes = match hex::decode(&key_info.iv_hex) {
+            Ok(b) if b.len() == 16 => b,
+            _ => {
+                return DownloadResult {
+                    episode,
+                    success: false,
+                    file_path: None,
+                    error: Some(format!("Invalid HLS IV (must be 32 hex chars): {}", key_info.iv_hex)),
+                };
+            }
+        };
+        let key_arr: [u8; 16] = key_bytes.try_into().unwrap();
+        let iv_arr:  [u8; 16] = iv_bytes.try_into().unwrap();
+
+        // ── Fetch H.264 variant playlist ────────────────────────────────
+        let v1_m3u8_url = format!("{}/v1/index.m3u8", key_info.hls_base_url);
+        eprintln!("[Titan] Fetching variant playlist: {}", v1_m3u8_url);
+        let _ = app_handle.emit("log-info", format!("[EP {}] Fetching playlist...", episode));
+
+        let v1_content = match client.get(&v1_m3u8_url)
+            .header("Referer", &referer)
+            .send().await
+            .and_then(|r| Ok(r))
+        {
+            Ok(resp) => match resp.text().await {
+                Ok(t) => t,
+                Err(e) => return DownloadResult {
+                    episode, success: false, file_path: None,
+                    error: Some(format!("Failed to read variant M3U8: {}", e)),
+                },
+            },
+            Err(e) => return DownloadResult {
+                episode, success: false, file_path: None,
+                error: Some(format!("Failed to fetch variant M3U8: {}", e)),
+            },
+        };
+
+        // Extract segment names (skip # comment lines)
+        let seg_base = format!("{}/v1/", key_info.hls_base_url);
+        let segments: Vec<String> = v1_content.lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .map(|seg| {
+                if seg.starts_with("http") {
+                    seg.to_string()
+                } else {
+                    format!("{}{}", seg_base, seg)
+                }
+            })
+            .collect();
+
+        if segments.is_empty() {
+            return DownloadResult {
+                episode, success: false, file_path: None,
+                error: Some("No segments found in variant M3U8".to_string()),
+            };
+        }
+        eprintln!("[Titan] EP {} - {} segments to download", episode, segments.len());
+        let _ = app_handle.emit("log-info", format!("[EP {}] Downloading {} segments...", episode, segments.len()));
+
+        // ── Download + decrypt segments ──────────────────────────────────
+        let ts_path = output_path.replace(".mp4", ".tmp.ts");
+        let mut ts_file = match std::fs::File::create(&ts_path) {
+            Ok(f) => f,
+            Err(e) => return DownloadResult {
+                episode, success: false, file_path: None,
+                error: Some(format!("Cannot create temp TS file: {}", e)),
+            },
+        };
+
+        let total_segments = segments.len();
+        for (i, seg_url) in segments.iter().enumerate() {
+            // Check cancellation
+            if let Some(ref ds) = download_state {
+                if ds.is_cancelled.load(Ordering::Relaxed) {
+                    let _ = std::fs::remove_file(&ts_path);
+                    return DownloadResult {
+                        episode, success: false, file_path: None,
+                        error: Some("Download cancelled".to_string()),
+                    };
+                }
+            }
+
+            eprintln!("[Titan] EP {} seg {}/{}", episode, i + 1, total_segments);
+            let _ = app_handle.emit("download-progress", crate::downloader::DownloadProgress {
+                episode,
+                downloaded: (i as u64 * 100) / total_segments as u64,
+                total: 100,
+                speed: 0.0,
+                percentage: (i as f64 / total_segments as f64) * 100.0,
+            });
+
+            let encrypted = match client.get(seg_url)
+                .header("Referer", &referer)
+                .send().await
+            {
+                Ok(resp) => match resp.bytes().await {
+                    Ok(b) => b,
+                    Err(e) => return DownloadResult {
+                        episode, success: false, file_path: None,
+                        error: Some(format!("Failed to read segment {}: {}", i, e)),
+                    },
+                },
+                Err(e) => return DownloadResult {
+                    episode, success: false, file_path: None,
+                    error: Some(format!("Failed to download segment {}: {}", i, e)),
+                },
+            };
+
+            if encrypted.is_empty() {
+                continue;
+            }
+
+            // AES-128-CBC decrypt (no padding removal — TS segments are block-aligned)
+            let mut buf = encrypted.to_vec();
+            // Pad to 16-byte boundary if necessary
+            let rem = buf.len() % 16;
+            if rem != 0 {
+                buf.resize(buf.len() + (16 - rem), 0);
+            }
+
+            let decryptor = Aes128CbcDec::new(&key_arr.into(), &iv_arr.into());
+            match decryptor.decrypt_padded_mut::<NoPadding>(&mut buf) {
+                Ok(decrypted) => {
+                    if let Err(e) = ts_file.write_all(decrypted) {
+                        return DownloadResult {
+                            episode, success: false, file_path: None,
+                            error: Some(format!("Write error seg {}: {}", i, e)),
+                        };
+                    }
+                }
+                Err(e) => return DownloadResult {
+                    episode, success: false, file_path: None,
+                    error: Some(format!("Decrypt error seg {}: {:?}", i, e)),
+                },
+            }
+        }
+        drop(ts_file); // flush + close
+
+        let _ = app_handle.emit("log-info", format!("[EP {}] Segments downloaded, converting to MP4...", episode));
+
+        // ── FFmpeg: TS → MP4 ────────────────────────────────────────────
+        if !check_ffmpeg() {
+            return DownloadResult {
+                episode, success: false, file_path: None,
+                error: Some("FFmpeg not found for TS→MP4 conversion".to_string()),
+            };
+        }
+
+        let mut cmd = get_ffmpeg_command();
+        cmd.args([
+            "-y",
+            "-i", &ts_path,
+            "-c", "copy",
+            "-movflags", "+faststart",
+            output_path,
+        ]);
+        cmd.stderr(Stdio::piped());
+        cmd.stdout(Stdio::null());
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = std::fs::remove_file(&ts_path);
+                return DownloadResult {
+                    episode, success: false, file_path: None,
+                    error: Some(format!("FFmpeg spawn error: {}", e)),
+                };
+            }
+        };
+
+        let status = child.wait().unwrap_or_else(|_| std::process::ExitStatus::default());
+        let _ = std::fs::remove_file(&ts_path); // cleanup temp
+
+        if status.success() {
+            let _ = app_handle.emit("log-info", format!("[EP {}] Download complete!", episode));
+            eprintln!("[Titan] EP {} -> SUCCESS: {}", episode, output_path);
+            DownloadResult {
+                episode,
+                success: true,
+                file_path: Some(output_path.to_string()),
+                error: None,
+            }
+        } else {
+            DownloadResult {
+                episode, success: false, file_path: None,
+                error: Some(format!("FFmpeg conversion failed (exit: {:?})", status.code())),
+            }
+        }
+    }
+
+    /// Auto-derive a Referer origin URL from an HLS stream URL.
+    ///
+    /// Rules:
+    /// - Strip the scheme+host, remove `hls.` prefix if present, add `www.` if no subdomain
+    /// - Always returns an `https://` origin (no path)
+    ///
+    /// Examples:
+    ///   `https://hls.357ms.com/series_360/ep_1/master.m3u8` → `https://www.357ms.com`
+    ///   `https://cdn.rongyok.com/...`                        → `https://www.rongyok.com`
+    ///   `https://stream.example.com/...`                     → `https://www.example.com`
+    fn derive_referer_from_hls_url(hls_url: &str) -> String {
+        // Extract host from URL
+        let host = hls_url
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .split('/')
+            .next()
+            .unwrap_or("");
+
+        if host.is_empty() {
+            return "https://www.example.com".to_string();
+        }
+
+        // Remove port if present (host:port)
+        let host = host.split(':').next().unwrap_or(host);
+
+        // Count dots to check if there's a subdomain
+        let dot_count = host.chars().filter(|&c| c == '.').count();
+
+        let referer_host = if dot_count >= 2 {
+            // Has subdomain — replace leftmost part with "www"
+            // e.g. hls.357ms.com → www.357ms.com
+            let rest = host.splitn(2, '.').nth(1).unwrap_or(host);
+            format!("www.{}", rest)
+        } else {
+            // No subdomain — prepend www
+            format!("www.{}", host)
+        };
+
+        format!("https://{}", referer_host)
+    }
+
     // Helper for downloading HLS streams with FFmpeg
     async fn download_hls_stream(
         &self,
@@ -149,13 +430,22 @@ impl VideoDownloader {
     ) -> DownloadResult {
         let mut cmd = get_ffmpeg_command();
 
-        // Add headers to mimic a browser + generic referer
-        // Add headers to mimic a browser (removed specific Referer to avoid 403 on some sites)
-        let headers = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+        // Build HTTP headers for FFmpeg.
+        // Many HLS servers enforce hotlink protection via Referer checking.
+        // We auto-derive a Referer from the HLS URL's host — e.g.:
+        //   hls.357ms.com  → https://www.357ms.com
+        //   hls.example.net → https://www.example.net
+        let referer = Self::derive_referer_from_hls_url(video_url);
+        let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+        // FFmpeg -headers takes headers separated by \r\n
+        let headers = format!(
+            "User-Agent: {}\r\nReferer: {}\r\n",
+            ua, referer
+        );
 
         cmd.args([
             "-y",
-            "-headers", headers,
+            "-headers", &headers,
             "-rw_timeout", "30000000", // 30s timeout to prevent hanging
             "-i", video_url,
             "-c", "copy",
@@ -164,10 +454,9 @@ impl VideoDownloader {
             "-reconnect_at_eof", "1",
             "-reconnect_streamed", "1",
             "-reconnect_delay_max", "2",
-            // Skip bsf filter unless needed, usually not for .mp4 from .ts stream if ffmpeg detects it right
-            // "-bsf:a", "aac_adtstoasc",
             file_path,
         ]);
+
 
         cmd.stderr(Stdio::piped());
         cmd.stdout(Stdio::null());

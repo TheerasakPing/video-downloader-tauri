@@ -43,5 +43,10 @@ base64 = "0.22"
 thiserror = "2"
 anyhow = "1"
 
+# AES-128-CBC for HLS stream decryption
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+hex = "0.4"
+
 # Headless browser for auto-detection
 headless_chrome = "1.0"

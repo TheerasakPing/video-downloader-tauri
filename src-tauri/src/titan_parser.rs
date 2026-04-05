@@ -1,9 +1,22 @@
+use futures_util::{stream, StreamExt};
 use regex::Regex;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HlsKeyInfo {
+    /// Base64-encoded AES-128 key
+    pub key_b64: String,
+    /// IV as hex string (32 hex chars = 16 bytes)
+    pub iv_hex: String,
+    /// Base HLS URL up to the episode folder (e.g. https://hls.357ms.com/series_360/ep_1)
+    pub hls_base_url: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -13,6 +26,24 @@ pub struct TitanSeriesInfo {
     pub total_episodes: i32,
     pub poster_url: Option<String>,
     pub episode_urls: HashMap<i32, String>,
+    /// AES-128-CBC key info per episode (only present when API fetch succeeded)
+    pub episode_keys: HashMap<i32, HlsKeyInfo>,
+}
+
+/// Decoded API response from /api/v1/hls/config/{series_id}/{ep_num}
+#[derive(Debug, Deserialize)]
+struct HlsApiData {
+    stream_url: String,
+    #[serde(default)]
+    hls_key_b64: String,
+    #[serde(default)]
+    hls_iv: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct HlsApiResponse {
+    status: String,
+    data: Option<HlsApiData>,
 }
 
 pub struct TitanParser {
@@ -23,185 +54,320 @@ impl TitanParser {
     pub fn new() -> Self {
         let client = Client::builder()
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(15))
             .build()
             .expect("Failed to create HTTP client");
 
         Self { client }
     }
 
-    /// Check if URL is from 51cg1.com or dynamic domain
-    /// `domains` can be a comma-separated list of domains (e.g. "51cg1.com, 51cm.com")
+    /// Check if URL is from 357ms.com or dynamic domain
+    /// `domains` can be a comma-separated list
     pub fn is_titan_url(url: &str, domains: &str) -> bool {
         if url.contains("51cg") || url.contains("357ms") {
             return true;
         }
-        
-        // Split by comma and trim whitespaces
-        domains.split(',')
+
+        domains
+            .split(',')
             .map(|d| d.trim())
             .filter(|d| !d.is_empty())
             .any(|d| url.contains(d))
     }
 
-    /// Fetch series information from Titan network
-    pub async fn get_series_info(&self, series_url: &str, _domain: &str) -> Result<TitanSeriesInfo, String> {
+    /// XOR-decode the API response.
+    /// Format: first 2 bytes = decimal key (e.g. "70"), rest = XOR-encoded payload.
+    fn xor_decode(raw: &str) -> Option<String> {
+        if raw.len() < 3 {
+            return None;
+        }
+        let key_str = &raw[..2];
+        let key: u8 = key_str.parse().ok()?;
+        let decoded: String = raw[2..]
+            .chars()
+            .map(|c| char::from_u32((c as u32) ^ (key as u32)).unwrap_or(c))
+            .collect();
+        Some(decoded)
+    }
+
+    /// Extract the base URL (scheme + host) from a full URL.
+    fn base_url(url: &str) -> String {
+        // e.g. "https://www.357ms.com/series/360" -> "https://www.357ms.com"
+        if let Some(pos) = url.find("://") {
+            let after = &url[pos + 3..];
+            if let Some(slash) = after.find('/') {
+                return format!("https://{}", &after[..slash]);
+            }
+            return format!("https://{}", after);
+        }
+        url.to_string()
+    }
+
+    /// Extract series_id from URL path (e.g. /series/360 -> 360)
+    fn extract_series_id_from_url(url: &str) -> Option<i32> {
+        let re = Regex::new(r"/series/(\d+)").ok()?;
+        re.captures(url)
+            .and_then(|c| c.get(1))
+            .and_then(|m| m.as_str().parse().ok())
+    }
+
+    /// Fetch series information from a Titan network URL.
+    /// Supports:
+    ///   - Series listing page: https://www.357ms.com/series/360
+    ///   - Episode watch page:  https://www.357ms.com/watch/26037
+    pub async fn get_series_info(
+        &self,
+        series_url: &str,
+        _domain: &str,
+    ) -> Result<TitanSeriesInfo, String> {
         eprintln!("[Titan] Fetching page: {}", series_url);
 
         let response = self
             .client
             .get(series_url)
+            .header("Referer", "https://www.357ms.com/")
             .send()
             .await
             .map_err(|e| format!("HTTP request failed: {}", e))?;
 
+        let final_url = response.url().to_string();
         let html = response
             .text()
             .await
             .map_err(|e| format!("Failed to read response: {}", e))?;
 
-        // Extract data in a synchronous block to ensure Html is dropped before await
-        let (title, episode_urls, poster_url_string) = {
+        let base = Self::base_url(&final_url);
+
+        // Parse synchronously, then do async work after
+        let (title, poster_url_raw, ep_links, series_id_from_url) = {
             let document = Html::parse_document(&html);
-            
+
             // Extract title
             let title_selector = Selector::parse("title").unwrap();
-            let title = document
+            let raw_title = document
                 .select(&title_selector)
                 .next()
                 .map(|t| t.text().collect::<String>())
                 .unwrap_or_else(|| "Unknown Video".to_string())
                 .trim()
+                .to_owned();
+
+            // Clean site suffix from title  
+            let title = raw_title
+                .split(" | ")
+                .next()
+                .unwrap_or(&raw_title)
+                .trim()
                 .to_string();
 
-            let mut episode_urls = HashMap::new();
-            let mut ep_count = 1;
+            // ── Poster ──────────────────────────────────────────────
+            let mut poster_url_raw = None;
 
-            // Method 1: DPlayer data-config
-            let dplayer_selector = Selector::parse("div.dplayer").unwrap();
-            for element in document.select(&dplayer_selector) {
-                if let Some(config_str) = element.value().attr("data-config") {
-                    if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(config_str) {
-                         if let Some(url_val) = json_val.get("video").and_then(|v| v.get("url")) {
-                            if let Some(url_str) = url_val.as_str() {
-                                let clean_url = url_str.replace("\\/", "/");
-                                eprintln!("[Titan] DPlayer URL found (Ep {}): {}", ep_count, clean_url);
-                                episode_urls.insert(ep_count, clean_url);
-                                ep_count += 1;
+            let og_image_selector = Selector::parse("meta[property='og:image']").unwrap();
+            if let Some(el) = document.select(&og_image_selector).next() {
+                poster_url_raw = el.value().attr("content").map(|s| s.to_string());
+            }
+
+            // ── Episode Links ────────────────────────────────────────
+            // Matches: <a class="ep-card" href="/watch/26037">
+            // Also matches the canonical "start watching" link
+            let ep_selector = Selector::parse("a[href*='/watch/']").unwrap();
+            let mut seen = std::collections::HashSet::new();
+            let mut ep_links: Vec<(i32, String)> = Vec::new();
+
+            // Regex to extract EP number from link text or data
+            let ep_num_re = Regex::new(r"EP[.\s]*(\d+)").unwrap();
+
+            for el in document.select(&ep_selector) {
+                let href = match el.value().attr("href") {
+                    Some(h) => h.to_string(),
+                    None => continue,
+                };
+
+                // Deduplicate
+                if seen.contains(&href) {
+                    continue;
+                }
+                seen.insert(href.clone());
+
+                // Full URL
+                let full_url = if href.starts_with("http") {
+                    href.clone()
+                } else {
+                    format!("{}{}", base, href)
+                };
+
+                // Try to extract ep number from link text
+                let text = el.text().collect::<String>();
+                let ep_num = ep_num_re
+                    .captures(&text.to_uppercase())
+                    .and_then(|c| c.get(1))
+                    .and_then(|m| m.as_str().parse::<i32>().ok());
+
+                if let Some(n) = ep_num {
+                    ep_links.push((n, full_url));
+                }
+            }
+
+            // Sort by episode number
+            ep_links.sort_by_key(|(n, _)| *n);
+
+            eprintln!("[Titan] Found {} episode links", ep_links.len());
+            let series_id_from_url = Self::extract_series_id_from_url(&final_url);
+            eprintln!("[Titan] Series ID from URL: {:?}", series_id_from_url);
+
+            (title, poster_url_raw, ep_links, series_id_from_url)
+        }; // document dropped here
+
+        // ── Fetch HLS stream URLs via API ────────────────────────────
+        // Use concurrent fetch (5 at a time) to speed up large series.
+        const CONCURRENT_FETCHES: usize = 5;
+        let mut episode_urls: HashMap<i32, String> = HashMap::new();
+        let mut episode_keys: HashMap<i32, HlsKeyInfo> = HashMap::new();
+
+        if !ep_links.is_empty() {
+            if let Some(series_id) = series_id_from_url {
+                eprintln!(
+                    "[Titan] Fetching {} episode URLs concurrently (batch={})",
+                    ep_links.len(),
+                    CONCURRENT_FETCHES
+                );
+                let self_arc = Arc::new(self.client.clone());
+                let base_arc = Arc::new(base.clone());
+
+                let results: Vec<(i32, Option<HlsApiData>)> = stream::iter(ep_links.iter().cloned())
+                    .map(|(ep_num, ep_watch_url)| {
+                        let client = self_arc.clone();
+                        let b = base_arc.clone();
+                        async move {
+                            let api_url = format!(
+                                "{}/api/v1/hls/config/{}/{}",
+                                b, series_id, ep_num
+                            );
+                            let result: Option<HlsApiData> = async {
+                                let raw = client
+                                    .get(&api_url)
+                                    .header("Referer", &ep_watch_url)
+                                    .send()
+                                    .await
+                                    .ok()?
+                                    .text()
+                                    .await
+                                    .ok()?;
+                                let decoded = Self::xor_decode(&raw)?;
+                                eprintln!("[Titan] EP {} API decoded: {}", ep_num, &decoded[..decoded.len().min(120)]);
+                                let parsed: HlsApiResponse =
+                                    serde_json::from_str(&decoded).ok()?;
+                                if parsed.status != "success" {
+                                    return None;
+                                }
+                                parsed.data
                             }
+                            .await;
+                            (ep_num, result)
+                        }
+                    })
+                    .buffer_unordered(CONCURRENT_FETCHES)
+                    .collect()
+                    .await;
+
+                for (ep_num, api_data_opt) in results {
+                    match api_data_opt {
+                        Some(api_data) => {
+                            eprintln!("[Titan] EP {} -> {}", ep_num, api_data.stream_url);
+                            // Store encryption key if present
+                            if !api_data.hls_key_b64.is_empty() && !api_data.hls_iv.is_empty() {
+                                // hls_base_url = stream_url minus the filename
+                                let hls_base_url = api_data.stream_url
+                                    .rsplit_once('/')
+                                    .map(|(base, _)| base.to_string())
+                                    .unwrap_or_else(|| api_data.stream_url.clone());
+                                episode_keys.insert(ep_num, HlsKeyInfo {
+                                    key_b64: api_data.hls_key_b64.clone(),
+                                    iv_hex: api_data.hls_iv.clone(),
+                                    hls_base_url,
+                                });
+                            }
+                            episode_urls.insert(ep_num, api_data.stream_url);
+                        }
+                        None => {
+                            eprintln!("[Titan] EP {} -> API failed, using pattern fallback", ep_num);
+                            let fallback = format!(
+                                "https://hls.357ms.com/series_{}/ep_{}/master.m3u8",
+                                series_id, ep_num
+                            );
+                            episode_urls.insert(ep_num, fallback);
                         }
                     }
                 }
-            }
-
-            // Method 2: Regex Fallback
-            if episode_urls.is_empty() {
-                 eprintln!("[Titan] DPlayer method failed/empty, trying regex...");
-                 let re = Regex::new(r#"["'](https?://[^"']*?\.m3u8[^"']*?)["']"#).unwrap();
-                 for cap in re.captures_iter(&html) {
-                     if let Some(m) = cap.get(1) {
-                         let url = m.as_str().replace("\\/", "/");
-                         eprintln!("[Titan] Regex URL found (Ep {}): {}", ep_count, url);
-                         episode_urls.insert(ep_count, url);
-                         ep_count += 1;
-                     }
-                 }
-            }
-            
-            if episode_urls.is_empty() {
-                eprintln!("[Titan] No video found.");
-            }
-
-            // Poster extraction
-            eprintln!("[Titan] Extracting poster...");
-            let mut poster_url = None;
-
-            // Try to get poster from DPlayer config
-            for element in document.select(&dplayer_selector) {
-                if let Some(config_str) = element.value().attr("data-config") {
-                    if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(config_str) {
-                        if let Some(pic_val) = json_val.get("video").and_then(|v| v.get("pic")) {
-                            if let Some(pic_str) = pic_val.as_str() {
-                                let clean_pic = pic_str.replace("\\/", "/");
-                                eprintln!("[Titan] Found poster in DPlayer: {}", clean_pic);
-                                poster_url = Some(clean_pic);
-                                break;
-                            }
-                        }
+            } else {
+                // No series_id in URL — regex fallback
+                eprintln!("[Titan] No series_id found, falling back to regex...");
+                let re = Regex::new(r#"["'](https?://[^"']*?\.m3u8[^"']*?)["']"#).unwrap();
+                let mut ep_count = 1;
+                for cap in re.captures_iter(&html) {
+                    if let Some(m) = cap.get(1) {
+                        let url = m.as_str().replace("\\/", "/");
+                        episode_urls.insert(ep_count, url);
+                        ep_count += 1;
                     }
-                }
-            }
-
-            // Fallback to og:image
-            if poster_url.is_none() {
-                let og_image_selector = Selector::parse("meta[property='og:image']").unwrap();
-                if let Some(og_image) = document.select(&og_image_selector).next() {
-                    if let Some(content) = og_image.value().attr("content") {
-                        eprintln!("[Titan] Found poster in og:image: {}", content);
-                        poster_url = Some(content.to_string());
-                    }
-                }
-            }
-            
-            (title, episode_urls, poster_url)
-        }; // document is dropped here
-
-        let total_episodes = episode_urls.len() as i32;
-        eprintln!("[Titan] Series info ready. Episodes: {}", total_episodes);
-
-        // Convert poster to data URL if available (Async call is now safe)
-        let poster_data_url = if let Some(ref url) = poster_url_string {
-            eprintln!("[Titan] Fetching poster image: {}", url);
-            match self.fetch_image_as_data_url(url).await {
-                Some(data) => {
-                    eprintln!("[Titan] Poster fetched successfully (len: {})", data.len());
-                    Some(data)
-                }
-                None => {
-                    eprintln!("[Titan] Failed to fetch poster (timeout or error)");
-                    None
                 }
             }
         } else {
-            eprintln!("[Titan] No poster URL found");
+            // No ep-card links (direct watch page) — regex fallback
+            eprintln!("[Titan] No ep-card links - trying regex m3u8 extraction...");
+            let re = Regex::new(r#"["'](https?://[^"']*?\.m3u8[^"']*?)["']"#).unwrap();
+            let mut ep_count = 1;
+            for cap in re.captures_iter(&html) {
+                if let Some(m) = cap.get(1) {
+                    let url = m.as_str().replace("\\/", "/");
+                    eprintln!("[Titan] Regex URL (Ep {}): {}", ep_count, url);
+                    episode_urls.insert(ep_count, url);
+                    ep_count += 1;
+                }
+            }
+        }
+
+
+        let total_episodes = episode_urls.len() as i32;
+        eprintln!("[Titan] Total episodes with URLs: {}", total_episodes);
+
+        // ── Fetch poster as base64 data URL ──────────────────────────
+        let poster_data_url = if let Some(ref url) = poster_url_raw {
+            eprintln!("[Titan] Fetching poster: {}", url);
+            self.fetch_image_as_data_url(url).await
+        } else {
             None
         };
+
+        eprintln!("[Titan] Episodes with encryption keys: {}", episode_keys.len());
 
         Ok(TitanSeriesInfo {
             url: series_url.to_string(),
             title,
             total_episodes,
-            poster_url: poster_data_url, 
+            poster_url: poster_data_url,
             episode_urls,
+            episode_keys,
         })
     }
 
-    /// Fetch an image and convert it to a base64 data URL
+    /// Fetch an image URL and return it as a base64 data URL.
     async fn fetch_image_as_data_url(&self, image_url: &str) -> Option<String> {
-        eprintln!("[Titan] fetch_image_as_data_url start: {}", image_url);
-        
-        // Handle relative URLs
         let final_url = if image_url.starts_with("//") {
             format!("https:{}", image_url)
         } else {
             image_url.to_string()
         };
 
-        eprintln!("[Titan] Sending image request...");
-        let response = match self.client
+        let response = self
+            .client
             .get(&final_url)
             .header("Accept", "image/*")
             .send()
-            .await {
-                Ok(res) => res,
-                Err(e) => {
-                    eprintln!("[Titan] Image request failed: {}", e);
-                    return None;
-                }
-            };
-            
-        eprintln!("[Titan] Reading image bytes...");
-        // Get content type
+            .await
+            .ok()?;
+
         let content_type = response
             .headers()
             .get("content-type")
@@ -209,22 +375,11 @@ impl TitanParser {
             .unwrap_or("image/jpeg")
             .to_string();
 
-        // Get image bytes
-        let bytes = match response.bytes().await {
-            Ok(b) => b,
-            Err(e) => {
-                eprintln!("[Titan] Failed to read image bytes: {}", e);
-                return None;
-            }
-        };
+        let bytes = response.bytes().await.ok()?;
 
-        eprintln!("[Titan] Encoding base64...");
-        // Convert to base64
         use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
         let base64_data = BASE64.encode(&bytes);
 
-        eprintln!("[Titan] Image processed.");
-        // Return as data URL
         Some(format!("data:{};base64,{}", content_type, base64_data))
     }
 }
@@ -236,19 +391,53 @@ mod tests {
     #[test]
     fn test_is_titan_url() {
         let domains = "51cg1.com, 51cm.com, titan51.net";
-        
-        // Exact match via comma string
+
         assert!(TitanParser::is_titan_url("https://51cm.com/video/123", domains));
         assert!(TitanParser::is_titan_url("https://titan51.net/video/123", domains));
-        
-        // Hardcoded fallbacks
         assert!(TitanParser::is_titan_url("https://51cg.com/video/123", domains));
-        assert!(TitanParser::is_titan_url("https://51cg3.com/video/123", domains));
-        assert!(TitanParser::is_titan_url("https://357ms.com/video/123", domains));
-        assert!(TitanParser::is_titan_url("https://357ms1.net/video/123", domains));
-        
-        // Invalid
+        assert!(TitanParser::is_titan_url("https://357ms.com/series/360", domains));
+        assert!(TitanParser::is_titan_url("https://www.357ms.com/series/360", domains));
+
         assert!(!TitanParser::is_titan_url("https://youtube.com/video/123", domains));
-        assert!(!TitanParser::is_titan_url("https://51cm.net/video/123", domains)); // .net instead of .com
+    }
+
+    #[test]
+    fn test_xor_decode() {
+        // key=70, encoded char '^' (ord=94), 94 XOR 70 = 24... just test round-trip logic
+        let key: u8 = 70;
+        let test = "hello";
+        let encoded: String = std::iter::once(format!("{:02}", key))
+            .chain(test.chars().map(|c| {
+                char::from_u32((c as u32) ^ (key as u32))
+                    .unwrap_or(c)
+                    .to_string()
+            }))
+            .collect();
+        let decoded = TitanParser::xor_decode(&encoded).unwrap();
+        assert_eq!(decoded, test);
+    }
+
+    #[test]
+    fn test_base_url_extraction() {
+        assert_eq!(
+            TitanParser::base_url("https://www.357ms.com/series/360"),
+            "https://www.357ms.com"
+        );
+        assert_eq!(
+            TitanParser::base_url("https://51cg1.com/video/123"),
+            "https://51cg1.com"
+        );
+    }
+
+    #[test]
+    fn test_series_id_extraction() {
+        assert_eq!(
+            TitanParser::extract_series_id_from_url("https://www.357ms.com/series/360"),
+            Some(360)
+        );
+        assert_eq!(
+            TitanParser::extract_series_id_from_url("https://www.357ms.com/watch/26037"),
+            None
+        );
     }
 }

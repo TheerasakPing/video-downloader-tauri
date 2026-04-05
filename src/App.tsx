@@ -160,9 +160,16 @@ function App() {
   });
 
   // Helper to check if URL is valid for this app
+  // NOTE: URL must start with http:// or https:// to be valid.
+  // This prevents reqwest "builder error" from malformed/relative URLs.
   const isValidSeriesUrl = useCallback(
     (text: string): boolean => {
       if (!text) return false;
+
+      // Must be an absolute URL to avoid reqwest "builder error"
+      if (!text.startsWith("http://") && !text.startsWith("https://")) {
+        return false;
+      }
 
       const checkDomains = (settingDomain: string) => {
         return settingDomain.split(",").some((d) => {
@@ -189,7 +196,12 @@ function App() {
     (text: string) => {
       return text
         .split(/[\n\s]+/)
-        .map((l) => l.trim())
+        .map((l) => {
+          const trimmed = l.trim();
+          // Normalize protocol-relative URLs (//example.com) -> https://example.com
+          if (trimmed.startsWith("//")) return `https:${trimmed}`;
+          return trimmed;
+        })
         .filter((l) => l.length > 0 && isValidSeriesUrl(l));
     },
     [isValidSeriesUrl],

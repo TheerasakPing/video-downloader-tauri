@@ -10,7 +10,7 @@ use chrome_detector::ChromeVideoDetector;
 use downloader::{check_ffmpeg, merge_videos_with_progress, DownloadConfig, DownloadResult, DownloadState, VideoDownloader};
 use parser::RongyokParser;
 use serde::{Deserialize, Serialize};
-use titan_parser::TitanParser;
+use titan_parser::{TitanParser, HlsKeyInfo};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -74,7 +74,10 @@ pub struct UnifiedSeriesInfo {
     pub total_episodes: i32,
     pub poster_url: Option<String>,
     pub episode_urls: HashMap<i32, String>,
-    pub source: String, // "rongyok" or "baanjeen"
+    pub source: String, // "rongyok", "baanjeen", "titan"
+    /// AES-128 key info per episode — only populated for Titan (357ms.com) encrypted HLS
+    #[serde(default)]
+    pub episode_keys: HashMap<i32, HlsKeyInfo>,
 }
 
 // App state
@@ -122,6 +125,7 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             total_episodes: 1,
             poster_url: None,
             episode_urls,
+            episode_keys: Default::default(),
             source: "direct".to_string(),
         };
 
@@ -188,6 +192,7 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             total_episodes: baanjeen_info.total_episodes,
             poster_url: baanjeen_info.poster_url,
             episode_urls: baanjeen_info.episode_urls,
+            episode_keys: Default::default(),
             source: "baanjeen".to_string(),
         }
     } else if TitanParser::is_titan_url(&url, &settings.titan_domain) {
@@ -199,6 +204,7 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             total_episodes: titan_info.total_episodes,
             poster_url: titan_info.poster_url,
             episode_urls: titan_info.episode_urls,
+            episode_keys: titan_info.episode_keys,
             source: "titan".to_string(),
         }
     } else {
@@ -211,6 +217,7 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             total_episodes: rongyok_info.total_episodes,
             poster_url: rongyok_info.poster_url,
             episode_urls: rongyok_info.episode_urls,
+            episode_keys: Default::default(),
             source: "rongyok".to_string(),
         }
     };
@@ -289,6 +296,9 @@ async fn start_download(
                 .ok_or(format!("No URL for episode {}", episode))?
                 .clone();
 
+            // Pass HLS key info if available (Titan encrypted streams)
+            let hls_key_info = series.episode_keys.get(episode).cloned();
+
             let app = app_handle.clone();
             let dl = VideoDownloader::with_config(
                 &request.output_dir,
@@ -308,7 +318,7 @@ async fn start_download(
             }
 
             let handle = tokio::spawn(async move {
-                dl.download_episode(ep, &video_url, &app, Some(download_state)).await
+                dl.download_episode(ep, &video_url, hls_key_info, &app, Some(download_state)).await
             });
             handles.push((ep, handle));
         }
