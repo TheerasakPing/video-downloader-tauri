@@ -405,6 +405,7 @@ function App() {
             speedLimit: settings.speedLimit,
             fileNaming: settings.fileNaming,
             seriesTitle: targetSeries.title,
+            groupBySource: settings.groupBySource,
           },
         });
 

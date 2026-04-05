@@ -167,6 +167,30 @@ export function SettingsPanel({
             </label>
           </div>
 
+          {/* Group by Source */}
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-white flex items-center gap-2">
+                <span className="icon-glow icon-glow-sm icon-glow-emerald">
+                  <FolderOpen size={14} />
+                </span>
+                Group by Website
+              </label>
+              <p className="text-xs text-slate-500">
+                Save to subfolder by source (rongyok/, titan/, baanjeen/, hsck/)
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.groupBySource}
+                onChange={(e) => onUpdate("groupBySource", e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+            </label>
+          </div>
+
           {/* Delete After Merge */}
           <div className="flex items-center justify-between">
             <div>

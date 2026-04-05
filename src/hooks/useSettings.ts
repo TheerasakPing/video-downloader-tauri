@@ -10,6 +10,7 @@ export interface Settings {
   theme: "dark" | "light" | "system";
   fileNaming: "ep_001" | "episode_1" | "title_ep1";
   outputDir: string;
+  groupBySource: boolean; // สร้าง subfolder ตามชื่อเว็บ (rongyok/, titan/, baanjeen/, hsck/)
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -22,6 +23,7 @@ const DEFAULT_SETTINGS: Settings = {
   theme: "dark",
   fileNaming: "ep_001",
   outputDir: "~/Downloads/rongyok",
+  groupBySource: true, // เปิดใช้งานโดย default
 };
 
 const STORAGE_KEY = "rongyok-settings-v2";

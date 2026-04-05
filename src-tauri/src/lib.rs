@@ -1,6 +1,7 @@
 mod baanjeen_parser;
 mod chrome_detector;
 mod downloader;
+mod hsck_parser;
 mod parser;
 mod titan_parser;
 mod utils;
@@ -8,6 +9,7 @@ mod utils;
 use baanjeen_parser::BaanJeenParser;
 use chrome_detector::ChromeVideoDetector;
 use downloader::{check_ffmpeg, merge_videos_with_progress, DownloadConfig, DownloadResult, DownloadState, VideoDownloader};
+use hsck_parser::HsckParser;
 use parser::RongyokParser;
 use serde::{Deserialize, Serialize};
 use titan_parser::{TitanParser, HlsKeyInfo};
@@ -24,6 +26,14 @@ pub struct DomainSettings {
     pub titan_domain: String,
     pub baanjeen_domain: String,
     pub rongyok_domain: String,
+    #[serde(default = "DomainSettings::default_hsck_domain")]
+    pub hsck_domain: String,
+}
+
+impl DomainSettings {
+    fn default_hsck_domain() -> String {
+        "hsck123.com".to_string()
+    }
 }
 
 impl Default for DomainSettings {
@@ -32,6 +42,7 @@ impl Default for DomainSettings {
             titan_domain: "51cg1.com".to_string(),
             baanjeen_domain: "xn--82c7abb4jua0l.com".to_string(),
             rongyok_domain: "rongyok.com".to_string(),
+            hsck_domain: "hsck123.com".to_string(),
         }
     }
 }
@@ -85,6 +96,7 @@ struct AppState {
     rongyok_parser: RongyokParser,
     baanjeen_parser: BaanJeenParser,
     titan_parser: TitanParser,
+    hsck_parser: HsckParser,
     chrome_detector: Mutex<ChromeVideoDetector>,
     downloader: Mutex<Option<VideoDownloader>>,
     current_series: Mutex<Option<UnifiedSeriesInfo>>,
@@ -102,6 +114,8 @@ struct DownloadRequest {
     speed_limit: i32,  // KB/s, 0 = unlimited
     file_naming: String, // "ep_001", "episode_1", "title_ep1"
     series_title: String,
+    #[serde(default)]
+    group_by_source: bool, // สร้าง subfolder ตามชื่อเว็บ
 }
 
 // Commands
@@ -195,6 +209,18 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             episode_keys: Default::default(),
             source: "baanjeen".to_string(),
         }
+    } else if HsckParser::is_hsck_url(&url, &settings.hsck_domain) {
+        // Use HSCK Parser (hsck123.com และ domain สำรอง)
+        let hsck_info = state.hsck_parser.get_series_info(&url, &settings.hsck_domain).await?;
+        UnifiedSeriesInfo {
+            series_id: 0,
+            title: hsck_info.title,
+            total_episodes: hsck_info.total_episodes,
+            poster_url: hsck_info.poster_url,
+            episode_urls: hsck_info.episode_urls,
+            episode_keys: Default::default(),
+            source: "hsck".to_string(),
+        }
     } else if TitanParser::is_titan_url(&url, &settings.titan_domain) {
         // Use Titan Parser
         let titan_info = state.titan_parser.get_series_info(&url, &settings.titan_domain).await?;
@@ -271,14 +297,28 @@ async fn start_download(
         .clone()
         .ok_or("No series loaded")?;
 
+    // คำนวณ output dir จริง (เพิ่ม subfolder ตาม source ถ้า group_by_source=true)
+    let effective_output_dir = if request.group_by_source {
+        let source_folder = match series.source.as_str() {
+            "baanjeen" => "baanjeen",
+            "hsck" => "hsck",
+            "titan" => "titan",
+            "direct" => "direct",
+            _ => "rongyok", // default
+        };
+        format!("{}/{}", request.output_dir.trim_end_matches('/'), source_folder)
+    } else {
+        request.output_dir.clone()
+    };
+
     // Create downloader with config
     let config = DownloadConfig {
         speed_limit_kbps: request.speed_limit,
         file_naming: request.file_naming.clone(),
         series_title: request.series_title.clone(),
     };
-    let _downloader = VideoDownloader::with_config(&request.output_dir, config.clone());
-    *state.downloader.lock().unwrap() = Some(VideoDownloader::with_config(&request.output_dir, config));
+    let _downloader = VideoDownloader::with_config(&effective_output_dir, config.clone());
+    *state.downloader.lock().unwrap() = Some(VideoDownloader::with_config(&effective_output_dir, config));
 
     let mut results = Vec::new();
     let mut successful_files = Vec::new();
@@ -301,7 +341,7 @@ async fn start_download(
 
             let app = app_handle.clone();
             let dl = VideoDownloader::with_config(
-                &request.output_dir,
+                &effective_output_dir,
                 DownloadConfig {
                     speed_limit_kbps: request.speed_limit,
                     file_naming: request.file_naming.clone(),
@@ -383,7 +423,7 @@ async fn start_download(
         let _ = app_handle.emit("log-info", format!("Series title: {}", series.title));
         let output_filename = sanitize_filename(&series.title);
         let _ = app_handle.emit("log-info", format!("Output filename: {}", output_filename));
-        let expanded_output_dir = expand_path(&request.output_dir);
+        let expanded_output_dir = expand_path(&effective_output_dir);
         let _ = app_handle.emit("log-info", format!("Expanded dir: {:?}", expanded_output_dir));
         let output_path = expanded_output_dir.join(format!("{}.mp4", output_filename));
         let output_path_str = output_path.to_string_lossy().to_string();
@@ -667,6 +707,7 @@ pub fn run() {
             rongyok_parser: RongyokParser::new(),
             baanjeen_parser: BaanJeenParser::new(),
             titan_parser: TitanParser::new(),
+            hsck_parser: HsckParser::new(),
             chrome_detector: Mutex::new(ChromeVideoDetector::new().unwrap_or_else(|e| {
                 eprintln!("Warning: Chrome detector initialization failed: {}", e);
                 ChromeVideoDetector::new().unwrap()
