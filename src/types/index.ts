@@ -43,4 +43,6 @@ export interface DomainSettings {
   titanDomain: string;
   baanjeenDomain: string;
   rongyokDomain: string;
+  hsckDomain?: string;
+  njavtvDomain?: string;
 }

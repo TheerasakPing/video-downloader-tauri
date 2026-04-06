@@ -279,6 +279,8 @@ impl VideoDownloader {
         };
 
         let total_segments = segments.len();
+        let start_time = std::time::Instant::now();
+        let mut total_bytes: u64 = 0;
         for (i, seg_url) in segments.iter().enumerate() {
             // Check cancellation
             if let Some(ref ds) = download_state {
@@ -292,11 +294,17 @@ impl VideoDownloader {
             }
 
             eprintln!("[Titan] EP {} seg {}/{}", episode, i + 1, total_segments);
+            let elapsed = start_time.elapsed().as_secs_f64();
+            let speed = if elapsed > 0.0 {
+                total_bytes as f64 / elapsed
+            } else {
+                0.0
+            };
             let _ = app_handle.emit("download-progress", crate::downloader::DownloadProgress {
                 episode,
                 downloaded: (i as u64 * 100) / total_segments as u64,
                 total: 100,
-                speed: 0.0,
+                speed,
                 percentage: (i as f64 / total_segments as f64) * 100.0,
             });
 
@@ -305,7 +313,10 @@ impl VideoDownloader {
                 .send().await
             {
                 Ok(resp) => match resp.bytes().await {
-                    Ok(b) => b,
+                    Ok(b) => {
+                        total_bytes += b.len() as u64;
+                        b
+                    },
                     Err(e) => return DownloadResult {
                         episode, success: false, file_path: None,
                         error: Some(format!("Failed to read segment {}: {}", i, e)),
@@ -383,6 +394,19 @@ impl VideoDownloader {
         let _ = std::fs::remove_file(&ts_path); // cleanup temp
 
         if status.success() {
+            let elapsed = start_time.elapsed().as_secs_f64();
+            let final_speed = if elapsed > 0.0 {
+                total_bytes as f64 / elapsed
+            } else {
+                0.0
+            };
+            let _ = app_handle.emit("download-progress", crate::downloader::DownloadProgress {
+                episode,
+                downloaded: total_segments as u64,
+                total: total_segments as u64,
+                speed: final_speed,
+                percentage: 100.0,
+            });
             let _ = app_handle.emit("log-info", format!("[EP {}] Download complete!", episode));
             eprintln!("[Titan] EP {} -> SUCCESS: {}", episode, output_path);
             DownloadResult {
@@ -793,6 +817,9 @@ impl VideoDownloader {
             }
         };
 
+        let start_time = std::time::Instant::now();
+        let mut total_bytes: u64 = 0;
+
         for (i, seg_url) in segment_urls.iter().enumerate() {
             // Check cancellation
             if let Some(ref state) = download_state {
@@ -812,6 +839,8 @@ impl VideoDownloader {
                     Ok(resp) if resp.status().is_success() => {
                         match resp.bytes().await {
                             Ok(data) => {
+                                let seg_size = data.len() as u64;
+                                total_bytes += seg_size;
                                 if let Err(e) = ts_file.write_all(&data) {
                                     let _ = fs::remove_file(&ts_temp_path);
                                     return DownloadResult {
@@ -860,14 +889,20 @@ impl VideoDownloader {
                 }
             }
 
-            // Emit progress
+            // Emit progress with speed
+            let elapsed = start_time.elapsed().as_secs_f64();
+            let speed = if elapsed > 0.0 {
+                total_bytes as f64 / elapsed
+            } else {
+                0.0
+            };
             let percentage = ((i + 1) as f64 / total_segments as f64) * 90.0; // Reserve last 10% for FFmpeg
-            if let Some(ref state) = download_state {
+            if let Some(ref _state) = download_state {
                 let progress = DownloadProgress {
                     episode,
                     downloaded: (i + 1) as u64,
                     total: total_segments as u64,
-                    speed: 0.0,
+                    speed,
                     percentage,
                 };
                 let _ = app_handle.emit("download-progress", progress);
@@ -916,11 +951,17 @@ impl VideoDownloader {
         if status.success() {
             // Final progress
             if let Some(ref _state) = download_state {
+                let elapsed = start_time.elapsed().as_secs_f64();
+                let final_speed = if elapsed > 0.0 {
+                    total_bytes as f64 / elapsed
+                } else {
+                    0.0
+                };
                 let progress = DownloadProgress {
                     episode,
                     downloaded: total_segments as u64,
                     total: total_segments as u64,
-                    speed: 0.0,
+                    speed: final_speed,
                     percentage: 100.0,
                 };
                 let _ = app_handle.emit("download-progress", progress);

@@ -6,6 +6,8 @@ const DEFAULT_DOMAINS: DomainSettings = {
   titanDomain: "51cg1.com",
   baanjeenDomain: "xn--82c7abb4jua0l.com",
   rongyokDomain: "rongyok.com",
+  hsckDomain: "hsck123.com",
+  njavtvDomain: "njavtv.com",
 };
 
 export function useDomainSettings() {

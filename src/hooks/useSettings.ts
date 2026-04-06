@@ -10,7 +10,7 @@ export interface Settings {
   theme: "dark" | "light" | "system";
   fileNaming: "ep_001" | "episode_1" | "title_ep1";
   outputDir: string;
-  groupBySource: boolean; // สร้าง subfolder ตามชื่อเว็บ (rongyok/, titan/, baanjeen/, hsck/)
+  groupBySource: boolean; // สร้าง subfolder ตามชื่อเว็บ (rongyok/, titan/, baanjeen/, hsck/, njavtv/)
 }
 
 const DEFAULT_SETTINGS: Settings = {

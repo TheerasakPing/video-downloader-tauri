@@ -177,7 +177,7 @@ export function SettingsPanel({
                 Group by Website
               </label>
               <p className="text-xs text-slate-500">
-                Save to subfolder by source (rongyok/, titan/, baanjeen/, hsck/)
+                Save to subfolder by source (rongyok/, titan/, baanjeen/, hsck/, njavtv/)
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -272,6 +272,38 @@ export function SettingsPanel({
               onChange={(e) => onUpdateDomain("rongyokDomain", e.target.value)}
               className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white w-48 text-right"
               placeholder="rongyok.com"
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-white">HSCK Server</label>
+              <p className="text-xs text-slate-500">
+                Domain for HSCK videos (default: hsck123.com)
+              </p>
+            </div>
+            <input
+              type="text"
+              value={domainSettings.hsckDomain ?? "hsck123.com"}
+              onChange={(e) => onUpdateDomain("hsckDomain", e.target.value)}
+              className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white w-48 text-right"
+              placeholder="hsck123.com"
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-white">NjavTV Server</label>
+              <p className="text-xs text-slate-500">
+                Domain for NjavTV videos (Cloudflare — uses Chrome)
+              </p>
+            </div>
+            <input
+              type="text"
+              value={domainSettings.njavtvDomain ?? "njavtv.com"}
+              onChange={(e) => onUpdateDomain("njavtvDomain", e.target.value)}
+              className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white w-48 text-right"
+              placeholder="njavtv.com"
             />
           </div>
         </div>

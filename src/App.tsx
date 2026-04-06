@@ -182,11 +182,13 @@ function App() {
         checkDomains(domainSettings.rongyokDomain) ||
         checkDomains(domainSettings.titanDomain) ||
         checkDomains(domainSettings.baanjeenDomain) ||
+        checkDomains(domainSettings.njavtvDomain || "njavtv.com") ||
         text.includes("rongyok.com") ||
         text.includes("thongyok.com") ||
         text.includes("51cg") ||
         text.includes("357ms") || // Titan wildcard fallback
-        text.includes("xn--82c7abb4jua0l.com")
+        text.includes("xn--82c7abb4jua0l.com") ||
+        text.includes("njavtv.com")
       );
     },
     [domainSettings],

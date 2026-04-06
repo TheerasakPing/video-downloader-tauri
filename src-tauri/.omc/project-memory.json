@@ -1,0 +1,190 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1775407590353,
+  "projectRoot": "/Volumes/Data/_workspace/_git/video-downloader-tauri/src-tauri",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Rust",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "Cargo.toml"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "cargo",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "cargo build",
+    "testCommand": "cargo test",
+    "lintCommand": "cargo clippy",
+    "devCommand": "cargo run",
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "scripts",
+      "src"
+    ],
+    "gitBranches": {
+      "defaultBranch": "master",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "binaries": {
+      "path": "binaries",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1775407590195,
+      "keyFiles": [
+        "CLAUDE.md",
+        "ffmpeg"
+      ]
+    },
+    "capabilities": {
+      "path": "capabilities",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1775407590195,
+      "keyFiles": [
+        "default.json"
+      ]
+    },
+    "gen": {
+      "path": "gen",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1775407590200,
+      "keyFiles": []
+    },
+    "icons": {
+      "path": "icons",
+      "purpose": null,
+      "fileCount": 18,
+      "lastAccessed": 1775407590201,
+      "keyFiles": [
+        "128x128.png",
+        "128x128@2x.png",
+        "32x32.png",
+        "64x64.png",
+        "Square107x107Logo.png"
+      ]
+    },
+    "resources": {
+      "path": "resources",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1775407590201,
+      "keyFiles": [
+        "CLAUDE.md"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 2,
+      "lastAccessed": 1775407590202,
+      "keyFiles": [
+        "CLAUDE.md",
+        "download-ffmpeg.cjs"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 11,
+      "lastAccessed": 1775407590203,
+      "keyFiles": [
+        "CLAUDE.md",
+        "baanjeen_parser.rs",
+        "chrome_detector.rs",
+        "downloader.rs",
+        "hsck_parser.rs"
+      ]
+    },
+    "src-tauri": {
+      "path": "src-tauri",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1775407590203,
+      "keyFiles": [
+        "CLAUDE.md"
+      ]
+    },
+    "target": {
+      "path": "target",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1775407590204,
+      "keyFiles": [
+        "CACHEDIR.TAG"
+      ]
+    },
+    "gen/schemas": {
+      "path": "gen/schemas",
+      "purpose": "Schema definitions",
+      "fileCount": 4,
+      "lastAccessed": 1775407590208,
+      "keyFiles": [
+        "acl-manifests.json",
+        "capabilities.json",
+        "desktop-schema.json"
+      ]
+    },
+    "resources/bin": {
+      "path": "resources/bin",
+      "purpose": "Executable scripts",
+      "fileCount": 6,
+      "lastAccessed": 1775407590208,
+      "keyFiles": [
+        "ffmpeg-aarch64-apple-darwin",
+        "ffmpeg-x86_64-pc-windows-msvc.exe",
+        "ffmpeg-x86_64-unknown-linux-gnu"
+      ]
+    },
+    "src-tauri/src": {
+      "path": "src-tauri/src",
+      "purpose": "Source code",
+      "fileCount": 2,
+      "lastAccessed": 1775407590209,
+      "keyFiles": [
+        "CLAUDE.md",
+        "chrome_detector.rs"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src/lib.rs",
+      "accessCount": 20,
+      "lastAccessed": 1775410236601,
+      "type": "file"
+    },
+    {
+      "path": "src/downloader.rs",
+      "accessCount": 19,
+      "lastAccessed": 1775410803710,
+      "type": "file"
+    },
+    {
+      "path": "src/chrome_detector.rs",
+      "accessCount": 1,
+      "lastAccessed": 1775407791825,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

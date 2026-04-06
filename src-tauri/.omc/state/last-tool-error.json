@@ -1,0 +1,7 @@
+{
+  "tool_name": "Grep",
+  "tool_input_preview": "{\"pattern\":\"NjavTV detected.*extracting\",\"path\":\"/Volumes/Data/_workspace/_git/video-downloader-tauri/src-tauri/src\",\"output_mode\":\"content\",\"-A\":50}",
+  "error": "spawn /Users/baemon/.clawgod/vendor/ripgrep/arm64-darwin/rg ENOENT",
+  "timestamp": "2026-04-05T16:46:50.423Z",
+  "retry_count": 1
+}
