@@ -116,6 +116,8 @@ impl VideoDownloader {
         episode: i32,
         video_url: &str,
         hls_key_info: Option<crate::titan_parser::HlsKeyInfo>,
+        referer: Option<&str>,
+        cookies: &[(String, String)],
         app_handle: &AppHandle,
         download_state: Option<Arc<DownloadState>>,
     ) -> DownloadResult {
@@ -137,7 +139,27 @@ impl VideoDownloader {
                     error: Some("FFmpeg is required for .m3u8 downloads but was not found".to_string()),
                 };
             }
-            return self.download_hls_stream(episode, video_url, &file_path_str, app_handle, download_state).await;
+            let result = self.download_hls_stream(episode, video_url, &file_path_str, referer, cookies, app_handle, download_state.clone()).await;
+
+            // If FFmpeg failed due to obfuscated segment extensions (.jpeg, .html, etc.),
+            // fall back to manual segment download via reqwest + FFmpeg concat
+            if !result.success {
+                if let Some(ref err) = result.error {
+                    let err_lower = err.to_lowercase();
+                    if err_lower.contains("empty segment")
+                        || err_lower.contains("allowed_segment_extensions")
+                        || err_lower.contains("allowed_extensions")
+                        || err_lower.contains("mismatches")
+                        || err_lower.contains("invalid data found")
+                    {
+                        let _ = app_handle.emit("log-info", "FFmpeg HLS demuxer rejected segments — retrying with manual segment download...".to_string());
+                        eprintln!("[Downloader] Retrying with manual segment download for: {}", video_url);
+                        return self.download_hls_manual(episode, video_url, &file_path_str, referer, cookies, app_handle, download_state).await;
+                    }
+                }
+            }
+
+            return result;
         }
 
         // Direct file download (MP4, etc) using Reqwest
@@ -425,28 +447,37 @@ impl VideoDownloader {
         episode: i32,
         video_url: &str,
         file_path: &str,
+        referer: Option<&str>,
+        cookies: &[(String, String)],
         app_handle: &AppHandle,
         download_state: Option<Arc<DownloadState>>,
     ) -> DownloadResult {
         let mut cmd = get_ffmpeg_command();
 
-        // Build HTTP headers for FFmpeg.
-        // Many HLS servers enforce hotlink protection via Referer checking.
-        // We auto-derive a Referer from the HLS URL's host — e.g.:
-        //   hls.357ms.com  → https://www.357ms.com
-        //   hls.example.net → https://www.example.net
-        let referer = Self::derive_referer_from_hls_url(video_url);
+        let effective_referer = referer
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| Self::derive_referer_from_hls_url(video_url));
         let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-        // FFmpeg -headers takes headers separated by \r\n
-        let headers = format!(
+
+        let mut headers = format!(
             "User-Agent: {}\r\nReferer: {}\r\n",
-            ua, referer
+            ua, effective_referer
         );
+
+        if !cookies.is_empty() {
+            let cookie_header: String = cookies.iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>()
+                .join("; ");
+            headers.push_str(&format!("Cookie: {}\r\n", cookie_header));
+        }
 
         cmd.args([
             "-y",
             "-headers", &headers,
             "-rw_timeout", "30000000", // 30s timeout to prevent hanging
+            "-allowed_extensions", "ALL", // Allow all playlist extensions
+            "-allowed_segment_extensions", "ALL", // FFmpeg 8.x: separate check for segment extensions (.jpeg, etc.)
             "-i", video_url,
             "-c", "copy",
             // Network resilience flags
@@ -526,7 +557,8 @@ impl VideoDownloader {
                 }
                 
                 // Keep track of potential error messages
-                if line.contains("Error") || line.contains("Failed") || line.contains("Invalid") {
+                // Also capture "mismatches" lines (FFmpeg 8.x format consistency check)
+                if line.contains("Error") || line.contains("Failed") || line.contains("Invalid") || line.contains("mismatches") {
                     last_error_line = line.clone();
                     let _ = app_handle.emit("log-info", format!("FFmpeg error found: {}", line));
                     eprintln!("[FFmpeg Error] {}", line);
@@ -585,6 +617,325 @@ impl VideoDownloader {
                 success: false,
                 file_path: None,
                 error: Some(format!("Failed to wait for FFmpeg: {}", e)),
+            }
+        }
+    }
+
+    /// Manual HLS segment downloader — bypasses FFmpeg's HLS demuxer entirely.
+    /// Downloads each segment via reqwest (with proper Referer/UA headers),
+    /// writes them concatenated into a temp .ts file, then uses FFmpeg to convert
+    /// the raw MPEG-TS data into the final .mp4 output.
+    ///
+    /// This is needed for servers that disguise .ts segments as .jpeg/.html/etc.
+    /// to prevent standard download tools from recognizing them.
+    async fn download_hls_manual(
+        &self,
+        episode: i32,
+        master_url: &str,
+        output_path: &str,
+        referer: Option<&str>,
+        cookies: &[(String, String)],
+        app_handle: &AppHandle,
+        download_state: Option<Arc<DownloadState>>,
+    ) -> DownloadResult {
+        let _ = app_handle.emit("log-info", format!("Manual HLS: fetching master playlist..."));
+        eprintln!("[ManualHLS] Fetching master playlist: {}", master_url);
+
+        let effective_referer = referer
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| Self::derive_referer_from_hls_url(master_url));
+        let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+        // Build HTTP client for segment downloads
+        let seg_client = Client::builder()
+            .user_agent(ua)
+            .default_headers({
+                let mut headers = reqwest::header::HeaderMap::new();
+                headers.insert("Referer", effective_referer.parse().unwrap());
+                if !cookies.is_empty() {
+                    let cookie_header = cookies
+                        .iter()
+                        .map(|(k, v)| format!("{}={}", k, v))
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    if let Ok(cookie_val) = cookie_header.parse() {
+                        headers.insert("Cookie", cookie_val);
+                    }
+                }
+                headers
+            })
+            .build()
+            .unwrap_or_else(|_| Client::new());
+
+        // 1. Fetch master playlist
+        let master_text = match seg_client.get(master_url).send().await {
+            Ok(resp) if resp.status().is_success() => resp.text().await.unwrap_or_default(),
+            Ok(resp) => {
+                return DownloadResult {
+                    episode, success: false, file_path: None,
+                    error: Some(format!("Master playlist returned HTTP {}", resp.status())),
+                };
+            }
+            Err(e) => {
+                return DownloadResult {
+                    episode, success: false, file_path: None,
+                    error: Some(format!("Failed to fetch master playlist: {}", e)),
+                };
+            }
+        };
+
+        // 2. Find best quality sub-playlist URL (highest BANDWIDTH)
+        let mut best_url: Option<String> = None;
+        let mut max_bandwidth: i64 = -1;
+        let mut current_bandwidth: i64 = -1;
+        let base_url = master_url.rfind('/').map(|i| &master_url[..=i]).unwrap_or(master_url);
+
+        for line in master_text.lines() {
+            let line = line.trim();
+            if line.starts_with("#EXT-X-STREAM-INF:") {
+                // Extract BANDWIDTH
+                current_bandwidth = line.split(',')
+                    .find_map(|part| {
+                        part.trim().strip_prefix("BANDWIDTH=")
+                            .and_then(|v| v.parse::<i64>().ok())
+                    })
+                    .unwrap_or(0);
+            } else if !line.is_empty() && !line.starts_with('#') && current_bandwidth >= 0 {
+                // This line is the URL for the preceding STREAM-INF
+                if current_bandwidth > max_bandwidth {
+                    max_bandwidth = current_bandwidth;
+                    let sub_url = if line.starts_with("http") {
+                        line.to_string()
+                    } else {
+                        format!("{}/{}", base_url.trim_end_matches('/'), line.trim_start_matches('/'))
+                    };
+                    best_url = Some(sub_url);
+                }
+                current_bandwidth = -1; // Reset
+            }
+        }
+
+        // If no variant playlists found, treat the master as a simple playlist
+        let sub_playlist_url = best_url.unwrap_or_else(|| master_url.to_string());
+        let _ = app_handle.emit("log-info", format!("Manual HLS: using sub-playlist: {}", sub_playlist_url));
+        eprintln!("[ManualHLS] Sub-playlist URL: {}", sub_playlist_url);
+
+        // 3. Fetch sub-playlist and extract segment URLs
+        let sub_text = match seg_client.get(&sub_playlist_url).send().await {
+            Ok(resp) if resp.status().is_success() => resp.text().await.unwrap_or_default(),
+            Ok(resp) => {
+                return DownloadResult {
+                    episode, success: false, file_path: None,
+                    error: Some(format!("Sub-playlist returned HTTP {}", resp.status())),
+                };
+            }
+            Err(e) => {
+                return DownloadResult {
+                    episode, success: false, file_path: None,
+                    error: Some(format!("Failed to fetch sub-playlist: {}", e)),
+                };
+            }
+        };
+
+        let sub_base_url = sub_playlist_url.rfind('/').map(|i| &sub_playlist_url[..=i]).unwrap_or(&sub_playlist_url);
+        
+        // Better segment extraction: only lines following #EXTINF
+        let mut segment_urls = Vec::new();
+        let mut lines_iter = sub_text.lines().peekable();
+        while let Some(line) = lines_iter.next() {
+            let line = line.trim();
+            if line.starts_with("#EXTINF:") {
+                // Find next non-empty, non-comment line
+                while let Some(next_line) = lines_iter.peek() {
+                    let next_line = next_line.trim();
+                    if next_line.is_empty() {
+                        lines_iter.next();
+                        continue;
+                    }
+                    if !next_line.starts_with('#') {
+                        let seg_url = if next_line.starts_with("http") {
+                            next_line.to_string()
+                        } else {
+                            format!("{}/{}", sub_base_url.trim_end_matches('/'), next_line.trim_start_matches('/'))
+                        };
+                        segment_urls.push(seg_url);
+                        lines_iter.next();
+                        break;
+                    }
+                    // If we hit another tag before a URL, this EXTINF was invalid or empty
+                    if next_line.starts_with('#') {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if segment_urls.is_empty() {
+            return DownloadResult {
+                episode, success: false, file_path: None,
+                error: Some("No segments found in HLS playlist".to_string()),
+            };
+        }
+
+        let total_segments = segment_urls.len();
+        let _ = app_handle.emit("log-info", format!("Manual HLS: found {} segments", total_segments));
+        eprintln!("[ManualHLS] Downloading {} segments", total_segments);
+
+        // 4. Create temp .ts file and download segments into it
+        let ts_temp_path = format!("{}.ts", output_path.trim_end_matches(".mp4"));
+        let mut ts_file = match File::create(&ts_temp_path) {
+            Ok(f) => f,
+            Err(e) => {
+                return DownloadResult {
+                    episode, success: false, file_path: None,
+                    error: Some(format!("Failed to create temp .ts file: {}", e)),
+                };
+            }
+        };
+
+        for (i, seg_url) in segment_urls.iter().enumerate() {
+            // Check cancellation
+            if let Some(ref state) = download_state {
+                if state.is_cancelled.load(Ordering::SeqCst) {
+                    let _ = fs::remove_file(&ts_temp_path);
+                    return DownloadResult {
+                        episode, success: false, file_path: None,
+                        error: Some("Download cancelled".to_string()),
+                    };
+                }
+            }
+
+            // Download segment with retry
+            let mut retries = 3;
+            loop {
+                match seg_client.get(seg_url).send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        match resp.bytes().await {
+                            Ok(data) => {
+                                if let Err(e) = ts_file.write_all(&data) {
+                                    let _ = fs::remove_file(&ts_temp_path);
+                                    return DownloadResult {
+                                        episode, success: false, file_path: None,
+                                        error: Some(format!("Failed to write segment: {}", e)),
+                                    };
+                                }
+                            }
+                            Err(e) => {
+                                retries -= 1;
+                                if retries == 0 {
+                                    let _ = fs::remove_file(&ts_temp_path);
+                                    return DownloadResult {
+                                        episode, success: false, file_path: None,
+                                        error: Some(format!("Failed to read segment {}: {}", i+1, e)),
+                                    };
+                                }
+                                tokio::time::sleep(Duration::from_secs(1)).await;
+                                continue;
+                            }
+                        }
+                        break;
+                    }
+                    Ok(resp) => {
+                        retries -= 1;
+                        if retries == 0 {
+                            let _ = fs::remove_file(&ts_temp_path);
+                            return DownloadResult {
+                                episode, success: false, file_path: None,
+                                error: Some(format!("Segment {} returned HTTP {}", i+1, resp.status())),
+                            };
+                        }
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                    Err(e) => {
+                        retries -= 1;
+                        if retries == 0 {
+                            let _ = fs::remove_file(&ts_temp_path);
+                            return DownloadResult {
+                                episode, success: false, file_path: None,
+                                error: Some(format!("Failed to download segment {}: {}", i+1, e)),
+                            };
+                        }
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                }
+            }
+
+            // Emit progress
+            let percentage = ((i + 1) as f64 / total_segments as f64) * 90.0; // Reserve last 10% for FFmpeg
+            if let Some(ref state) = download_state {
+                let progress = DownloadProgress {
+                    episode,
+                    downloaded: (i + 1) as u64,
+                    total: total_segments as u64,
+                    speed: 0.0,
+                    percentage,
+                };
+                let _ = app_handle.emit("download-progress", progress);
+            }
+        }
+
+        // Flush and close the .ts file
+        if let Err(e) = ts_file.flush() {
+            let _ = fs::remove_file(&ts_temp_path);
+            return DownloadResult {
+                episode, success: false, file_path: None,
+                error: Some(format!("Failed to flush .ts file: {}", e)),
+            };
+        }
+        drop(ts_file);
+
+        let _ = app_handle.emit("log-info", "Manual HLS: segments downloaded, converting to MP4...".to_string());
+
+        // 5. Convert .ts → .mp4 with FFmpeg (just remux, no re-encoding)
+        let mut cmd = get_ffmpeg_command();
+        cmd.args([
+            "-y",
+            "-i", &ts_temp_path,
+            "-c", "copy",
+            output_path,
+        ]);
+        cmd.stderr(Stdio::piped());
+        cmd.stdout(Stdio::null());
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = fs::remove_file(&ts_temp_path);
+                return DownloadResult {
+                    episode, success: false, file_path: None,
+                    error: Some(format!("Failed to start FFmpeg for .ts conversion: {}", e)),
+                };
+            }
+        };
+
+        let status = child.wait().unwrap_or_else(|_| std::process::ExitStatus::default());
+
+        // Clean up temp .ts file
+        let _ = fs::remove_file(&ts_temp_path);
+
+        if status.success() {
+            // Final progress
+            if let Some(ref _state) = download_state {
+                let progress = DownloadProgress {
+                    episode,
+                    downloaded: total_segments as u64,
+                    total: total_segments as u64,
+                    speed: 0.0,
+                    percentage: 100.0,
+                };
+                let _ = app_handle.emit("download-progress", progress);
+            }
+
+            DownloadResult {
+                episode,
+                success: true,
+                file_path: Some(output_path.to_string()),
+                error: None,
+            }
+        } else {
+            DownloadResult {
+                episode, success: false, file_path: None,
+                error: Some("FFmpeg failed to convert .ts to .mp4".to_string()),
             }
         }
     }

@@ -2,6 +2,7 @@ mod baanjeen_parser;
 mod chrome_detector;
 mod downloader;
 mod hsck_parser;
+mod njavtv_parser;
 mod parser;
 mod titan_parser;
 mod utils;
@@ -10,6 +11,7 @@ use baanjeen_parser::BaanJeenParser;
 use chrome_detector::ChromeVideoDetector;
 use downloader::{check_ffmpeg, merge_videos_with_progress, DownloadConfig, DownloadResult, DownloadState, VideoDownloader};
 use hsck_parser::HsckParser;
+use njavtv_parser::NjavtvParser;
 use parser::RongyokParser;
 use serde::{Deserialize, Serialize};
 use titan_parser::{TitanParser, HlsKeyInfo};
@@ -28,11 +30,16 @@ pub struct DomainSettings {
     pub rongyok_domain: String,
     #[serde(default = "DomainSettings::default_hsck_domain")]
     pub hsck_domain: String,
+    #[serde(default = "DomainSettings::default_njavtv_domain")]
+    pub njavtv_domain: String,
 }
 
 impl DomainSettings {
     fn default_hsck_domain() -> String {
         "hsck123.com".to_string()
+    }
+    fn default_njavtv_domain() -> String {
+        "njavtv.com".to_string()
     }
 }
 
@@ -43,6 +50,7 @@ impl Default for DomainSettings {
             baanjeen_domain: "xn--82c7abb4jua0l.com".to_string(),
             rongyok_domain: "rongyok.com".to_string(),
             hsck_domain: "hsck123.com".to_string(),
+            njavtv_domain: "njavtv.com".to_string(),
         }
     }
 }
@@ -86,9 +94,15 @@ pub struct UnifiedSeriesInfo {
     pub poster_url: Option<String>,
     pub episode_urls: HashMap<i32, String>,
     pub source: String, // "rongyok", "baanjeen", "titan"
+    /// Original page URL to use as Referer for hotlink protection bypass
+    #[serde(default)]
+    pub source_url: Option<String>,
     /// AES-128 key info per episode — only populated for Titan (357ms.com) encrypted HLS
     #[serde(default)]
     pub episode_keys: HashMap<i32, HlsKeyInfo>,
+    /// Auth cookies from Chrome detector — required for NjavTV CDN access
+    #[serde(default)]
+    pub cookies: Vec<(String, String)>,
 }
 
 // App state
@@ -97,6 +111,7 @@ struct AppState {
     baanjeen_parser: BaanJeenParser,
     titan_parser: TitanParser,
     hsck_parser: HsckParser,
+    njavtv_parser: NjavtvParser,
     chrome_detector: Mutex<ChromeVideoDetector>,
     downloader: Mutex<Option<VideoDownloader>>,
     current_series: Mutex<Option<UnifiedSeriesInfo>>,
@@ -139,7 +154,9 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             total_episodes: 1,
             poster_url: None,
             episode_urls,
+            source_url: None,
             episode_keys: Default::default(),
+            cookies: Vec::new(),
             source: "direct".to_string(),
         };
 
@@ -206,8 +223,67 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             total_episodes: baanjeen_info.total_episodes,
             poster_url: baanjeen_info.poster_url,
             episode_urls: baanjeen_info.episode_urls,
+            source_url: None,
             episode_keys: Default::default(),
+            cookies: Vec::new(),
             source: "baanjeen".to_string(),
+        }
+    } else if NjavtvParser::is_njavtv_url(&url, &settings.njavtv_domain) {
+        // Use NjavTV Parser (Cloudflare protected — uses Chrome detector)
+        let _ = app_handle.emit("log-info", "Detected njavtv.com — using Chrome detector...".to_string());
+        let njavtv_info = state.njavtv_parser.get_series_info(&url, &settings.njavtv_domain).await?;
+
+        // Always use Chrome detector since njavtv.com is Cloudflare protected
+        let _ = app_handle.emit("log-info", "Launching Chrome to bypass Cloudflare...".to_string());
+        let mut detector = state.chrome_detector.lock().unwrap();
+
+        let mut episode_urls: HashMap<i32, String> = HashMap::new();
+
+        if njavtv_info.total_episodes == 1 {
+            // Single episode — detect from the page URL directly
+            let page_url = njavtv_info.direct_page_url
+                .as_deref()
+                .unwrap_or(&url);
+
+            let _ = app_handle.emit("log-info", format!("Detecting video from: {}", page_url));
+            match detector.detect_video_url(page_url, Some(&app_handle)) {
+                Ok(Some(video_url)) => {
+                    let _ = app_handle.emit("log-info", format!("Found video URL: {}", video_url));
+                    episode_urls.insert(1, video_url);
+                }
+                Ok(None) => {
+                    let _ = app_handle.emit("log-info", "Chrome detector found no video on njavtv page".to_string());
+                    return Err("Could not find video URL on njavtv.com page. The video may require login or is region-blocked.".to_string());
+                }
+                Err(e) => {
+                    return Err(format!("Chrome detection failed: {}", e));
+                }
+            }
+        } else {
+            // Multi-episode: detect each episode page
+            for (ep, page_url) in &njavtv_info.episode_page_urls {
+                let _ = app_handle.emit("log-info", format!("Detecting ep {} from: {}", ep, page_url));
+                if let Ok(Some(video_url)) = detector.detect_video_url(page_url, Some(&app_handle)) {
+                    episode_urls.insert(*ep, video_url);
+                }
+            }
+            if episode_urls.is_empty() {
+                return Err("Could not find any video URLs on njavtv.com".to_string());
+            }
+        }
+
+        let total = episode_urls.len() as i32;
+        let cookies = detector.get_last_cookies().to_vec();
+        UnifiedSeriesInfo {
+            series_id: 0,
+            title: njavtv_info.title,
+            total_episodes: total,
+            poster_url: njavtv_info.poster_url,
+            episode_urls,
+            source_url: Some(url.clone()),
+            episode_keys: Default::default(),
+            cookies,
+            source: "njavtv".to_string(),
         }
     } else if HsckParser::is_hsck_url(&url, &settings.hsck_domain) {
         // Use HSCK Parser (hsck123.com และ domain สำรอง)
@@ -218,7 +294,9 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             total_episodes: hsck_info.total_episodes,
             poster_url: hsck_info.poster_url,
             episode_urls: hsck_info.episode_urls,
+            source_url: None,
             episode_keys: Default::default(),
+            cookies: Vec::new(),
             source: "hsck".to_string(),
         }
     } else if TitanParser::is_titan_url(&url, &settings.titan_domain) {
@@ -230,7 +308,9 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             total_episodes: titan_info.total_episodes,
             poster_url: titan_info.poster_url,
             episode_urls: titan_info.episode_urls,
+            source_url: None,
             episode_keys: titan_info.episode_keys,
+            cookies: Vec::new(),
             source: "titan".to_string(),
         }
     } else {
@@ -243,7 +323,9 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             total_episodes: rongyok_info.total_episodes,
             poster_url: rongyok_info.poster_url,
             episode_urls: rongyok_info.episode_urls,
+            source_url: None,
             episode_keys: Default::default(),
+            cookies: Vec::new(),
             source: "rongyok".to_string(),
         }
     };
@@ -302,6 +384,7 @@ async fn start_download(
         let source_folder = match series.source.as_str() {
             "baanjeen" => "baanjeen",
             "hsck" => "hsck",
+            "njavtv" => "njavtv",
             "titan" => "titan",
             "direct" => "direct",
             _ => "rongyok", // default
@@ -339,6 +422,12 @@ async fn start_download(
             // Pass HLS key info if available (Titan encrypted streams)
             let hls_key_info = series.episode_keys.get(episode).cloned();
 
+            // Get source_url as referer for hotlink protection bypass
+            // Clone to extend lifetime for async block
+            let referer = series.source_url.clone();
+
+            let cookies = series.cookies.clone();
+
             let app = app_handle.clone();
             let dl = VideoDownloader::with_config(
                 &effective_output_dir,
@@ -358,7 +447,7 @@ async fn start_download(
             }
 
             let handle = tokio::spawn(async move {
-                dl.download_episode(ep, &video_url, hls_key_info, &app, Some(download_state)).await
+                dl.download_episode(ep, &video_url, hls_key_info, referer.as_deref(), &cookies, &app, Some(download_state)).await
             });
             handles.push((ep, handle));
         }
@@ -708,6 +797,7 @@ pub fn run() {
             baanjeen_parser: BaanJeenParser::new(),
             titan_parser: TitanParser::new(),
             hsck_parser: HsckParser::new(),
+            njavtv_parser: NjavtvParser::new(),
             chrome_detector: Mutex::new(ChromeVideoDetector::new().unwrap_or_else(|e| {
                 eprintln!("Warning: Chrome detector initialization failed: {}", e);
                 ChromeVideoDetector::new().unwrap()

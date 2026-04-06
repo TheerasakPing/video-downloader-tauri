@@ -1,16 +1,54 @@
 use headless_chrome::{Browser, LaunchOptions};
-use std::time::Duration;
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 /// Auto-detect video URLs using headless Chrome browser
 pub struct ChromeVideoDetector {
     browser: Option<Arc<Browser>>,
+    /// Store cookies from last detection for authentication
+    last_cookies: Vec<(String, String)>,
 }
 
 impl ChromeVideoDetector {
     pub fn new() -> Result<Self, String> {
-        Ok(Self { browser: None })
+        Ok(Self {
+            browser: None,
+            last_cookies: Vec::new(),
+        })
+    }
+
+    fn extract_cookies(&mut self, tab: &headless_chrome::Tab) {
+        let cookie_script = r#"
+            (function() {
+                return document.cookie.split(';').map(c => {
+                    const eq = c.indexOf('=');
+                    const name = c.substring(0, eq).trim();
+                    const value = c.substring(eq + 1).trim();
+                    return [name, value];
+                });
+            })()
+        "#;
+
+        if let Ok(result) = tab.evaluate(cookie_script, false) {
+            if let Some(value) = result.value {
+                if let Ok(cookies) = serde_json::from_value::<Vec<(String, String)>>(value) {
+                    if !cookies.is_empty() {
+                        eprintln!(
+                            "[ChromeDetector] Extracted {} cookies: {:?}",
+                            cookies.len(),
+                            cookies.iter().map(|(n, _)| n).collect::<Vec<_>>()
+                        );
+                        self.last_cookies = cookies;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Get cookies from last detection
+    pub fn get_last_cookies(&self) -> &[(String, String)] {
+        &self.last_cookies
     }
 
     /// Initialize headless Chrome browser
@@ -28,7 +66,9 @@ impl ChromeVideoDetector {
         args.push(std::ffi::OsStr::new("--disable-software-rasterizer"));
         args.push(std::ffi::OsStr::new("--disable-extensions"));
         args.push(std::ffi::OsStr::new("--window-size=1920,1080"));
-        args.push(std::ffi::OsStr::new("--autoplay-policy=no-user-gesture-required"));
+        args.push(std::ffi::OsStr::new(
+            "--autoplay-policy=no-user-gesture-required",
+        ));
         // Match Python script's User-Agent exactly to ensure same behavior
         args.push(std::ffi::OsStr::new("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"));
 
@@ -39,8 +79,8 @@ impl ChromeVideoDetector {
             ..Default::default()
         };
 
-        let browser = Browser::new(options)
-            .map_err(|e| format!("Failed to launch Chrome: {}", e))?;
+        let browser =
+            Browser::new(options).map_err(|e| format!("Failed to launch Chrome: {}", e))?;
 
         let browser = Arc::new(browser);
         self.browser = Some(Arc::clone(&browser));
@@ -52,16 +92,23 @@ impl ChromeVideoDetector {
     /// Helper to emit progress events
     fn emit_progress(&self, app_handle: Option<&AppHandle>, message: &str, progress: u32) {
         if let Some(app) = app_handle {
-            let _ = app.emit("detection-progress", serde_json::json!({
-                "message": message,
-                "progress": progress
-            }));
+            let _ = app.emit(
+                "detection-progress",
+                serde_json::json!({
+                    "message": message,
+                    "progress": progress
+                }),
+            );
         }
         eprintln!("[ChromeDetector] {} ({}%)", message, progress);
     }
 
     /// Auto-detect video URL from a webpage
-    pub fn detect_video_url(&mut self, url: &str, app_handle: Option<&AppHandle>) -> Result<Option<String>, String> {
+    pub fn detect_video_url(
+        &mut self,
+        url: &str,
+        app_handle: Option<&AppHandle>,
+    ) -> Result<Option<String>, String> {
         // Javascript to click play buttons, iframes, and center screen
         let click_script = r#"
             (function() {
@@ -132,66 +179,7 @@ impl ChromeVideoDetector {
             })()
         "#;
 
-        self.emit_progress(app_handle, "Starting video detection...", 0);
-
-        self.emit_progress(app_handle, "Launching Chrome browser...", 10);
-
-        // Try to initialize browser, retry once if fails
-        let browser = match self.init_browser() {
-            Ok(b) => b,
-            Err(e) => {
-                eprintln!("[ChromeDetector] Initial launch failed: {}, retrying...", e);
-                self.cleanup();
-                self.init_browser()?
-            }
-        };
-
-        // Create a new tab - with retry logic for "connection closed" errors
-        let tab = match browser.new_tab() {
-            Ok(t) => t,
-            Err(e) => {
-                eprintln!("[ChromeDetector] Failed to create tab: {}, restarting browser...", e);
-                self.cleanup();
-                let browser = self.init_browser()?;
-                browser.new_tab().map_err(|e| format!("Failed to create tab after restart: {}", e))?
-            }
-        };
-
-        // Enable network tracking
-        self.emit_progress(app_handle, "Enabling network monitoring...", 20);
-        // let _ = tab.enable_fetch(None, None); // CAUSES HANGS if not handled!
-
-        // Attempt to inject script on new document creation to catch early requests
-        // using CDP command Page.addScriptToEvaluateOnNewDocument
-        // let observer_script_source = r#"
-        //    (function() {
-        // ... (commented out to remove warning)
-        //    })()
-        // "#;
-
-        // Try to use Page.addScriptToEvaluateOnNewDocument
-        // Note: call_method might return error if not supported, we ignore it
-        // We need to construct the params
-        // use headless_chrome::protocol::cdp::types::Event;
-        // use headless_chrome::protocol::cdp::Page;
-
-        // This is a best-effort attempt. If it fails to compile or run, we fall back to evaluation after load.
-        // We'll wrap it in a block to avoid import issues if possible, or just use the evaluation after load as primary.
-        // Given we are editing the file, let's stick to the safe approach first: remove enable_fetch.
-        // And relying on the script injection we already have (but verify its placement).
-
-        self.emit_progress(app_handle, "Navigating to URL...", 30);
-
-        // Navigate to the page
-        tab.navigate_to(url)
-            .map_err(|e| format!("Failed to navigate: {}", e))?;
-
-        // Wait for page to load
-        self.emit_progress(app_handle, "Waiting for page to load...", 40);
-        tab.wait_until_navigated()
-            .map_err(|e| format!("Navigation failed: {}", e))?;
-
-        // Inject PerformanceObserver immediately after load
+        // Inject PerformanceObserver logic
         let observer_script = r#"
             (function() {
                 // Increase buffer size to capture all requests (default is often 150-250)
@@ -235,6 +223,148 @@ impl ChromeVideoDetector {
                 }
             })()
         "#;
+
+        self.emit_progress(app_handle, "Starting video detection...", 0);
+
+        self.emit_progress(app_handle, "Launching Chrome browser...", 10);
+
+        // Try to initialize browser, retry once if fails
+        let browser = match self.init_browser() {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("[ChromeDetector] Initial launch failed: {}, retrying...", e);
+                self.cleanup();
+                self.init_browser()?
+            }
+        };
+
+        // Create a new tab - with retry logic for "connection closed" errors
+        let tab = match browser.new_tab() {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!(
+                    "[ChromeDetector] Failed to create tab: {}, restarting browser...",
+                    e
+                );
+                self.cleanup();
+                let browser = self.init_browser()?;
+                browser
+                    .new_tab()
+                    .map_err(|e| format!("Failed to create tab after restart: {}", e))?
+            }
+        };
+
+        // Enable network tracking
+        self.emit_progress(app_handle, "Enabling network monitoring...", 20);
+        // let _ = tab.enable_fetch(None, None); // CAUSES HANGS if not handled!
+
+        // Attempt to inject script on new document creation to catch early requests
+        // using CDP command Page.addScriptToEvaluateOnNewDocument
+        // let observer_script_source = r#"
+        //    (function() {
+        // ... (commented out to remove warning)
+        //    })()
+        // "#;
+
+        // Try to use Page.addScriptToEvaluateOnNewDocument
+        // Note: call_method might return error if not supported, we ignore it
+        // We need to construct the params
+        // use headless_chrome::protocol::cdp::types::Event;
+        // use headless_chrome::protocol::cdp::Page;
+
+        // This is a best-effort attempt. If it fails to compile or run, we fall back to evaluation after load.
+        // We'll wrap it in a block to avoid import issues if possible, or just use the evaluation after load as primary.
+        // Given we are editing the file, let's stick to the safe approach first: remove enable_fetch.
+        // And relying on the script injection we already have (but verify its placement).
+
+        self.emit_progress(app_handle, "Navigating to URL...", 30);
+
+        // Navigate to the page
+        tab.navigate_to(url)
+            .map_err(|e| format!("Failed to navigate: {}", e))?;
+
+        // Wait for page to load
+        self.emit_progress(app_handle, "Waiting for page to load...", 40);
+        tab.wait_until_navigated()
+            .map_err(|e| format!("Navigation failed: {}", e))?;
+
+        // NjavTV special handling: Poll for HLS.js instance with m3u8 URL
+        // Key insight: NjavTV sets window.hls.url during page init (no clicking needed).
+        // PerformanceObserver fails (0 entries), HTML has no m3u8, clicking causes page navigation.
+        let is_njavtv = url.contains("njavtv.com");
+        if is_njavtv {
+            eprintln!("[ChromeDetector] NjavTV detected - polling for HLS.js instance");
+            self.emit_progress(
+                app_handle,
+                "NjavTV detected - waiting for video player...",
+                45,
+            );
+
+            // Wait for initial page load to stabilize
+            std::thread::sleep(Duration::from_secs(2));
+
+            // PRIMARY: Poll window.hls.url in a retry loop.
+            // DO NOT click - it causes page navigation and loses the video player
+            let hls_url_check = r#"
+                (function() {
+                    // 1. Direct window.hls check
+                    if (window.hls && window.hls.url) return window.hls.url;
+                    // 2. Check video elements for attached HLS instances
+                    const videos = document.querySelectorAll('video');
+                    for (let v of videos) {
+                        if (v._hls && v._hls.url) return v._hls.url;
+                    }
+                    return null;
+                })()
+            "#;
+
+            // 10 attempts × 2s = 20s total (usually finds within 2-3 attempts)
+            for attempt in 1..=10 {
+                let progress = 45 + (attempt * 3);
+                self.emit_progress(
+                    app_handle,
+                    &format!("Waiting for video player... ({}/10)", attempt),
+                    progress as u32,
+                );
+
+                // Wait between attempts
+                std::thread::sleep(Duration::from_secs(2));
+
+                // Check window.hls
+                if let Ok(result) = tab.evaluate(hls_url_check, false) {
+                    if let Some(value) = result.value {
+                        // Handle both string URL and null
+                        if value.is_string() {
+                            if let Ok(found_url) = serde_json::from_value::<String>(value) {
+                                if !found_url.is_empty() {
+                                    eprintln!("[ChromeDetector] NjavTV: Found m3u8 via window.hls.url (attempt {}): {}", attempt, found_url);
+                                    self.extract_cookies(&tab);
+                                    self.emit_progress(app_handle, "Found video URL via HLS.js!", 100);
+                                    return Ok(Some(found_url));
+                                }
+                            }
+                        }
+                        // value is null - continue
+                    }
+                }
+
+                // Also check PerformanceObserver as fallback
+                if let Some(found_url) = self.check_for_video_url(&tab) {
+                    eprintln!("[ChromeDetector] NjavTV: Found URL via Observer (attempt {}): {}", attempt, found_url);
+                    self.extract_cookies(&tab);
+                    self.emit_progress(app_handle, "Found video URL via Network!", 100);
+                    return Ok(Some(found_url));
+                }
+
+                eprintln!("[ChromeDetector] NjavTV attempt {} - no URL yet, continuing...", attempt);
+            }
+
+            eprintln!(
+                "[ChromeDetector] NjavTV specific methods failed, trying general detection..."
+            );
+        }
+
+        // Inject PerformanceObserver immediately after load
         let _ = tab.evaluate(observer_script, false);
 
         // 1. Initial wait for basic page load
@@ -242,13 +372,18 @@ impl ChromeVideoDetector {
         std::thread::sleep(Duration::from_secs(5));
 
         // POLLING LOOP: Try to find video URL multiple times
-        for attempt in 1..=8 { // Increased attempts
+        for attempt in 1..=8 {
+            // Increased attempts
             let progress = 50 + (attempt * 5);
 
             let _ = tab.evaluate(click_script, false);
 
             // Wait after clicking
-            self.emit_progress(app_handle, &format!("Attempt {}/8: Waiting for video load...", attempt), progress as u32 + 4);
+            self.emit_progress(
+                app_handle,
+                &format!("Attempt {}/8: Waiting for video load...", attempt),
+                progress as u32 + 4,
+            );
             std::thread::sleep(Duration::from_secs(4)); // Increased wait time
 
             // C. Check again after click
@@ -259,17 +394,21 @@ impl ChromeVideoDetector {
         }
 
         // D. Recursive Iframe Check (if main page failed)
-        self.emit_progress(app_handle, "Main page scan finished. Checking internal iframes...", 95);
+        self.emit_progress(
+            app_handle,
+            "Main page scan finished. Checking internal iframes...",
+            95,
+        );
 
         // DEBUG: Dump main page HTML
         let dump_main_script = "document.documentElement.outerHTML";
         if let Ok(result) = tab.evaluate(dump_main_script, false) {
-           if let Some(value) = result.value {
-               if let Ok(html) = serde_json::from_value::<String>(value) {
-                   let _ = std::fs::write("page_dump.html", html);
-                   eprintln!("[ChromeDetector] Dumped main page HTML to page_dump.html");
-               }
-           }
+            if let Some(value) = result.value {
+                if let Ok(html) = serde_json::from_value::<String>(value) {
+                    let _ = std::fs::write("page_dump.html", html);
+                    eprintln!("[ChromeDetector] Dumped main page HTML to page_dump.html");
+                }
+            }
         }
 
         // Extract iframe URLs from the page
@@ -286,35 +425,50 @@ impl ChromeVideoDetector {
         "#;
 
         if let Ok(result) = tab.evaluate(iframe_script, false) {
-             if let Some(json_str) = result.value {
-                 if let Ok(iframe_urls) = serde_json::from_value::<Vec<String>>(json_str) {
-                     if !iframe_urls.is_empty() {
-                         eprintln!("[ChromeDetector] Found {} internal iframes to scan", iframe_urls.len());
+            if let Some(json_str) = result.value {
+                if let Ok(iframe_urls) = serde_json::from_value::<Vec<String>>(json_str) {
+                    if !iframe_urls.is_empty() {
+                        eprintln!(
+                            "[ChromeDetector] Found {} internal iframes to scan",
+                            iframe_urls.len()
+                        );
 
-                         for (i, iframe_url) in iframe_urls.iter().enumerate() {
-                             self.emit_progress(app_handle, &format!("Scanning internal iframe {}/{}...", i+1, iframe_urls.len()), 95);
-                             eprintln!("[ChromeDetector] Scanning internal iframe: {}", iframe_url);
+                        for (i, iframe_url) in iframe_urls.iter().enumerate() {
+                            self.emit_progress(
+                                app_handle,
+                                &format!(
+                                    "Scanning internal iframe {}/{}...",
+                                    i + 1,
+                                    iframe_urls.len()
+                                ),
+                                95,
+                            );
+                            eprintln!("[ChromeDetector] Scanning internal iframe: {}", iframe_url);
 
-                             // Navigate to iframe URL
-                             if let Ok(_) = tab.navigate_to(iframe_url) {
-                                 let _ = tab.wait_until_navigated();
+                            // Navigate to iframe URL
+                            if let Ok(_) = tab.navigate_to(iframe_url) {
+                                let _ = tab.wait_until_navigated();
 
-                                 // Inject observer again for the new page
-                                 let _ = tab.evaluate(observer_script, false);
+                                // Inject observer again for the new page
+                                let _ = tab.evaluate(observer_script, false);
 
-                                 // Wait a bit
-                                 std::thread::sleep(Duration::from_secs(3));
+                                // Wait a bit
+                                std::thread::sleep(Duration::from_secs(3));
 
-                                 // Quick scan (don't do full 8 attempts, just quick check + click)
+                                // Quick scan (don't do full 8 attempts, just quick check + click)
 
-                                 // 1. Check immediately
-                                 if let Some(url) = self.check_for_video_url(&tab) {
-                                     self.emit_progress(app_handle, "Video URL found in iframe!", 100);
-                                     return Ok(Some(url));
-                                 }
+                                // 1. Check immediately
+                                if let Some(url) = self.check_for_video_url(&tab) {
+                                    self.emit_progress(
+                                        app_handle,
+                                        "Video URL found in iframe!",
+                                        100,
+                                    );
+                                    return Ok(Some(url));
+                                }
 
-                                 // 2. Click (using duplicated script to avoid scope issues)
-                                 let click_script_iframe = r#"
+                                // 2. Click (using duplicated script to avoid scope issues)
+                                let click_script_iframe = r#"
                                     (function() {
                                         console.log("Triggering aggressive click in iframe...");
                                         const selectors = [
@@ -333,30 +487,34 @@ impl ChromeVideoDetector {
                                         return true;
                                     })()
                                 "#;
-                                 let _ = tab.evaluate(click_script_iframe, false);
-                                 std::thread::sleep(Duration::from_secs(3));
+                                let _ = tab.evaluate(click_script_iframe, false);
+                                std::thread::sleep(Duration::from_secs(3));
 
-                                 // 3. Check again
-                                 if let Some(url) = self.check_for_video_url(&tab) {
-                                     self.emit_progress(app_handle, "Video URL found in iframe!", 100);
-                                     return Ok(Some(url));
-                                 }
+                                // 3. Check again
+                                if let Some(url) = self.check_for_video_url(&tab) {
+                                    self.emit_progress(
+                                        app_handle,
+                                        "Video URL found in iframe!",
+                                        100,
+                                    );
+                                    return Ok(Some(url));
+                                }
 
-                                 // DEBUG: Dump iframe HTML to file to analyze why regex failed
-                                 let dump_script = "document.documentElement.outerHTML";
-                                 if let Ok(result) = tab.evaluate(dump_script, false) {
+                                // DEBUG: Dump iframe HTML to file to analyze why regex failed
+                                let dump_script = "document.documentElement.outerHTML";
+                                if let Ok(result) = tab.evaluate(dump_script, false) {
                                     if let Some(value) = result.value {
                                         if let Ok(html) = serde_json::from_value::<String>(value) {
                                             let _ = std::fs::write("iframe_dump.html", html);
                                             eprintln!("[ChromeDetector] Dumped iframe HTML to iframe_dump.html");
                                         }
                                     }
-                                 }
-                             }
-                         }
-                     }
-                 }
-             }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         self.emit_progress(app_handle, "No video URL found after all attempts", 100);
@@ -369,9 +527,24 @@ impl ChromeVideoDetector {
         let observer_check_code = r#"
             (function() {
                 if (window.__FOUND_URLS && window.__FOUND_URLS.length > 0) {
-                    // Return the most recent m3u8 if possible
-                    const m3u8s = window.__FOUND_URLS.filter(u => u.includes('.m3u8'));
+                    const isPreview = (u) => u.includes('fourhoi.com') || u.includes('growcdnssedge.com') || u.includes('preview.mp4');
+                    
+                    // Filter and prioritize
+                    const m3u8s = window.__FOUND_URLS.filter(u => u.includes('.m3u8') && !isPreview(u));
+                    
+                    // Prioritize surrit.com
+                    const surrit = m3u8s.find(u => u.includes('surrit.com'));
+                    if (surrit) return JSON.stringify([surrit]);
+                    
+                    // Prioritize 720p or higher if named
+                    const highRes = m3u8s.find(u => u.includes('720p') || u.includes('1080p') || u.includes('original'));
+                    if (highRes) return JSON.stringify([highRes]);
+
                     if (m3u8s.length > 0) return JSON.stringify([m3u8s[m3u8s.length-1]]);
+                    
+                    const mp4s = window.__FOUND_URLS.filter(u => u.includes('.mp4') && !isPreview(u));
+                    if (mp4s.length > 0) return JSON.stringify([mp4s[0]]);
+
                     return JSON.stringify(window.__FOUND_URLS);
                 }
                 return "[]";
@@ -383,7 +556,10 @@ impl ChromeVideoDetector {
                 if let Ok(urls) = serde_json::from_value::<Vec<String>>(json_str) {
                     for url in urls {
                         if url.contains(".m3u8") || url.contains(".mp4") {
-                            eprintln!("[ChromeDetector] Found URL via PerformanceObserver: {}", url);
+                            eprintln!(
+                                "[ChromeDetector] Found URL via PerformanceObserver: {}",
+                                url
+                            );
                             return Some(url);
                         }
                     }
@@ -418,8 +594,8 @@ impl ChromeVideoDetector {
                         }
                         // Accept mp4 if no m3u8 found (will be checked in loop)
                         if url.contains(".mp4") {
-                             eprintln!("[ChromeDetector] Found .mp4 URL via Network: {}", url);
-                             return Some(url);
+                            eprintln!("[ChromeDetector] Found .mp4 URL via Network: {}", url);
+                            return Some(url);
                         }
                     }
                 }
@@ -445,13 +621,14 @@ impl ChromeVideoDetector {
             if let Some(json_str) = result.value {
                 if let Ok(urls) = serde_json::from_value::<Vec<String>>(json_str) {
                     for url in urls {
-                        if url.contains(".m3u8") || url.contains(".mp4") || url.starts_with("blob:") {
-                             eprintln!("[ChromeDetector] Found URL via Video Tag: {}", url);
-                             // If it's a blob, we might need to do more, but returning it is better than nothing
-                             // ideally we'd need to intercept the fetch for the blob content
-                             if !url.starts_with("blob:") {
-                                 return Some(url);
-                             }
+                        if url.contains(".m3u8") || url.contains(".mp4") || url.starts_with("blob:")
+                        {
+                            eprintln!("[ChromeDetector] Found URL via Video Tag: {}", url);
+                            // If it's a blob, we might need to do more, but returning it is better than nothing
+                            // ideally we'd need to intercept the fetch for the blob content
+                            if !url.starts_with("blob:") {
+                                return Some(url);
+                            }
                         }
                     }
                 }
@@ -486,7 +663,8 @@ impl ChromeVideoDetector {
             if let Some(value) = result.value {
                 if let Ok(url) = serde_json::from_value::<String>(value) {
                     if !url.is_empty() {
-                         let clean_url = url.replace("\\/", "/")
+                        let clean_url = url
+                            .replace("\\/", "/")
                             .replace("\\u0026", "&")
                             .replace("&amp;", "&");
                         eprintln!("[ChromeDetector] Found URL via Regex: {}", clean_url);
@@ -518,13 +696,104 @@ impl ChromeVideoDetector {
         if let Ok(result) = tab.evaluate(config_search_code, false) {
             if let Some(value) = result.value {
                 if let Ok(config) = serde_json::from_value::<serde_json::Value>(value) {
-                    if let (Some(asset), Some(media_id)) = (config["asset"].as_str(), config["mediaId"].as_str()) {
+                    if let (Some(asset), Some(media_id)) =
+                        (config["asset"].as_str(), config["mediaId"].as_str())
+                    {
                         // Construct the master.m3u8 URL which is the most common
                         let url = format!("https://{}/hls/{}/master.m3u8", asset, media_id);
                         eprintln!("[ChromeDetector] Constructed URL from page config: {}", url);
                         return Some(url);
                     }
                 }
+            }
+        }
+
+        None
+    }
+
+    /// Extract video ID from NjavTV URL
+    /// e.g., https://njavtv.com/dm13/th/cus-1267 -> cus-1267
+    fn extract_njavtv_video_id(url: &str) -> Option<String> {
+        // Handle URLs like /dm13/th/cus-1267 or /cus-1267
+        if let Some(pos) = url.rfind('/') {
+            let part = &url[pos + 1..];
+            if !part.is_empty() && !part.contains('.') {
+                // Make sure it's not a domain
+                if !part.contains("njavtv.com") {
+                    return Some(part.to_string());
+                }
+            }
+        }
+        // Also try to match pattern like cus-1267, abp-123, etc.
+        let patterns = ["cus-", "abp-", "ipx-", "ssni-"];
+        for pattern in &patterns {
+            if let Some(idx) = url.to_lowercase().find(pattern) {
+                let start = idx;
+                let end = url[start..]
+                    .find('/')
+                    .map(|p| start + p)
+                    .unwrap_or(url.len());
+                let video_id = &url[start..end];
+                if !video_id.is_empty() && video_id.len() > 3 {
+                    return Some(video_id.to_string());
+                }
+            }
+        }
+        None
+    }
+
+    /// Extract m3u8 URL from playlist API response
+    fn extract_m3u8_from_playlist(response: &serde_json::Value) -> Option<String> {
+        // Try different response structures
+
+        // Structure 1: response.data.items[].file
+        if let Some(items) = response["data"]["items"].as_array() {
+            for item in items {
+                if let Some(file) = item["file"].as_str() {
+                    if file.contains(".m3u8") {
+                        return Some(file.to_string());
+                    }
+                }
+            }
+        }
+
+        // Structure 2: response.data.file
+        if let Some(file) = response["data"]["file"].as_str() {
+            if file.contains(".m3u8") {
+                return Some(file.to_string());
+            }
+        }
+
+        // Structure 3: response.data[].sources[].file
+        if let Some(data) = response["data"].as_array() {
+            for item in data {
+                if let Some(sources) = item["sources"].as_array() {
+                    for source in sources {
+                        if let Some(file) = source["file"].as_str() {
+                            if file.contains(".m3u8") {
+                                return Some(file.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Structure 4: response.items[].file
+        if let Some(items) = response["items"].as_array() {
+            for item in items {
+                if let Some(file) = item["file"].as_str() {
+                    if file.contains(".m3u8") {
+                        return Some(file.to_string());
+                    }
+                }
+            }
+        }
+
+        // Structure 5: response.file
+        if let Some(file) = response["file"].as_str() {
+            if file.contains(".m3u8") {
+                return Some(file.to_string());
             }
         }
 
