@@ -103,12 +103,37 @@ impl TitanParser {
         url.to_string()
     }
 
-    /// Extract series_id from URL path (e.g. /series/360 -> 360)
+    /// Extract series_id from URL path
+    /// Supports: /series/360, /archives/252482, or falls back to last path segment
     fn extract_series_id_from_url(url: &str) -> Option<i32> {
-        let re = Regex::new(r"/series/(\d+)").ok()?;
-        re.captures(url)
-            .and_then(|c| c.get(1))
-            .and_then(|m| m.as_str().parse().ok())
+        // Try /series/{id} pattern first
+        if let Ok(re) = Regex::new(r"/series/(\d+)") {
+            if let Some(caps) = re.captures(url) {
+                if let Some(m) = caps.get(1) {
+                    if let Ok(id) = m.as_str().parse::<i32>() {
+                        return Some(id);
+                    }
+                }
+            }
+        }
+        
+        // Try /archives/{id} pattern (single video posts)
+        if let Ok(re) = Regex::new(r"/archives/(\d+)") {
+            if let Some(caps) = re.captures(url) {
+                if let Some(m) = caps.get(1) {
+                    if let Ok(id) = m.as_str().parse::<i32>() {
+                        return Some(id);
+                    }
+                }
+            }
+        }
+        
+        None
+    }
+    
+    /// Check if this is an archive page (single video post)
+    pub fn is_archive_url(url: &str) -> bool {
+        url.contains("/archives/")
     }
 
     /// Fetch series information from a Titan network URL.
@@ -219,13 +244,71 @@ impl TitanParser {
             (title, poster_url_raw, ep_links, series_id_from_url)
         }; // document dropped here
 
-        // ── Fetch HLS stream URLs via API ────────────────────────────
-        // Use concurrent fetch (5 at a time) to speed up large series.
-        const CONCURRENT_FETCHES: usize = 5;
+        // ── Initialize episode maps ──────────────────────────────────
         let mut episode_urls: HashMap<i32, String> = HashMap::new();
         let mut episode_keys: HashMap<i32, HlsKeyInfo> = HashMap::new();
 
-        if !ep_links.is_empty() {
+        // ── Handle archive pages (single video posts) differently ─────
+        // Archive pages embed videos directly in HTML (dplayer data-config JSON or static m3u8)
+        if Self::is_archive_url(&final_url) {
+            eprintln!("[Titan] Archive page detected - extracting embedded video URLs");
+            
+            let mut found_urls: Vec<String> = Vec::new();
+            let mut seen_urls = std::collections::HashSet::new();
+
+            // ── Strategy 1: JSON "url" field inside data-config (dplayer) ───────────────
+            // Handles: data-config='{"video":{"url":"https:\/\/hls.example.com\/...m3u8?auth_key=..."}}'
+            // The URL field uses escaped slashes \/ which curl/html delivers as \/
+            let re_json_url = Regex::new(r#""url"\s*:\s*"(https?:[^"]*?\.m3u8[^"]*?)""#).unwrap();
+            for cap in re_json_url.captures_iter(&html) {
+                if let Some(m) = cap.get(1) {
+                    let url = m.as_str().replace("\\/", "/");
+                    if seen_urls.insert(url.clone()) {
+                        eprintln!("[Titan] dplayer JSON URL: {}", &url[..url.len().min(80)]);
+                        found_urls.push(url);
+                    }
+                }
+            }
+
+            // ── Strategy 2: Classic quoted m3u8 URL (fallback for other embed styles) ──
+            if found_urls.is_empty() {
+                let re_quoted = Regex::new(r#"["'](https?://[^"']*?\.m3u8[^"']*?)["']"#).unwrap();
+                for cap in re_quoted.captures_iter(&html) {
+                    if let Some(m) = cap.get(1) {
+                        let url = m.as_str().replace("\\/", "/");
+                        if seen_urls.insert(url.clone()) {
+                            found_urls.push(url);
+                        }
+                    }
+                }
+            }
+
+            // ── Strategy 3: Broad m3u8 anywhere in the page ──────────────────────────
+            if found_urls.is_empty() {
+                let re_broad = Regex::new(r#"(https?:[^\s"'<>]*?\.m3u8[^\s"'<>]*)"#).unwrap();
+                for cap in re_broad.captures_iter(&html) {
+                    if let Some(m) = cap.get(1) {
+                        let url = m.as_str().replace("\\/", "/");
+                        if seen_urls.insert(url.clone()) {
+                            found_urls.push(url);
+                        }
+                    }
+                }
+            }
+
+            if !found_urls.is_empty() {
+                eprintln!("[Titan] Archive: found {} video URL(s)", found_urls.len());
+                for (idx, video_url) in found_urls.iter().enumerate() {
+                    episode_urls.insert(idx as i32 + 1, video_url.clone());
+                }
+            } else {
+                eprintln!("[Titan] Archive page has no static m3u8, marking for Playwright detection");
+            }
+        } else if !ep_links.is_empty() {
+            // ── Fetch HLS stream URLs via API ────────────────────────────
+            // Use concurrent fetch (5 at a time) to speed up large series.
+            const CONCURRENT_FETCHES: usize = 5;
+            
             if let Some(series_id) = series_id_from_url {
                 eprintln!(
                     "[Titan] Fetching {} episode URLs concurrently (batch={})",

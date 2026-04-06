@@ -14,7 +14,7 @@ use hsck_parser::HsckParser;
 use njavtv_parser::NjavtvParser;
 use parser::RongyokParser;
 use serde::{Deserialize, Serialize};
-use titan_parser::{TitanParser, HlsKeyInfo};
+use titan_parser::{TitanParser, TitanSeriesInfo, HlsKeyInfo};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -301,7 +301,42 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
         }
     } else if TitanParser::is_titan_url(&url, &settings.titan_domain) {
         // Use Titan Parser
-        let titan_info = state.titan_parser.get_series_info(&url, &settings.titan_domain).await?;
+        let mut titan_info = state.titan_parser.get_series_info(&url, &settings.titan_domain).await?;
+        
+        // If Titan found 0 episodes on an archive page, try Playwright dynamic detection
+        if titan_info.total_episodes == 0 && TitanParser::is_archive_url(&url) {
+            eprintln!("[Titan] No episodes found via static analysis, trying Playwright detection...");
+            
+            // Use Chrome detector to find video URL (lock is released immediately after)
+            let detected_url = {
+                let mut detector = state.chrome_detector.lock().unwrap();
+                detector.detect_video_url(&url, Some(&app_handle))?
+            }; // Lock released here
+            
+            if let Some(video_url) = detected_url {
+                eprintln!("[Titan+Playwright] Found video URL: {}", video_url);
+                
+                // Create episode map with detected URL
+                let mut episode_urls = HashMap::new();
+                episode_urls.insert(1, video_url.clone());
+                
+                titan_info = TitanSeriesInfo {
+                    url: url.clone(),
+                    title: if titan_info.title.is_empty() || titan_info.title == "Unknown Video" {
+                        "Archive Video".to_string()
+                    } else {
+                        titan_info.title
+                    },
+                    total_episodes: 1,
+                    poster_url: titan_info.poster_url,
+                    episode_urls,
+                    episode_keys: HashMap::new(),
+                };
+            } else {
+                eprintln!("[Titan+Playwright] No video URL detected");
+            }
+        }
+        
         UnifiedSeriesInfo {
             series_id: 0,
             title: titan_info.title,
