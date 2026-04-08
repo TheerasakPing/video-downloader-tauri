@@ -1,5 +1,5 @@
 use headless_chrome::{Browser, LaunchOptions};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
@@ -448,31 +448,6 @@ impl ChromeVideoDetector {
             debug_log("[njav] javxx.com SPA detection starting");
             self.emit_progress(app_handle, "Loading javxx.com player...", 50);
 
-            // === STRATEGY 0: CDP Network interception (most reliable) ===
-            // Register a response handler that captures m3u8 URLs from ALL network
-            // requests, including cross-origin iframe requests (surrit.store → wowstream CDN)
-            let found_m3u8: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-            let found_m3u8_clone = found_m3u8.clone();
-
-            let handler_registered = tab.register_response_handling(
-                "m3u8_interceptor",
-                Box::new(move |params, _get_body| {
-                    let url = &params.response.url;
-                    if url.contains(".m3u8") {
-                        debug_log(&format!("[njav] CDP intercepted m3u8: {}", url));
-                        if let Ok(mut m) = found_m3u8_clone.lock() {
-                            if m.is_none() {
-                                *m = Some(url.clone());
-                            }
-                        }
-                    }
-                }),
-            );
-
-            if let Ok(_) = handler_registered {
-                debug_log("[njav] CDP network interception registered");
-            }
-
             // Wait for React SPA to render
             std::thread::sleep(Duration::from_secs(3));
 
@@ -533,17 +508,6 @@ impl ChromeVideoDetector {
                     &format!("Scanning javxx.com SPA... ({}/15)", attempt),
                     progress.min(95) as u32,
                 );
-
-                // === Check CDP-intercepted m3u8 first (most reliable) ===
-                if let Ok(m) = found_m3u8.lock() {
-                    if let Some(ref url) = *m {
-                        debug_log(&format!("[njav] Found m3u8 via CDP interception (attempt {}): {}", attempt, url));
-                        self.extract_cookies(&tab);
-                        self.emit_progress(app_handle, "Found video URL!", 100);
-                        let _ = tab.deregister_response_handling("m3u8_interceptor");
-                        return Ok(Some(url.clone()));
-                    }
-                }
 
                 // Click center to trigger video loading
                 let click_script = r#"
@@ -646,75 +610,6 @@ impl ChromeVideoDetector {
                     if let Ok(html) = serde_json::from_value::<String>(val) {
                         let _ = std::fs::write("/tmp/javxx_full.html", &html);
                         debug_log(&format!("[njav] Saved /tmp/javxx_full.html ({} chars)", html.len()));
-                    }
-                }
-            }
-
-            debug_log("[njav] javxx.com SPA polling failed, checking surrit.store iframe...");
-            eprintln!("[ChromeDetector] javxx.com SPA polling failed, checking surrit.store iframe...");
-
-            // === STRATEGY 4: Navigate directly to surrit.store iframe ===
-            // javxx.com loads video via surrit.store iframe — navigate there directly
-            let iframe_extract_script = r#"
-                (function() {
-                    const iframes = document.querySelectorAll('iframe');
-                    for (let i of iframes) {
-                        if (i.src && i.src.includes('surrit.store')) return i.src;
-                    }
-                    return null;
-                })()
-            "#;
-
-            if let Ok(result) = tab.evaluate(iframe_extract_script, false) {
-                if let Some(val) = result.value {
-                    if let Ok(iframe_url) = serde_json::from_value::<String>(val) {
-                        if !iframe_url.is_empty() {
-                            debug_log(&format!("[njav] Found surrit.store iframe: {}", iframe_url));
-                            self.emit_progress(app_handle, "Loading video player iframe...", 70);
-
-                            // Use Page::AddScriptToEvaluateOnNewDocument to inject observer BEFORE page loads
-                            // This ensures PerformanceObserver captures the m3u8 request that happens during page init
-                            let preload_script = r#"
-                                (function() {
-                                    window.__FOUND_URLS = [];
-                                    if (performance.setResourceTimingBufferSize) performance.setResourceTimingBufferSize(5000);
-                                    try {
-                                        const observer = new PerformanceObserver((list) => {
-                                            list.getEntries().forEach((entry) => {
-                                                const n = entry.name.toLowerCase();
-                                                if (n.includes('.m3u8') || n.includes('.mp4') || n.includes('wowstream')) {
-                                                    window.__FOUND_URLS.push(entry.name);
-                                                }
-                                            });
-                                        });
-                                        observer.observe({ entryTypes: ['resource'] });
-                                    } catch(e) {}
-                                })()
-                            "#.to_string();
-                            let _ = tab.call_method(headless_chrome::protocol::cdp::Page::AddScriptToEvaluateOnNewDocument {
-                                source: preload_script,
-                                world_name: None,
-                                include_command_line_api: None,
-                                run_immediately: None,
-                            });
-
-                            if let Ok(_) = tab.navigate_to(&iframe_url) {
-                                let _ = tab.wait_until_navigated();
-                                std::thread::sleep(Duration::from_secs(5));
-
-                                // Check for video URL on surrit.store using preloaded observer
-                                for attempt in 1..=8 {
-                                    // Check preloaded PerformanceObserver results
-                                    if let Some(url) = self.check_for_video_url(&tab) {
-                                        debug_log(&format!("[njav] Found m3u8 via surrit.store iframe (attempt {}): {}", attempt, url));
-                                        self.extract_cookies(&tab);
-                                        self.emit_progress(app_handle, "Found video URL!", 100);
-                                        return Ok(Some(url));
-                                    }
-                                    std::thread::sleep(Duration::from_secs(2));
-                                }
-                            }
-                        }
                     }
                 }
             }

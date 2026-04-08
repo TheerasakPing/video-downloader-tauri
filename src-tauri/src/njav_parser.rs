@@ -14,6 +14,8 @@ pub struct NjavSeriesInfo {
     pub video_code: String,
     /// If single-episode page, contains the page URL for Chrome detection
     pub direct_page_url: Option<String>,
+    /// Direct javxx.com player URL (bypasses Cloudflare on njav.org)
+    pub javxx_url: Option<String>,
 }
 
 pub struct NjavParser {
@@ -39,11 +41,12 @@ impl NjavParser {
     /// Extract series info from njav.org page
     ///
     /// njav.org structure:
-    ///   /snos-034/  → WordPress page with advanced_iframe → missav.guide → 302 → javxx.com
-    ///   javxx.com is a React SPA that embeds surrit.store video player via iframe
+    ///   /snos-034/  → Cloudflare blocked (403). Must use javxx.com instead.
+    ///   javxx.com is a React SPA that embeds surrit.store video player via iframe.
+    ///   URL pattern: https://javxx.com/en/v/{code}
     ///
-    /// We pre-resolve the iframe chain server-side (njav → missav → javxx) so that
-    /// Chrome detector receives the final javxx.com URL instead of the njav.org page.
+    /// Strategy: Skip Cloudflare-protected njav.org entirely.
+    /// Go directly to javxx.com which hosts the actual video player.
     /// Chrome detector then handles the SPA rendering and surrit.store iframe.
     pub async fn get_series_info(
         &self,
@@ -54,52 +57,53 @@ impl NjavParser {
 
         // Extract video code from URL (e.g., "snos-034" from https://njav.org/snos-034/)
         let video_code = self.extract_video_code(series_url);
+        let video_code_lower = video_code.to_lowercase();
 
-        // Try to fetch the page HTML for title/poster AND iframe resolution
+        // Build list of candidate URL suffixes to try on javxx.com
+        // Some videos are under "uncensored-leaked" or other categories
+        let candidates = vec![
+            video_code_lower.clone(),
+            format!("{}-uncensored-leaked", video_code_lower),
+            format!("{}-uncensored", video_code_lower),
+        ];
+
         let mut title = video_code.to_uppercase();
-        let mut poster_url = None;
-        let mut direct_page_url = Some(series_url.to_string());
+        let mut poster_url: Option<String> = None;
+        let mut found_javxx_url: Option<String> = None;
 
-        // Phase 1: Synchronous extraction from HTML (no awaits while Html is alive)
-        let iframe_src: Option<String> = if let Ok(html) = self.try_fetch(series_url).await {
-            let document = Html::parse_document(&html);
+        for suffix in &candidates {
+            let url = format!("https://javxx.com/en/v/{}", suffix);
+            eprintln!("[Njav] Trying javxx.com: {}", url);
 
-            // Extract title from page
-            if let Some(t) = self.extract_title_from_html(&document, &html) {
-                title = t;
-            }
+            if let Ok(html) = self.try_fetch(&url).await {
+                if !html.contains("404 Not Found") && html.contains("WatchPlayer") {
+                    eprintln!("[Njav] Found video at: {}", url);
+                    found_javxx_url = Some(url);
 
-            // Extract poster
-            poster_url = self.extract_poster(&document);
-
-            // Extract iframe src for later resolution (after dropping document)
-            self.extract_advanced_iframe_src(&html)
-        } else {
-            None
-        };
-
-        // Phase 2: Async redirect resolution (document is dropped, safe to await)
-        if let Some(ref src) = iframe_src {
-            eprintln!("[Njav] Found iframe URL: {}", src);
-            match self.resolve_redirect(src).await {
-                Some(resolved_url) => {
-                    eprintln!("[Njav] Resolved video page: {}", resolved_url);
-                    direct_page_url = Some(resolved_url);
-                }
-                None => {
-                    eprintln!(
-                        "[Njav] Could not resolve iframe redirect, falling back to original URL"
-                    );
+                    let document = Html::parse_document(&html);
+                    if let Some(t) = self.extract_title_from_html(&document, &html) {
+                        let cleaned = t
+                            .replace("JAVxx - Watch ", "")
+                            .replace("JAV Online in HD", "")
+                            .replace(" | Free Japan JAV MissAV", "")
+                            .replace(" | Free Japan AV MissAV", "")
+                            .trim()
+                            .to_string();
+                        if !cleaned.is_empty() {
+                            title = cleaned;
+                        }
+                    }
+                    poster_url = self.extract_poster_from_javxx(&html);
+                    break;
+                } else {
+                    eprintln!("[Njav] javxx.com returned 404 for: {}", suffix);
                 }
             }
-        } else {
-            eprintln!("[Njav] No advanced_iframe found in HTML, using original URL");
         }
 
-        eprintln!(
-            "[Njav] Video code: {}, Title: {}, Direct URL: {:?}",
-            video_code, title, direct_page_url
-        );
+        // If none of the candidates worked, still use the original code as fallback
+        let javxx_url = found_javxx_url
+            .unwrap_or_else(|| format!("https://javxx.com/en/v/{}", video_code_lower));
 
         Ok(NjavSeriesInfo {
             url: series_url.to_string(),
@@ -107,7 +111,8 @@ impl NjavParser {
             total_episodes: 1,
             poster_url,
             video_code,
-            direct_page_url,
+            direct_page_url: Some(series_url.to_string()),
+            javxx_url: Some(javxx_url),
         })
     }
 
@@ -134,8 +139,10 @@ impl NjavParser {
     /// Extract video code from URL (e.g., "snos-034")
     fn extract_video_code(&self, url: &str) -> String {
         // Extract last path segment: https://njav.org/snos-034/ → snos-034
-        url.trim_end_matches('/')
-            .split('/')
+        // Be robust against trailing characters like colons or spaces
+        let cleaned = url.trim_end_matches(|c: char| !c.is_alphanumeric());
+        
+        cleaned.split('/')
             .filter(|s| !s.is_empty())
             .last()
             .unwrap_or("unknown")
@@ -272,6 +279,43 @@ impl NjavParser {
                     if src.contains("uploads") && !src.contains("banner") && !src.contains("register") {
                         return Some(src.to_string());
                     }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Extract poster from javxx.com HTML
+    /// javxx.com has: cover="https://icdn.javxx.com/img2/.../cover.webp"
+    /// and also: <meta property="og:image" content="https://icdn.javxx.com/...">
+    fn extract_poster_from_javxx(&self, html: &str) -> Option<String> {
+        // Try cover="..." attribute on WatchPlayer tag
+        let cover_re = Regex::new(r#"cover="(https://icdn\.javxx\.com/[^"]+)"#).ok()?;
+        if let Some(captures) = cover_re.captures(html) {
+            if let Some(m) = captures.get(1) {
+                return Some(m.as_str().to_string());
+            }
+        }
+
+        // Try og:image meta tag
+        let og_re = Regex::new(r#"<meta\s+property="og:image"\s+content="([^"]+)"#).ok()?;
+        if let Some(captures) = og_re.captures(html) {
+            if let Some(m) = captures.get(1) {
+                let url = m.as_str().to_string();
+                if url.contains("icdn") || url.contains("cover") {
+                    return Some(url);
+                }
+            }
+        }
+
+        // Try twitter:image
+        let tw_re = Regex::new(r#"<meta\s+name="twitter:image"\s+content="([^"]+)"#).ok()?;
+        if let Some(captures) = tw_re.captures(html) {
+            if let Some(m) = captures.get(1) {
+                let url = m.as_str().to_string();
+                if url.contains("icdn") || url.contains("cover") {
+                    return Some(url);
                 }
             }
         }

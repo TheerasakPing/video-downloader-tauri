@@ -1,5 +1,5 @@
 use headless_chrome::{Browser, LaunchOptions};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
@@ -426,303 +426,180 @@ impl ChromeVideoDetector {
         }
 
         // njav.org / javxx.com handling:
-        // javxx.com is a React SPA (no iframes!) — renders video player directly
-        // Video is loaded via HLS.js with m3u8 from surrit.store/wowstream CDN
+        // javxx.com/v/{code} → React SPA → surrit.store iframe → wowstream CDN m3u8
         let is_njav = url.contains("njav.org") || url.contains("missav.guide") || url.contains("javxx.com");
         if is_njav {
             debug_log(&format!("[njav] Starting detection for: {}", url));
-            eprintln!("[ChromeDetector] njav/javxx detected - SPA detection mode");
+            eprintln!("[ChromeDetector] njav/javxx detected - resolving video chain");
             self.emit_progress(app_handle, "Resolving video page...", 45);
 
-            // For njav.org, it's Cloudflare blocked - skip directly
-            if url.contains("njav.org") && !url.contains("javxx.com") {
-                debug_log("[njav] njav.org blocked by Cloudflare, skipping");
-                eprintln!("[ChromeDetector] njav.org blocked, falling through...");
-                // Don't return, let it try the next URL in the lib.rs fallback chain
-                // But set a flag so we don't waste time
-                self.emit_progress(app_handle, "Cloudflare blocked - skipping", 100);
-                return Ok(None);
-            }
-
-            // javxx.com SPA detection
-            debug_log("[njav] javxx.com SPA detection starting");
-            self.emit_progress(app_handle, "Loading javxx.com player...", 50);
-
-            // === STRATEGY 0: CDP Network interception (most reliable) ===
-            // Register a response handler that captures m3u8 URLs from ALL network
-            // requests, including cross-origin iframe requests (surrit.store → wowstream CDN)
-            let found_m3u8: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-            let found_m3u8_clone = found_m3u8.clone();
-
-            let handler_registered = tab.register_response_handling(
-                "m3u8_interceptor",
-                Box::new(move |params, _get_body| {
-                    let url = &params.response.url;
-                    if url.contains(".m3u8") {
-                        debug_log(&format!("[njav] CDP intercepted m3u8: {}", url));
-                        if let Ok(mut m) = found_m3u8_clone.lock() {
-                            if m.is_none() {
-                                *m = Some(url.clone());
-                            }
+            // Wait for page to fully load (React SPA)
+            if url.contains("javxx.com") {
+                self.emit_progress(app_handle, "Loading javxx.com player...", 50);
+                std::thread::sleep(Duration::from_secs(3));
+            } else {
+                // njav.org or missav.guide - wait for redirect
+                self.emit_progress(app_handle, "Waiting for redirect...", 50);
+                std::thread::sleep(Duration::from_secs(5));
+                // Check if we got redirected
+                if let Ok(result) = tab.evaluate("window.location.href", false) {
+                    if let Some(val) = result.value {
+                        if let Ok(current) = serde_json::from_value::<String>(val) {
+                            debug_log(&format!("[njav] After redirect: {}", current));
                         }
                     }
-                }),
-            );
-
-            if let Ok(_) = handler_registered {
-                debug_log("[njav] CDP network interception registered");
+                }
             }
-
-            // Wait for React SPA to render
-            std::thread::sleep(Duration::from_secs(3));
 
             // Inject PerformanceObserver
             let _ = tab.evaluate(observer_script, false);
 
-            // === STRATEGY 1: Check for video elements and HLS.js directly ===
-            let video_check_script = r#"
+            // === PHASE 1: Find video iframe on javxx.com SPA ===
+            let video_iframe_script = r#"
                 (function() {
-                    const result = { videoSrc: null, hlsUrl: null, playerUrl: null };
-
-                    // 1. Check video elements
-                    const videos = document.querySelectorAll('video');
-                    for (let v of videos) {
-                        if (v.src && v.src.includes('m3u8')) {
-                            result.videoSrc = v.src;
-                        }
-                        if (v.currentSrc && v.currentSrc.includes('m3u8')) {
-                            result.videoSrc = v.currentSrc;
-                        }
-                        // Check for HLS.js attached to video
-                        if (v._hls && v._hls.url) {
-                            result.hlsUrl = v._hls.url;
-                        }
-                        if (v.hls && v.hls.url) {
-                            result.hlsUrl = v.hls.url;
-                        }
-                        // Check src attribute on <source> elements
-                        v.querySelectorAll('source').forEach(s => {
-                            if (s.src && s.src.includes('m3u8')) {
-                                result.videoSrc = s.src;
-                            }
-                        });
-                    }
-
-                    // 2. Check window.hls (global HLS.js instance)
-                    if (window.hls && window.hls.url) {
-                        result.hlsUrl = window.hls.url;
-                    }
-
-                    // 3. Check for common player globals
-                    if (window.player && window.player.src) {
-                        result.playerUrl = window.player.src;
-                    }
-                    if (window.jwplayer && window.jwplayer().getPlaylistItem()) {
-                        result.playerUrl = window.jwplayer().getPlaylistItem().file;
-                    }
-
-                    return JSON.stringify(result);
-                })()
-            "#;
-
-            // Poll for video elements and HLS.js
-            for attempt in 1..=15 {
-                let progress = 50 + (attempt * 3);
-                self.emit_progress(
-                    app_handle,
-                    &format!("Scanning javxx.com SPA... ({}/15)", attempt),
-                    progress.min(95) as u32,
-                );
-
-                // === Check CDP-intercepted m3u8 first (most reliable) ===
-                if let Ok(m) = found_m3u8.lock() {
-                    if let Some(ref url) = *m {
-                        debug_log(&format!("[njav] Found m3u8 via CDP interception (attempt {}): {}", attempt, url));
-                        self.extract_cookies(&tab);
-                        self.emit_progress(app_handle, "Found video URL!", 100);
-                        let _ = tab.deregister_response_handling("m3u8_interceptor");
-                        return Ok(Some(url.clone()));
-                    }
-                }
-
-                // Click center to trigger video loading
-                let click_script = r#"
-                    (function() {
-                        // Click center of screen
-                        const x = window.innerWidth / 2;
-                        const y = window.innerHeight / 2;
-                        const el = document.elementFromPoint(x, y);
-                        if (el) el.click();
-
-                        // Try to play any video
-                        document.querySelectorAll('video').forEach(v => {
-                            try { v.play(); } catch(e) {}
-                        });
-
-                        // Click any play buttons
-                        document.querySelectorAll('.play, .btn-play, [data-action="play"], button, .play-button').forEach(b => {
-                            try { b.click(); } catch(e) {}
-                        });
-
-                        return true;
-                    })()
-                "#;
-                let _ = tab.evaluate(click_script, false);
-                std::thread::sleep(Duration::from_secs(2));
-
-                // Check for video elements
-                if let Ok(result) = tab.evaluate(video_check_script, false) {
-                    if let Some(val) = result.value {
-                        if let Ok(video_info) = serde_json::from_value::<serde_json::Value>(val) {
-                            if let Some(m3u8) = video_info["videoSrc"].as_str() {
-                                if m3u8.contains("m3u8") && !m3u8.contains("blob:") {
-                                    debug_log(&format!("[njav] Found m3u8 from video src (attempt {}): {}", attempt, m3u8));
-                                    self.extract_cookies(&tab);
-                                    self.emit_progress(app_handle, "Found video URL!", 100);
-                                    return Ok(Some(m3u8.to_string()));
-                                }
-                            }
-                            if let Some(m3u8) = video_info["hlsUrl"].as_str() {
-                                if m3u8.contains("m3u8") {
-                                    debug_log(&format!("[njav] Found m3u8 from HLS.js (attempt {}): {}", attempt, m3u8));
-                                    self.extract_cookies(&tab);
-                                    self.emit_progress(app_handle, "Found video URL!", 100);
-                                    return Ok(Some(m3u8.to_string()));
-                                }
-                            }
-                            if let Some(m3u8) = video_info["playerUrl"].as_str() {
-                                if m3u8.contains("m3u8") {
-                                    debug_log(&format!("[njav] Found m3u8 from player (attempt {}): {}", attempt, m3u8));
-                                    self.extract_cookies(&tab);
-                                    self.emit_progress(app_handle, "Found video URL!", 100);
-                                    return Ok(Some(m3u8.to_string()));
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Check PerformanceObserver
-                if let Some(found_url) = self.check_for_video_url(&tab) {
-                    debug_log(&format!("[njav] Found m3u8 via PerformanceObserver (attempt {}): {}", attempt, found_url));
-                    self.extract_cookies(&tab);
-                    self.emit_progress(app_handle, "Found video URL!", 100);
-                    return Ok(Some(found_url));
-                }
-
-                // Log candidates from PerformanceObserver
-                if let Ok(result) = tab.evaluate("JSON.stringify(window.__FOUND_URLS || [])", false) {
-                    if let Some(val) = result.value {
-                        if let Ok(candidates) = serde_json::from_value::<Vec<String>>(val) {
-                            if !candidates.is_empty() {
-                                debug_log(&format!("[njav] Observer candidates: {:?}", candidates));
-                            }
-                        }
-                    }
-                }
-
-                // Diagnostic every 5 attempts
-                if attempt % 5 == 0 {
-                    let diag = r#"JSON.stringify({url: window.location.href, title: document.title, videos: document.querySelectorAll('video').length, iframes: document.querySelectorAll('iframe').length, hasHls: !!window.hls})"#;
-                    if let Ok(res) = tab.evaluate(diag, false) {
-                        debug_log(&format!("[njav] Diagnostic: {:?}", res.value));
-                    }
-                }
-            }
-
-            // === STRATEGY 2: Extract m3u8 from HTML source ===
-            debug_log("[njav] Extracting m3u8 from javxx.com HTML source...");
-            if let Some(m3u8) = self.extract_m3u8_from_html(&tab) {
-                debug_log(&format!("[njav] Found m3u8 in HTML: {}", m3u8));
-                self.extract_cookies(&tab);
-                self.emit_progress(app_handle, "Found video URL from HTML!", 100);
-                return Ok(Some(m3u8));
-            }
-
-            // === STRATEGY 3: Dump HTML for analysis ===
-            debug_log("[njav] Dumping HTML for analysis...");
-            if let Ok(result) = tab.evaluate("document.documentElement.outerHTML", false) {
-                if let Some(val) = result.value {
-                    if let Ok(html) = serde_json::from_value::<String>(val) {
-                        let _ = std::fs::write("/tmp/javxx_full.html", &html);
-                        debug_log(&format!("[njav] Saved /tmp/javxx_full.html ({} chars)", html.len()));
-                    }
-                }
-            }
-
-            debug_log("[njav] javxx.com SPA polling failed, checking surrit.store iframe...");
-            eprintln!("[ChromeDetector] javxx.com SPA polling failed, checking surrit.store iframe...");
-
-            // === STRATEGY 4: Navigate directly to surrit.store iframe ===
-            // javxx.com loads video via surrit.store iframe — navigate there directly
-            let iframe_extract_script = r#"
-                (function() {
-                    const iframes = document.querySelectorAll('iframe');
+                    const iframes = document.querySelectorAll('iframe[src]');
                     for (let i of iframes) {
-                        if (i.src && i.src.includes('surrit.store')) return i.src;
+                        const s = i.src.toLowerCase();
+                        if (s.includes('surrit') || s.includes('wowstream') || s.includes('player') || s.includes('video') || s.includes('embed')) {
+                            return i.src;
+                        }
+                    }
+                    for (let i of iframes) {
+                        if (i.offsetWidth > 300 && i.offsetHeight > 200) return i.src;
                     }
                     return null;
                 })()
             "#;
 
-            if let Ok(result) = tab.evaluate(iframe_extract_script, false) {
-                if let Some(val) = result.value {
-                    if let Ok(iframe_url) = serde_json::from_value::<String>(val) {
-                        if !iframe_url.is_empty() {
-                            debug_log(&format!("[njav] Found surrit.store iframe: {}", iframe_url));
-                            self.emit_progress(app_handle, "Loading video player iframe...", 70);
+            let mut surrit_url: Option<String> = None;
 
-                            // Use Page::AddScriptToEvaluateOnNewDocument to inject observer BEFORE page loads
-                            // This ensures PerformanceObserver captures the m3u8 request that happens during page init
-                            let preload_script = r#"
-                                (function() {
-                                    window.__FOUND_URLS = [];
-                                    if (performance.setResourceTimingBufferSize) performance.setResourceTimingBufferSize(5000);
-                                    try {
-                                        const observer = new PerformanceObserver((list) => {
-                                            list.getEntries().forEach((entry) => {
-                                                const n = entry.name.toLowerCase();
-                                                if (n.includes('.m3u8') || n.includes('.mp4') || n.includes('wowstream')) {
-                                                    window.__FOUND_URLS.push(entry.name);
-                                                }
-                                            });
-                                        });
-                                        observer.observe({ entryTypes: ['resource'] });
-                                    } catch(e) {}
-                                })()
-                            "#.to_string();
-                            let _ = tab.call_method(headless_chrome::protocol::cdp::Page::AddScriptToEvaluateOnNewDocument {
-                                source: preload_script,
-                                world_name: None,
-                                include_command_line_api: None,
-                                run_immediately: None,
-                            });
+            // Poll up to 20 attempts for SPA to render the iframe (React can be slow)
+            for attempt in 1..=20 {
+                let progress = 50 + (attempt * 2);
+                self.emit_progress(
+                    app_handle,
+                    &format!("Waiting for video player... ({}/20)", attempt),
+                    progress.min(90) as u32,
+                );
 
-                            if let Ok(_) = tab.navigate_to(&iframe_url) {
-                                let _ = tab.wait_until_navigated();
-                                std::thread::sleep(Duration::from_secs(5));
+                // Click to dismiss overlays
+                let _ = tab.evaluate(click_script, false);
+                std::thread::sleep(Duration::from_secs(2));
 
-                                // Check for video URL on surrit.store using preloaded observer
-                                for attempt in 1..=8 {
-                                    // Check preloaded PerformanceObserver results
-                                    if let Some(url) = self.check_for_video_url(&tab) {
-                                        debug_log(&format!("[njav] Found m3u8 via surrit.store iframe (attempt {}): {}", attempt, url));
-                                        self.extract_cookies(&tab);
-                                        self.emit_progress(app_handle, "Found video URL!", 100);
-                                        return Ok(Some(url));
-                                    }
-                                    std::thread::sleep(Duration::from_secs(2));
+                if let Ok(result) = tab.evaluate(video_iframe_script, false) {
+                    if let Some(value) = result.value {
+                        if value.is_string() {
+                            if let Ok(found) = serde_json::from_value::<String>(value) {
+                                if !found.is_empty() {
+                                    debug_log(&format!("[njav] Found video iframe (attempt {}): {}", attempt, found));
+                                    surrit_url = Some(found);
+                                    break;
                                 }
                             }
                         }
                     }
                 }
+
+                // Diagnostic logging every 5 attempts
+                if attempt % 5 == 0 {
+                    let log_iframes = r#"JSON.stringify(Array.from(document.querySelectorAll('iframe')).map(i => ({src: i.src, width: i.offsetWidth, height: i.offsetHeight})))"#;
+                    if let Ok(res) = tab.evaluate(log_iframes, false) {
+                        debug_log(&format!("[njav] Attempt {} - All iframes: {:?}", attempt, res.value));
+                    }
+                    // Dump page title and URL
+                    let info_script = r#"JSON.stringify({url: window.location.href, title: document.title, iframes: document.querySelectorAll('iframe').length})"#;
+                    if let Ok(res) = tab.evaluate(info_script, false) {
+                        debug_log(&format!("[njav] Attempt {} - Page info: {:?}", attempt, res.value));
+                    }
+                }
             }
 
-            debug_log("[njav] javxx.com detection complete - no video found");
-            eprintln!("[ChromeDetector] javxx.com detection complete, no video found");
-        }
+            // === PHASE 2: Extract m3u8 from iframe ===
+            if let Some(ref surrit) = surrit_url {
+                debug_log(&format!("[njav] Found iframe: {}", surrit));
+                self.emit_progress(app_handle, "Loading video player...", 75);
 
+                // Try clicking on the main page first
+                let _ = tab.evaluate(click_script, false);
+                std::thread::sleep(Duration::from_secs(2));
+
+                // Check PerformanceObserver on main page first
+                for attempt in 1..=5 {
+                    std::thread::sleep(Duration::from_secs(2));
+                    if let Some(found_url) = self.check_for_video_url(&tab) {
+                        debug_log(&format!("[njav] Found m3u8 via PerformanceObserver (attempt {}): {}", attempt, found_url));
+                        self.extract_cookies(&tab);
+                        self.emit_progress(app_handle, "Found video URL!", 100);
+                        return Ok(Some(found_url));
+                    }
+                }
+
+                // === PHASE 3: Navigate directly to surrit iframe URL ===
+                debug_log(&format!("[njav] Navigating directly to: {}", surrit));
+                if let Ok(_) = tab.navigate_to(surrit) {
+                    let _ = tab.wait_until_navigated();
+                    debug_log(&format!("[njav] Navigated to: {:?}", tab.get_url()));
+
+                    // Re-inject observer on the surrit page
+                    let _ = tab.evaluate(observer_script, false);
+                    std::thread::sleep(Duration::from_secs(3));
+
+                    // Click play on surrit page
+                    let _ = tab.evaluate(click_script, false);
+                    std::thread::sleep(Duration::from_secs(3));
+
+                    // Check for m3u8 URL
+                    if let Some(found_url) = self.check_for_video_url(&tab) {
+                        debug_log(&format!("[njav] Found m3u8 from surrit page: {}", found_url));
+                        self.extract_cookies(&tab);
+                        self.emit_progress(app_handle, "Found video URL!", 100);
+                        return Ok(Some(found_url));
+                    }
+
+                    // Retry with more clicks
+                    for attempt in 1..=8 {
+                        debug_log(&format!("[njav] surrit click attempt {}/8", attempt));
+                        let _ = tab.evaluate(click_script, false);
+                        std::thread::sleep(Duration::from_secs(3));
+
+                        if let Some(found_url) = self.check_for_video_url(&tab) {
+                            debug_log(&format!("[njav] Found m3u8 (surrit retry {}): {}", attempt, found_url));
+                            self.extract_cookies(&tab);
+                            self.emit_progress(app_handle, "Found video URL!", 100);
+                            return Ok(Some(found_url));
+                        }
+
+                        // Dump HTML to analyze
+                        if attempt == 4 {
+                            let dump_script = "document.documentElement.outerHTML.substring(0, 5000)";
+                            if let Ok(res) = tab.evaluate(dump_script, false) {
+                                if let Some(val) = res.value {
+                                    if let Ok(html) = serde_json::from_value::<String>(val) {
+                                        let _ = std::fs::write("/tmp/njav_surrit_dump.html", &html);
+                                        debug_log(&format!("[njav] Dumped surrit HTML ({} chars)", html.len()));
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // === PHASE 4: Extract m3u8 from HTML source of surrit page ===
+                    debug_log("[njav] Extracting m3u8 from surrit page HTML...");
+                    if let Some(m3u8) = self.extract_m3u8_from_html(&tab) {
+                        debug_log(&format!("[njav] Found m3u8 in HTML source: {}", m3u8));
+                        self.extract_cookies(&tab);
+                        self.emit_progress(app_handle, "Found video URL from HTML!", 100);
+                        return Ok(Some(m3u8));
+                    }
+                }
+            } else {
+                debug_log("[njav] No video iframe found after polling");
+                // Try generic detection as fallback
+            }
+
+            // Fall through to generic detection
+            eprintln!("[ChromeDetector] njav specific methods failed, trying general detection...");
+        }
 
         // Inject PerformanceObserver immediately after load
         let _ = tab.evaluate(observer_script, false);
@@ -1074,6 +951,75 @@ impl ChromeVideoDetector {
     /// Extract video ID from NjavTV URL
     /// e.g., https://njavtv.com/dm13/th/cus-1267 -> cus-1267
     /// Extract m3u8 URL directly from page HTML source.
+    fn extract_m3u8_from_html(&self, tab: &headless_chrome::Tab) -> Option<String> {
+        let html_m3u8_script = r#"
+            (function() {
+                const html = document.documentElement.outerHTML;
+                const results = [];
+                const re1 = /https?:[\/\\]{0,2}[^"'\\\s]+\.m3u8[^"'\\\s]*/gi;
+                let m;
+                while ((m = re1.exec(html)) !== null) results.push(m[0].replace(/\\\//g, '/'));
+                const re2 = /"file"\s*:\s*"([^"]*\.m3u8[^"]*)"/gi;
+                while ((m = re2.exec(html)) !== null) results.push(m[1].replace(/\\\//g, '/'));
+                const re3 = /src\s*=\s*["']([^"']*\.m3u8[^"']*)["']/gi;
+                while ((m = re3.exec(html)) !== null) results.push(m[1]);
+                const re5 = /"videoUrl"\s*:\s*"([^"]+)"/gi;
+                while ((m = re5.exec(html)) !== null) results.push(m[1].replace(/\\\//g, '/'));
+                return JSON.stringify([...new Set(results)]);
+            })()
+        "#;
+
+        if let Ok(result) = tab.evaluate(html_m3u8_script, false) {
+            if let Some(val) = result.value {
+                if let Ok(urls) = serde_json::from_value::<Vec<String>>(val) {
+                    for url in urls {
+                        if !url.is_empty() && url.contains("m3u8") && !url.contains("google") && !url.contains("analytics") {
+                            let clean = url.replace("\\/", "/").replace("\\u0026", "&").replace("&amp;", "&");
+                            eprintln!("[ChromeDetector] Found m3u8 in HTML source: {}", clean);
+                            return Some(clean);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Dump HTML for analysis
+        if let Ok(result) = tab.evaluate("document.documentElement.outerHTML", false) {
+            if let Some(val) = result.value {
+                if let Ok(html) = serde_json::from_value::<String>(val) {
+                    let _ = std::fs::write("/tmp/njav_html_analysis.html", &html);
+                    debug_log(&format!("[njav] Dumped full HTML ({} chars)", html.len()));
+                    if let Some(m3u8) = Self::extract_m3u8_rust_regex(&html) {
+                        debug_log(&format!("[njav] Found m3u8 via Rust regex: {}", m3u8));
+                        return Some(m3u8);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Rust-side regex to find m3u8 URLs in HTML
+    fn extract_m3u8_rust_regex(html: &str) -> Option<String> {
+        let patterns = [
+            r"https?://[^\s\"'<>]+\.m3u8[^\s\"'<>]*",
+            r"https?://[^\s\"'<>]+m3u8[^\s\"'<>]*",
+        ];
+        for pattern in &patterns {
+            if let Ok(re) = regex::Regex::new(pattern) {
+                if let Some(mat) = re.find(html) {
+                    let url = mat.as_str();
+                    if !url.contains("google") && !url.contains("analytics") && !url.contains("gstatic") {
+                        return Some(url.to_string());
+                    }
+                }
+            }
+        }
+        None
+    }
+
+
+    /// Extract m3u8 URL directly from page HTML source.
     /// This is the most reliable fallback when PerformanceObserver fails
     /// (e.g., cross-origin iframe, obfuscated requests, etc.)
     fn extract_m3u8_from_html(&self, tab: &headless_chrome::Tab) -> Option<String> {
@@ -1162,17 +1108,19 @@ impl ChromeVideoDetector {
     }
 
     /// Rust-side regex to find m3u8 URLs in HTML
-    /// Rust-side regex to find m3u8 URLs in HTML
     fn extract_m3u8_rust_regex(html: &str) -> Option<String> {
-        let patterns: [regex::Regex; 2] = [
-            regex::Regex::new(r"https?://\S+\.m3u8\S*").unwrap(),
-            regex::Regex::new(r"https?://\S+m3u8\S*").unwrap(),
+        let patterns = [
+            r"https?://[^\s\"'<>]+\.m3u8[^\s\"'<>]*",
+            r"https?://[^\s\"'<>]+m3u8[^\s\"'<>]*",
         ];
+
         for pattern in &patterns {
-            if let Some(mat) = pattern.find(html) {
-                let url = mat.as_str();
-                if !url.contains("google") && !url.contains("analytics") && !url.contains("gstatic") {
-                    return Some(url.to_string());
+            if let Ok(re) = regex::Regex::new(pattern) {
+                if let Some(mat) = re.find(html) {
+                    let url = mat.as_str();
+                    if !url.contains("google") && !url.contains("analytics") && !url.contains("gstatic") {
+                        return Some(url.to_string());
+                    }
                 }
             }
         }

@@ -8,4 +8,16 @@
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
 | #4674 | 9:06 AM | 🔵 | NjavTV integration investigation reveals incomplete implementation | ~760 |
+
+### Apr 8, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #4812 | 4:59 PM | 🔵 | Frontend URL detection and domain settings architecture documented | ~415 |
+| #4806 | 4:56 PM | 🔴 | Task 4 completed - Drag-and-drop njav domain support implemented | ~275 |
+| #4799 | 4:53 PM | 🔴 | Drag-and-drop handler now supports njav.org and njavtv.com URLs | ~312 |
+| #4787 | 4:50 PM | 🔵 | Main React App component structure and URL validation logic examined | ~404 |
+| #4777 | 4:49 PM | 🔵 | Drag-and-drop URL detection uses hardcoded domain checks | ~317 |
+| #4771 | 4:48 PM | 🔵 | Multi-site video download architecture spans across entire application codebase | ~504 |
+| #4764 | " | 🔵 | Frontend application architecture reveals comprehensive video download management system | ~505 |
 </claude-mem-context>

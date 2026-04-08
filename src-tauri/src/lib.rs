@@ -8,6 +8,19 @@ mod parser;
 mod titan_parser;
 mod utils;
 
+/// Debug log helper for njav detection (writes to file for GUI apps)
+fn debug_log_njav(msg: &str) {
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/njav-chrome-debug.log")
+    {
+        let _ = writeln!(f, "{}", msg);
+    }
+    eprintln!("[NjavDebug] {}", msg);
+}
+
 use baanjeen_parser::BaanJeenParser;
 use chrome_detector::ChromeVideoDetector;
 use downloader::{check_ffmpeg, merge_videos_with_progress, DownloadConfig, DownloadResult, DownloadState, VideoDownloader};
@@ -297,31 +310,62 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
     } else if NjavParser::is_njav_url(&url, &settings.njav_domain) {
         // Use Njav Parser (njav.org — nested iframes via javxx.com → surrit.store)
         let _ = app_handle.emit("log-info", "Detected njav.org — using Chrome detector...".to_string());
+        debug_log_njav(&format!("[lib] njav.org detected for URL: {}", url));
         let njav_info = state.njav_parser.get_series_info(&url, &settings.njav_domain).await?;
 
-        // Always use Chrome detector since video is loaded through nested iframes
+        // Strategy: Try javxx.com URL first (bypasses Cloudflare), fall back to original njav.org
         let _ = app_handle.emit("log-info", "Launching Chrome to detect video from njav.org iframes...".to_string());
         let mut detector = state.chrome_detector.lock().unwrap();
 
-        let page_url = njav_info.direct_page_url
-            .as_deref()
-            .unwrap_or(&url);
+        // Build detection URLs in priority order
+        let detection_urls: Vec<(&str, &str)> = vec![
+            (njav_info.javxx_url.as_deref().unwrap_or(""), "javxx.com"),
+            (njav_info.direct_page_url.as_deref().unwrap_or(""), "njav.org"),
+            (url.as_str(), "original"),
+        ];
+        // Deduplicate while preserving order
+        let mut seen = std::collections::HashSet::new();
+        let unique_urls: Vec<(&str, &str)> = detection_urls
+            .into_iter()
+            .filter(|(u, _)| !u.is_empty() && seen.insert(*u))
+            .collect();
 
-        let _ = app_handle.emit("log-info", format!("Detecting video from: {}", page_url));
+        let _ = app_handle.emit("log-info", format!("[njav] Will try {} URL(s): {}", unique_urls.len(), unique_urls.iter().map(|(_, n)| *n).collect::<Vec<_>>().join(", ")));
+
         let mut episode_urls: HashMap<i32, String> = HashMap::new();
+        let mut found_url: Option<String> = None;
+        let mut last_error: Option<String> = None;
 
-        match detector.detect_video_url(page_url, Some(&app_handle)) {
-            Ok(Some(video_url)) => {
-                let _ = app_handle.emit("log-info", format!("Found video URL: {}", video_url));
-                episode_urls.insert(1, video_url);
+        for (detect_url, source_name) in &unique_urls {
+            debug_log_njav(&format!("[lib] Trying {} -> {}", source_name, detect_url));
+            let _ = app_handle.emit("log-info", format!("[njav] Trying {} URL: {}", source_name, detect_url));
+
+            match detector.detect_video_url(detect_url, Some(&app_handle)) {
+                Ok(Some(video_url)) => {
+                    debug_log_njav(&format!("[lib] SUCCESS via {}: {}", source_name, video_url));
+                    let _ = app_handle.emit("log-info", format!("Found video URL via {}: {}", source_name, video_url));
+                    found_url = Some(video_url);
+                    break;
+                }
+                Ok(None) => {
+                    let msg = format!("Chrome detector found no video via {}", source_name);
+                    let _ = app_handle.emit("log-info", msg.clone());
+                    debug_log_njav(&format!("[lib] No video via {}", source_name));
+                    last_error = Some(msg);
+                }
+                Err(e) => {
+                    let msg = format!("Chrome detection failed via {}: {}", source_name, e);
+                    let _ = app_handle.emit("log-info", msg.clone());
+                    debug_log_njav(&format!("[lib] Error via {}: {}", source_name, e));
+                    last_error = Some(msg);
+                }
             }
-            Ok(None) => {
-                let _ = app_handle.emit("log-info", "Chrome detector found no video on njav.org page".to_string());
-                return Err("Could not find video URL on njav.org page. The video may be region-blocked.".to_string());
-            }
-            Err(e) => {
-                return Err(format!("Chrome detection failed: {}", e));
-            }
+        }
+
+        if let Some(video_url) = found_url {
+            episode_urls.insert(1, video_url);
+        } else {
+            return Err(format!("Could not find video URL on njav.org. Last error: {}", last_error.unwrap_or_else(|| "Unknown error".to_string())));
         }
 
         let cookies = detector.get_last_cookies().to_vec();
@@ -446,8 +490,53 @@ fn set_taskbar_progress(app_handle: AppHandle, progress: i32) {
 async fn auto_detect_video_url(url: String, app_handle: AppHandle, state: State<'_, AppState>) -> Result<Option<String>, String> {
     eprintln!("[AutoDetect] Starting auto-detection for: {}", url);
 
+    // For njav.org URLs, redirect to javxx.com since njav.org is Cloudflare blocked
+    let detect_url = if url.contains("njav.org") {
+        let code = url.trim_end_matches(|c: char| !c.is_alphanumeric())
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .last()
+            .unwrap_or("");
+        let code_lower = code.to_lowercase();
+        
+        // Try multiple URL patterns — some videos are "uncensored-leaked" etc.
+        let candidates = vec![
+            code_lower.clone(),
+            format!("{}-uncensored-leaked", code_lower),
+            format!("{}-uncensored", code_lower),
+        ];
+        
+        let mut found_url = None;
+        let client = reqwest::Client::new();
+        for suffix in &candidates {
+            let candidate = format!("https://javxx.com/en/v/{}", suffix);
+            if let Ok(resp) = client.head(&candidate).send().await {
+                let status = resp.status().as_u16();
+                eprintln!("[AutoDetect] Check {} -> {}", candidate, status);
+                if status == 200 {
+                    // Also verify it has WatchPlayer (not a generic 200)
+                    if let Ok(html) = client.get(&candidate).send().await {
+                        if let Ok(text) = html.text().await {
+                            if text.contains("WatchPlayer") {
+                                found_url = Some(candidate);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        let redirected = found_url.unwrap_or_else(|| format!("https://javxx.com/en/v/{}", code_lower));
+        eprintln!("[AutoDetect] Redirecting njav.org to: {}", redirected);
+        let _ = app_handle.emit("log-info", format!("Redirecting njav.org → {}", redirected));
+        redirected
+    } else {
+        url
+    };
+
     let mut detector = state.chrome_detector.lock().unwrap();
-    let video_url = detector.detect_video_url(&url, Some(&app_handle))?;
+    let video_url = detector.detect_video_url(&detect_url, Some(&app_handle))?;
 
     Ok(video_url)
 }

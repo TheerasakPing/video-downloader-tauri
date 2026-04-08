@@ -8,6 +8,7 @@ const DEFAULT_DOMAINS: DomainSettings = {
   rongyokDomain: "rongyok.com",
   hsckDomain: "hsck123.com",
   njavtvDomain: "njavtv.com",
+  njavDomain: "njav.org",
 };
 
 export function useDomainSettings() {

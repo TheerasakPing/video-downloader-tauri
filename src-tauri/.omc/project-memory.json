@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1775407590353,
+  "lastScanned": 1775645583700,
   "projectRoot": "/Volumes/Data/_workspace/_git/video-downloader-tauri/src-tauri",
   "techStack": {
     "languages": [
@@ -35,7 +35,8 @@
     "workspaces": [],
     "mainDirectories": [
       "scripts",
-      "src"
+      "src",
+      "tests"
     ],
     "gitBranches": {
       "defaultBranch": "master",
@@ -48,7 +49,7 @@
       "path": "binaries",
       "purpose": null,
       "fileCount": 2,
-      "lastAccessed": 1775407590195,
+      "lastAccessed": 1775645583687,
       "keyFiles": [
         "CLAUDE.md",
         "ffmpeg"
@@ -58,7 +59,7 @@
       "path": "capabilities",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1775407590195,
+      "lastAccessed": 1775645583687,
       "keyFiles": [
         "default.json"
       ]
@@ -67,14 +68,14 @@
       "path": "gen",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1775407590200,
+      "lastAccessed": 1775645583689,
       "keyFiles": []
     },
     "icons": {
       "path": "icons",
       "purpose": null,
       "fileCount": 18,
-      "lastAccessed": 1775407590201,
+      "lastAccessed": 1775645583689,
       "keyFiles": [
         "128x128.png",
         "128x128@2x.png",
@@ -87,7 +88,7 @@
       "path": "resources",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1775407590201,
+      "lastAccessed": 1775645583690,
       "keyFiles": [
         "CLAUDE.md"
       ]
@@ -96,7 +97,7 @@
       "path": "scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 2,
-      "lastAccessed": 1775407590202,
+      "lastAccessed": 1775645583690,
       "keyFiles": [
         "CLAUDE.md",
         "download-ffmpeg.cjs"
@@ -105,8 +106,8 @@
     "src": {
       "path": "src",
       "purpose": "Source code",
-      "fileCount": 11,
-      "lastAccessed": 1775407590203,
+      "fileCount": 12,
+      "lastAccessed": 1775645583690,
       "keyFiles": [
         "CLAUDE.md",
         "baanjeen_parser.rs",
@@ -119,7 +120,7 @@
       "path": "src-tauri",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1775407590203,
+      "lastAccessed": 1775645583690,
       "keyFiles": [
         "CLAUDE.md"
       ]
@@ -128,16 +129,25 @@
       "path": "target",
       "purpose": null,
       "fileCount": 2,
-      "lastAccessed": 1775407590204,
+      "lastAccessed": 1775645583691,
       "keyFiles": [
         "CACHEDIR.TAG"
+      ]
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 1,
+      "lastAccessed": 1775645583691,
+      "keyFiles": [
+        "test_njavtv.rs"
       ]
     },
     "gen/schemas": {
       "path": "gen/schemas",
       "purpose": "Schema definitions",
       "fileCount": 4,
-      "lastAccessed": 1775407590208,
+      "lastAccessed": 1775645583691,
       "keyFiles": [
         "acl-manifests.json",
         "capabilities.json",
@@ -148,7 +158,7 @@
       "path": "resources/bin",
       "purpose": "Executable scripts",
       "fileCount": 6,
-      "lastAccessed": 1775407590208,
+      "lastAccessed": 1775645583691,
       "keyFiles": [
         "ffmpeg-aarch64-apple-darwin",
         "ffmpeg-x86_64-pc-windows-msvc.exe",
@@ -159,7 +169,7 @@
       "path": "src-tauri/src",
       "purpose": "Source code",
       "fileCount": 2,
-      "lastAccessed": 1775407590209,
+      "lastAccessed": 1775645583692,
       "keyFiles": [
         "CLAUDE.md",
         "chrome_detector.rs"
@@ -168,22 +178,28 @@
   },
   "hotPaths": [
     {
-      "path": "src/lib.rs",
-      "accessCount": 20,
-      "lastAccessed": 1775410236601,
-      "type": "file"
-    },
-    {
-      "path": "src/downloader.rs",
-      "accessCount": 19,
-      "lastAccessed": 1775410803710,
+      "path": "tests/test_njav.rs",
+      "accessCount": 55,
+      "lastAccessed": 1775660769289,
       "type": "file"
     },
     {
       "path": "src/chrome_detector.rs",
-      "accessCount": 1,
-      "lastAccessed": 1775407791825,
+      "accessCount": 20,
+      "lastAccessed": 1775659128928,
       "type": "file"
+    },
+    {
+      "path": "src/njav_parser.rs",
+      "accessCount": 3,
+      "lastAccessed": 1775648670211,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 2,
+      "lastAccessed": 1775650293680,
+      "type": "directory"
     }
   ],
   "userDirectives": []

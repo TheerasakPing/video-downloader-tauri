@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1775413193002,
+  "lastScanned": 1775639619828,
   "projectRoot": "/Volumes/Data/_workspace/_git/video-downloader-tauri",
   "techStack": {
     "languages": [
@@ -77,6 +77,7 @@
     "isMonorepo": false,
     "workspaces": [],
     "mainDirectories": [
+      "docs",
       "public",
       "scripts",
       "src"
@@ -92,18 +93,25 @@
       "path": "dist",
       "purpose": "Distribution/build output",
       "fileCount": 3,
-      "lastAccessed": 1775413192954,
+      "lastAccessed": 1775639619789,
       "keyFiles": [
         "index.html",
         "tauri.svg",
         "vite.svg"
       ]
     },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 0,
+      "lastAccessed": 1775639619793,
+      "keyFiles": []
+    },
     "playwright-report": {
       "path": "playwright-report",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1775413192955,
+      "lastAccessed": 1775639619818,
       "keyFiles": [
         "index.html"
       ]
@@ -112,7 +120,7 @@
       "path": "public",
       "purpose": "Public files",
       "fileCount": 2,
-      "lastAccessed": 1775413192987,
+      "lastAccessed": 1775639619819,
       "keyFiles": [
         "tauri.svg",
         "vite.svg"
@@ -122,7 +130,7 @@
       "path": "python_script",
       "purpose": null,
       "fileCount": 3,
-      "lastAccessed": 1775413192988,
+      "lastAccessed": 1775639619819,
       "keyFiles": [
         "batch_downloader.py",
         "hls_downloader.py",
@@ -133,7 +141,7 @@
       "path": "scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 3,
-      "lastAccessed": 1775413192993,
+      "lastAccessed": 1775639619820,
       "keyFiles": [
         "batch_downloader.py",
         "hls_downloader.py",
@@ -144,14 +152,14 @@
       "path": "skills",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1775413192993,
+      "lastAccessed": 1775639619821,
       "keyFiles": []
     },
     "src": {
       "path": "src",
       "purpose": "Source code",
       "fileCount": 5,
-      "lastAccessed": 1775413192993,
+      "lastAccessed": 1775639619821,
       "keyFiles": [
         "App.tsx",
         "CLAUDE.md",
@@ -164,7 +172,7 @@
       "path": "src-tauri",
       "purpose": null,
       "fileCount": 12,
-      "lastAccessed": 1775413192997,
+      "lastAccessed": 1775639619822,
       "keyFiles": [
         "CLAUDE.md",
         "Cargo.lock",
@@ -177,14 +185,21 @@
       "path": "test-results",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1775413192998,
+      "lastAccessed": 1775639619822,
+      "keyFiles": []
+    },
+    "thoughts": {
+      "path": "thoughts",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1775639619823,
       "keyFiles": []
     },
     "dist/assets": {
       "path": "dist/assets",
       "purpose": "Static assets",
       "fileCount": 2,
-      "lastAccessed": 1775413192998,
+      "lastAccessed": 1775639619823,
       "keyFiles": [
         "index-8RbSi2pF.js",
         "index-D4ZGjjyE.css"
@@ -194,7 +209,7 @@
       "path": "src/assets",
       "purpose": "Static assets",
       "fileCount": 1,
-      "lastAccessed": 1775413193000,
+      "lastAccessed": 1775639619826,
       "keyFiles": [
         "react.svg"
       ]
@@ -202,19 +217,19 @@
     "src/components": {
       "path": "src/components",
       "purpose": "UI components",
-      "fileCount": 19,
-      "lastAccessed": 1775413193001,
+      "fileCount": 20,
+      "lastAccessed": 1775639619826,
       "keyFiles": [
         "Button.tsx",
-        "DownloadQueue.tsx",
-        "EpisodeSelector.tsx"
+        "CLAUDE.md",
+        "DownloadQueue.tsx"
       ]
     },
     "src/types": {
       "path": "src/types",
       "purpose": "Type definitions",
       "fileCount": 2,
-      "lastAccessed": 1775413193001,
+      "lastAccessed": 1775639619827,
       "keyFiles": [
         "CLAUDE.md",
         "index.ts"
@@ -223,195 +238,75 @@
   },
   "hotPaths": [
     {
-      "path": "src-tauri/src/downloader.rs",
-      "accessCount": 18,
-      "lastAccessed": 1775458124702,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/src/chrome_detector.rs",
-      "accessCount": 14,
-      "lastAccessed": 1775441001382,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/src/njavtv_parser.rs",
-      "accessCount": 6,
-      "lastAccessed": 1775439736284,
-      "type": "file"
-    },
-    {
-      "path": "test_njavtv_flow.mjs",
-      "accessCount": 5,
-      "lastAccessed": 1775439745398,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/src/lib.rs",
-      "accessCount": 5,
-      "lastAccessed": 1775439750074,
-      "type": "file"
-    },
-    {
-      "path": "test_njavtv_intercept.mjs",
-      "accessCount": 4,
-      "lastAccessed": 1775439450436,
-      "type": "file"
-    },
-    {
-      "path": "test_njavtv.mjs",
-      "accessCount": 4,
-      "lastAccessed": 1775439450497,
-      "type": "file"
-    },
-    {
-      "path": "test_njavtv_api.mjs",
-      "accessCount": 4,
-      "lastAccessed": 1775439745455,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/Cargo.toml",
-      "accessCount": 3,
-      "lastAccessed": 1775439763985,
-      "type": "file"
-    },
-    {
-      "path": "TODO.md",
-      "accessCount": 2,
-      "lastAccessed": 1775439410427,
-      "type": "file"
-    },
-    {
-      "path": "DEV_NOTES.md",
-      "accessCount": 2,
-      "lastAccessed": 1775439410631,
-      "type": "file"
-    },
-    {
-      "path": "STATUS.md",
-      "accessCount": 2,
-      "lastAccessed": 1775439410703,
-      "type": "file"
-    },
-    {
-      "path": "download_flow_summary.md",
-      "accessCount": 2,
-      "lastAccessed": 1775439410876,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/src/parser.rs",
-      "accessCount": 2,
-      "lastAccessed": 1775439435290,
-      "type": "file"
+      "path": "src",
+      "accessCount": 12,
+      "lastAccessed": 1775641817594,
+      "type": "directory"
     },
     {
       "path": "src/App.tsx",
-      "accessCount": 2,
-      "lastAccessed": 1775439452345,
-      "type": "file"
-    },
-    {
-      "path": "src/types/index.ts",
-      "accessCount": 2,
-      "lastAccessed": 1775439479482,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/src/utils.rs",
-      "accessCount": 2,
-      "lastAccessed": 1775439595595,
-      "type": "file"
-    },
-    {
-      "path": "package.json",
-      "accessCount": 1,
-      "lastAccessed": 1775438340787,
-      "type": "file"
-    },
-    {
-      "path": "README.md",
-      "accessCount": 1,
-      "lastAccessed": 1775438341010,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/tauri.conf.json",
-      "accessCount": 1,
-      "lastAccessed": 1775438341070,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/src/titan_parser.rs",
-      "accessCount": 1,
-      "lastAccessed": 1775438355825,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/src/baanjeen_parser.rs",
-      "accessCount": 1,
-      "lastAccessed": 1775438355849,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/src/hsck_parser.rs",
-      "accessCount": 1,
-      "lastAccessed": 1775438355960,
+      "accessCount": 9,
+      "lastAccessed": 1775642008558,
       "type": "file"
     },
     {
       "path": "src/components/SettingsPanel.tsx",
-      "accessCount": 1,
-      "lastAccessed": 1775438365519,
+      "accessCount": 6,
+      "lastAccessed": 1775642129090,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri/src/chrome_detector.rs",
+      "accessCount": 5,
+      "lastAccessed": 1775643863689,
+      "type": "file"
+    },
+    {
+      "path": "src/types/index.ts",
+      "accessCount": 4,
+      "lastAccessed": 1775642007738,
       "type": "file"
     },
     {
       "path": "src/hooks/useDomainSettings.ts",
-      "accessCount": 1,
-      "lastAccessed": 1775438365544,
+      "accessCount": 4,
+      "lastAccessed": 1775642008027,
       "type": "file"
+    },
+    {
+      "path": "src-tauri/src/lib.rs",
+      "accessCount": 2,
+      "lastAccessed": 1775641603639,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 2,
+      "lastAccessed": 1775641745875,
+      "type": "directory"
     },
     {
       "path": "src/hooks/useSettings.ts",
-      "accessCount": 1,
-      "lastAccessed": 1775438365579,
+      "accessCount": 2,
+      "lastAccessed": 1775641773089,
       "type": "file"
     },
     {
-      "path": "src-tauri/src-tauri/src/chrome_detector.rs",
+      "path": "src-tauri/src/njav_parser.rs",
       "accessCount": 1,
-      "lastAccessed": 1775439419228,
+      "lastAccessed": 1775641583841,
       "type": "file"
     },
     {
-      "path": "docs/s/superpowers/plans/2026-04-06-njavtv-download-fixix.md",
+      "path": "src/hooks/useI18n.tsx",
       "accessCount": 1,
-      "lastAccessed": 1775439653553,
+      "lastAccessed": 1775641682324,
       "type": "file"
     },
     {
-      "path": "test_njavtv_interceptor.mjs",
+      "path": "src/hooks/useHistory.ts",
       "accessCount": 1,
-      "lastAccessed": 1775440333610,
-      "type": "file"
-    },
-    {
-      "path": "test_njavtv_debug.mjs",
-      "accessCount": 1,
-      "lastAccessed": 1775440421892,
-      "type": "file"
-    },
-    {
-      "path": "test_njavtv_extract.mjs",
-      "accessCount": 1,
-      "lastAccessed": 1775440632412,
-      "type": "file"
-    },
-    {
-      "path": "test_njavtv_hls_poll.mjs",
-      "accessCount": 1,
-      "lastAccessed": 1775440898034,
+      "lastAccessed": 1775641713228,
       "type": "file"
     }
   ],

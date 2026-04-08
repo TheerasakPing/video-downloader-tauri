@@ -131,6 +131,7 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [showMiniMode, setShowMiniMode] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [autoDetectUrl, setAutoDetectUrl] = useState("");
 
   const [downloadState, setDownloadState] = useState<DownloadState>({
     isDownloading: false,
@@ -183,12 +184,14 @@ function App() {
         checkDomains(domainSettings.titanDomain) ||
         checkDomains(domainSettings.baanjeenDomain) ||
         checkDomains(domainSettings.njavtvDomain || "njavtv.com") ||
+        checkDomains(domainSettings.njavDomain || "njav.org") ||
         text.includes("rongyok.com") ||
         text.includes("thongyok.com") ||
         text.includes("51cg") ||
         text.includes("357ms") || // Titan wildcard fallback
         text.includes("xn--82c7abb4jua0l.com") ||
-        text.includes("njavtv.com")
+        text.includes("njavtv.com") ||
+        text.includes("njav.org")
       );
     },
     [domainSettings],
@@ -199,7 +202,11 @@ function App() {
       return text
         .split(/[\n\s]+/)
         .map((l) => {
-          const trimmed = l.trim();
+          let trimmed = l.trim();
+          
+          // Remove trailing junk characters (like colons, dots, etc. from logs)
+          trimmed = trimmed.replace(/[^\w/]+$/, '');
+
           // Normalize protocol-relative URLs (//example.com) -> https://example.com
           if (trimmed.startsWith("//")) return `https:${trimmed}`;
           return trimmed;
@@ -960,6 +967,46 @@ function App() {
     }
   };
 
+
+  const handleAutoDetectUrl = async (targetUrl?: string) => {
+    const detectUrl = targetUrl || url.trim();
+    if (!detectUrl) {
+      error("Please enter a URL to detect");
+      return;
+    }
+    if (!isValidSeriesUrl(detectUrl)) {
+      error("URL is not from a supported domain");
+      return;
+    }
+    setIsFetching(true);
+    setAutoDetectUrl(detectUrl);
+    log(`Auto-detecting video URL from: ${detectUrl}`);
+    try {
+      const detected = await invoke<string | null>("auto_detect_video_url", { url: detectUrl });
+      if (detected) {
+        setAutoDetectUrl("");
+        log(`Auto-detected video URL: ${detected}`);
+        // Set it as the video URL for direct download
+        const mockSeries: SeriesInfo = {
+          seriesId: 0,
+          title: "Detected Video",
+          totalEpisodes: 1,
+          episodeUrls: { 1: detected },
+        };
+        setSeries(mockSeries);
+        setSelectedEpisodes(new Set([1]));
+        success("Video URL detected! Ready to download.");
+      } else {
+        setAutoDetectUrl("");
+        error("No video URL detected. The page may require login.");
+      }
+    } catch (e) {
+      setAutoDetectUrl("");
+      error(`Auto-detect failed: ${e}`);
+    } finally {
+      setIsFetching(false);
+    }
+  };
   const handleFetch = async () => {
     if (!url.trim()) {
       error("Please enter a URL");
@@ -1087,7 +1134,9 @@ function App() {
       text &&
       (text.includes("rongyok.com") ||
         text.includes("thongyok.com") ||
-        text.includes("51cg1.com"))
+        text.includes("51cg1.com") ||
+        text.includes("njav.org") ||
+        text.includes("njavtv.com"))
     ) {
       setUrl(text);
       log(`Dropped URL: ${text}`);
@@ -1298,7 +1347,7 @@ function App() {
                 {/* Input Area */}
                 <div className="sticky top-0 z-10 bg-slate-900/90 backdrop-blur pb-4 -mt-2 pt-2">
                   <Input
-                    placeholder="https://rongyok.com/watch/?series_id=XXX"
+                    placeholder="https://rongyok.com/watch/... | https://njav.org/... | https://njavtv.com/..."
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
                     leftIcon={<Link size={14} />}
@@ -1334,6 +1383,16 @@ function App() {
                           className="px-2"
                         >
                           <Search size={14} />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleAutoDetectUrl()}
+                          isLoading={autoDetectUrl.length > 0}
+                          className="px-1.5"
+                          title="Auto Detect URL (Chrome)"
+                        >
+                          🔍
                         </Button>
                       </div>
                     }

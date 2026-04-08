@@ -45,4 +45,5 @@ export interface DomainSettings {
   rongyokDomain: string;
   hsckDomain?: string;
   njavtvDomain?: string;
+  njavDomain?: string;
 }

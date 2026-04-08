@@ -177,7 +177,7 @@ export function SettingsPanel({
                 Group by Website
               </label>
               <p className="text-xs text-slate-500">
-                Save to subfolder by source (rongyok/, titan/, baanjeen/, hsck/, njavtv/)
+                Save to subfolder by source (rongyok/, titan/, baanjeen/, hsck/, njavtv/, njav/)
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -304,6 +304,22 @@ export function SettingsPanel({
               onChange={(e) => onUpdateDomain("njavtvDomain", e.target.value)}
               className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white w-48 text-right"
               placeholder="njavtv.com"
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-white">Njav Server</label>
+              <p className="text-xs text-slate-500">
+                Domain for njav.org videos (iframe chain — uses Chrome)
+              </p>
+            </div>
+            <input
+              type="text"
+              value={domainSettings.njavDomain ?? "njav.org"}
+              onChange={(e) => onUpdateDomain("njavDomain", e.target.value)}
+              className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white w-48 text-right"
+              placeholder="njav.org"
             />
           </div>
         </div>

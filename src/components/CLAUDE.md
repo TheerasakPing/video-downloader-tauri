@@ -8,4 +8,15 @@
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
 | #4674 | 9:06 AM | 🔵 | NjavTV integration investigation reveals incomplete implementation | ~760 |
+
+### Apr 8, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #4812 | 4:59 PM | 🔵 | Frontend URL detection and domain settings architecture documented | ~415 |
+| #4801 | 4:55 PM | 🔵 | SettingsPanel domain configuration structure identified | ~269 |
+| #4788 | 4:50 PM | 🔵 | Settings panel provides comprehensive download, appearance, and localization configuration | ~410 |
+| #4784 | " | 🔵 | Settings panel provides comprehensive domain configuration UI with comma-separated domain support | ~417 |
+| #4771 | 4:48 PM | 🔵 | Multi-site video download architecture spans across entire application codebase | ~504 |
+| #4767 | " | 🔵 | Download folder organization already implemented via Group by Website setting | ~274 |
 </claude-mem-context>
