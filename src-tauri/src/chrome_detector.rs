@@ -364,6 +364,174 @@ impl ChromeVideoDetector {
             );
         }
 
+        // njav.org special handling: Resolve iframe chain and navigate to video player
+        // njav.org → iframe (missav.guide) → redirect → javxx.com SPA → iframe → surrit.store
+        // The video is 2 iframes deep; generic iframe scan doesn't recurse enough.
+        let is_njav = url.contains("njav.org");
+        if is_njav {
+            eprintln!("[ChromeDetector] njav.org detected - resolving iframe chain");
+            self.emit_progress(
+                app_handle,
+                "njav.org detected - resolving video page...",
+                45,
+            );
+
+            // Wait for njav.org page to fully load (Cloudflare challenge may need time)
+            std::thread::sleep(Duration::from_secs(3));
+
+            // Step 1: Extract iframe src from njav.org page (e.g., missav.guide/snos-034)
+            let iframe_extract_script = r#"
+                (function() {
+                    // Try id="advanced_iframe" (WordPress Advanced iFrame plugin)
+                    let iframe = document.getElementById('advanced_iframe');
+                    if (iframe && iframe.src && iframe.src.startsWith('http')) return iframe.src;
+
+                    // Fallback: any iframe with known video domains
+                    const iframes = document.querySelectorAll('iframe[src]');
+                    for (let i of iframes) {
+                        if (i.src.includes('missav') || i.src.includes('javxx') || i.src.includes('surrit')) {
+                            return i.src;
+                        }
+                    }
+                    return null;
+                })()
+            "#;
+
+            let iframe_url = if let Ok(result) = tab.evaluate(iframe_extract_script, false) {
+                if let Some(value) = result.value {
+                    if value.is_string() {
+                        serde_json::from_value::<String>(value).ok()
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            if let Some(ref src) = iframe_url {
+                eprintln!("[ChromeDetector] njav.org: Found iframe URL: {}", src);
+                self.emit_progress(app_handle, "Navigating to video page...", 55);
+
+                // Step 2: Navigate to iframe URL (missav.guide → redirects to javxx.com)
+                if let Ok(_) = tab.navigate_to(src) {
+                    let _ = tab.wait_until_navigated();
+                    eprintln!("[ChromeDetector] njav.org: Navigated to iframe page");
+
+                    // Wait for javxx.com SPA to render (Cloudflare + React)
+                    std::thread::sleep(Duration::from_secs(5));
+
+                    // Inject observer on the new page
+                    let _ = tab.evaluate(observer_script, false);
+
+                    // Step 3: Check if this page has the video directly
+                    if let Some(found_url) = self.check_for_video_url(&tab) {
+                        eprintln!("[ChromeDetector] njav.org: Found video URL on iframe page: {}", found_url);
+                        self.extract_cookies(&tab);
+                        self.emit_progress(app_handle, "Found video URL!", 100);
+                        return Ok(Some(found_url));
+                    }
+
+                    // Step 4: Look for surrit.store iframe (second level)
+                    eprintln!("[ChromeDetector] njav.org: Looking for nested iframe (surrit.store)...");
+                    self.emit_progress(app_handle, "Scanning nested iframe...", 70);
+
+                    let surrit_extract_script = r#"
+                        (function() {
+                            const iframes = document.querySelectorAll('iframe[src]');
+                            for (let i of iframes) {
+                                if (i.src.includes('surrit.store') || i.src.includes('wowstream')) {
+                                    return i.src;
+                                }
+                            }
+                            return null;
+                        })()
+                    "#;
+
+                    let surrit_url = if let Ok(result) = tab.evaluate(surrit_extract_script, false) {
+                        if let Some(value) = result.value {
+                            if value.is_string() {
+                                serde_json::from_value::<String>(value).ok()
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    if let Some(ref surrit) = surrit_url {
+                        eprintln!("[ChromeDetector] njav.org: Found surrit.store iframe: {}", surrit);
+                        self.emit_progress(app_handle, "Loading video player...", 80);
+
+                        // Navigate directly to surrit.store
+                        if let Ok(_) = tab.navigate_to(surrit) {
+                            let _ = tab.wait_until_navigated();
+
+                            // Inject observer on surrit.store
+                            let _ = tab.evaluate(observer_script, false);
+                            std::thread::sleep(Duration::from_secs(2));
+
+                            // Click play to trigger video load
+                            let _ = tab.evaluate(click_script, false);
+                            std::thread::sleep(Duration::from_secs(3));
+
+                            // Check for m3u8 URL
+                            if let Some(found_url) = self.check_for_video_url(&tab) {
+                                eprintln!("[ChromeDetector] njav.org: Found m3u8 from surrit.store: {}", found_url);
+                                self.extract_cookies(&tab);
+                                self.emit_progress(app_handle, "Found video URL!", 100);
+                                return Ok(Some(found_url));
+                            }
+
+                            // Retry: click again and wait longer
+                            for attempt in 1..=5 {
+                                eprintln!("[ChromeDetector] njav.org: Retry attempt {} on surrit.store", attempt);
+                                self.emit_progress(
+                                    app_handle,
+                                    &format!("Retrying video detection... ({}/5)", attempt),
+                                    80 + (attempt * 3) as u32,
+                                );
+                                let _ = tab.evaluate(click_script, false);
+                                std::thread::sleep(Duration::from_secs(3));
+
+                                if let Some(found_url) = self.check_for_video_url(&tab) {
+                                    eprintln!("[ChromeDetector] njav.org: Found m3u8 (attempt {}): {}", attempt, found_url);
+                                    self.extract_cookies(&tab);
+                                    self.emit_progress(app_handle, "Found video URL!", 100);
+                                    return Ok(Some(found_url));
+                                }
+                            }
+                        }
+                    } else {
+                        eprintln!("[ChromeDetector] njav.org: No surrit.store iframe found, trying general detection on current page");
+
+                        // No surrit iframe but we're on javxx.com - try clicking and polling
+                        for attempt in 1..=6 {
+                            let _ = tab.evaluate(click_script, false);
+                            std::thread::sleep(Duration::from_secs(3));
+
+                            if let Some(found_url) = self.check_for_video_url(&tab) {
+                                eprintln!("[ChromeDetector] njav.org: Found URL on javxx page (attempt {}): {}", attempt, found_url);
+                                self.extract_cookies(&tab);
+                                self.emit_progress(app_handle, "Found video URL!", 100);
+                                return Ok(Some(found_url));
+                            }
+                        }
+                    }
+                }
+            } else {
+                eprintln!("[ChromeDetector] njav.org: No iframe found on page, trying general detection");
+            }
+
+            // If njav-specific methods failed, fall through to generic detection
+            eprintln!("[ChromeDetector] njav.org specific methods failed, trying general detection...");
+        }
+
         // Inject PerformanceObserver immediately after load
         let _ = tab.evaluate(observer_script, false);
 

@@ -2,6 +2,7 @@ mod baanjeen_parser;
 mod chrome_detector;
 mod downloader;
 mod hsck_parser;
+mod njav_parser;
 mod njavtv_parser;
 mod parser;
 mod titan_parser;
@@ -11,6 +12,7 @@ use baanjeen_parser::BaanJeenParser;
 use chrome_detector::ChromeVideoDetector;
 use downloader::{check_ffmpeg, merge_videos_with_progress, DownloadConfig, DownloadResult, DownloadState, VideoDownloader};
 use hsck_parser::HsckParser;
+use njav_parser::NjavParser;
 use njavtv_parser::NjavtvParser;
 use parser::RongyokParser;
 use serde::{Deserialize, Serialize};
@@ -32,6 +34,8 @@ pub struct DomainSettings {
     pub hsck_domain: String,
     #[serde(default = "DomainSettings::default_njavtv_domain")]
     pub njavtv_domain: String,
+    #[serde(default = "DomainSettings::default_njav_domain")]
+    pub njav_domain: String,
 }
 
 impl DomainSettings {
@@ -40,6 +44,9 @@ impl DomainSettings {
     }
     fn default_njavtv_domain() -> String {
         "njavtv.com".to_string()
+    }
+    fn default_njav_domain() -> String {
+        "njav.org".to_string()
     }
 }
 
@@ -51,6 +58,7 @@ impl Default for DomainSettings {
             rongyok_domain: "rongyok.com".to_string(),
             hsck_domain: "hsck123.com".to_string(),
             njavtv_domain: "njavtv.com".to_string(),
+            njav_domain: "njav.org".to_string(),
         }
     }
 }
@@ -112,6 +120,7 @@ struct AppState {
     titan_parser: TitanParser,
     hsck_parser: HsckParser,
     njavtv_parser: NjavtvParser,
+    njav_parser: NjavParser,
     chrome_detector: Mutex<ChromeVideoDetector>,
     downloader: Mutex<Option<VideoDownloader>>,
     current_series: Mutex<Option<UnifiedSeriesInfo>>,
@@ -285,6 +294,48 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             cookies,
             source: "njavtv".to_string(),
         }
+    } else if NjavParser::is_njav_url(&url, &settings.njav_domain) {
+        // Use Njav Parser (njav.org — nested iframes via javxx.com → surrit.store)
+        let _ = app_handle.emit("log-info", "Detected njav.org — using Chrome detector...".to_string());
+        let njav_info = state.njav_parser.get_series_info(&url, &settings.njav_domain).await?;
+
+        // Always use Chrome detector since video is loaded through nested iframes
+        let _ = app_handle.emit("log-info", "Launching Chrome to detect video from njav.org iframes...".to_string());
+        let mut detector = state.chrome_detector.lock().unwrap();
+
+        let page_url = njav_info.direct_page_url
+            .as_deref()
+            .unwrap_or(&url);
+
+        let _ = app_handle.emit("log-info", format!("Detecting video from: {}", page_url));
+        let mut episode_urls: HashMap<i32, String> = HashMap::new();
+
+        match detector.detect_video_url(page_url, Some(&app_handle)) {
+            Ok(Some(video_url)) => {
+                let _ = app_handle.emit("log-info", format!("Found video URL: {}", video_url));
+                episode_urls.insert(1, video_url);
+            }
+            Ok(None) => {
+                let _ = app_handle.emit("log-info", "Chrome detector found no video on njav.org page".to_string());
+                return Err("Could not find video URL on njav.org page. The video may be region-blocked.".to_string());
+            }
+            Err(e) => {
+                return Err(format!("Chrome detection failed: {}", e));
+            }
+        }
+
+        let cookies = detector.get_last_cookies().to_vec();
+        UnifiedSeriesInfo {
+            series_id: 0,
+            title: njav_info.title,
+            total_episodes: 1,
+            poster_url: njav_info.poster_url,
+            episode_urls,
+            source_url: Some(url.clone()),
+            episode_keys: Default::default(),
+            cookies,
+            source: "njav".to_string(),
+        }
     } else if HsckParser::is_hsck_url(&url, &settings.hsck_domain) {
         // Use HSCK Parser (hsck123.com และ domain สำรอง)
         let hsck_info = state.hsck_parser.get_series_info(&url, &settings.hsck_domain).await?;
@@ -420,6 +471,7 @@ async fn start_download(
             "baanjeen" => "baanjeen",
             "hsck" => "hsck",
             "njavtv" => "njavtv",
+            "njav" => "njav",
             "titan" => "titan",
             "direct" => "direct",
             _ => "rongyok", // default
@@ -833,6 +885,7 @@ pub fn run() {
             titan_parser: TitanParser::new(),
             hsck_parser: HsckParser::new(),
             njavtv_parser: NjavtvParser::new(),
+            njav_parser: NjavParser::new(),
             chrome_detector: Mutex::new(ChromeVideoDetector::new().unwrap_or_else(|e| {
                 eprintln!("Warning: Chrome detector initialization failed: {}", e);
                 ChromeVideoDetector::new().unwrap()
