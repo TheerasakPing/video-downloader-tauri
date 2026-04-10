@@ -7,6 +7,8 @@ mod njavtv_parser;
 mod parser;
 mod titan_parser;
 mod library;
+mod proxy;
+
 mod utils;
 
 use baanjeen_parser::BaanJeenParser;
@@ -17,6 +19,7 @@ use njav_parser::NjavParser;
 use njavtv_parser::NjavtvParser;
 use parser::RongyokParser;
 use serde::{Deserialize, Serialize};
+use library::LibraryDb;
 use titan_parser::{TitanParser, TitanSeriesInfo, HlsKeyInfo};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -126,6 +129,8 @@ struct AppState {
     downloader: Mutex<Option<VideoDownloader>>,
     current_series: Mutex<Option<UnifiedSeriesInfo>>,
     download_states: Mutex<HashMap<i32, Arc<DownloadState>>>,
+    library_db: LibraryDb,
+    current_library_id: Mutex<Option<i64>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -171,6 +176,15 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
         };
 
         *state.current_series.lock().unwrap() = Some(series_info.clone());
+
+        // Auto-save to library
+        let lib_id = state.library_db.save_series(
+            &series_info.title, &series_info.source,
+            Some(&url), None, series_info.total_episodes, series_info.series_id,
+            &series_info.episode_urls, None,
+        ).ok();
+        *state.current_library_id.lock().unwrap() = lib_id;
+
         return Ok(series_info);
     }
 
@@ -422,6 +436,14 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
     // Store in state
     *state.current_series.lock().unwrap() = Some(series_info.clone());
 
+    // Auto-save to library
+    let lib_id = state.library_db.save_series(
+        &series_info.title, &series_info.source,
+        Some(&url), None, series_info.total_episodes, series_info.series_id,
+        &series_info.episode_urls, None,
+    ).ok();
+    *state.current_library_id.lock().unwrap() = lib_id;
+
     Ok(series_info)
 }
 
@@ -556,6 +578,15 @@ async fn start_download(
                         }
                     }
                     let _ = app_handle.emit("download-result", &result);
+
+                    // Update library episode status
+                    if let Some(lib_id) = *state.current_library_id.lock().unwrap() {
+                        state.library_db.update_episode_status(
+                            lib_id, ep, if result.success { "completed" } else { "failed" },
+                            result.file_path.as_deref(),
+                        ).ok();
+                    }
+
                     results.push(result);
                 }
                 Err(e) => {
@@ -862,6 +893,87 @@ async fn play_file(path: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn cmd_save_to_library(
+    state: State<'_, AppState>,
+    title: String, source: String, source_url: Option<String>,
+    poster_url: Option<String>, total_episodes: i32, parser_series_id: i32,
+    episode_urls: HashMap<i32, String>, metadata: Option<String>,
+) -> Result<i64, String> {
+    // Download poster if base64 data URL
+    let poster_data = if let Some(ref url) = poster_url {
+        if url.starts_with("data:") {
+            url.split(',').nth(1)
+                .and_then(|b| base64::engine::general_purpose::STANDARD.decode(b).ok())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    state.library_db.save_series(
+        &title, &source, source_url.as_deref(),
+        poster_data.as_deref(), total_episodes, parser_series_id,
+        &episode_urls, metadata.as_deref(),
+    )
+}
+
+#[tauri::command]
+fn cmd_get_library(state: State<'_, AppState>) -> Result<Vec<library::LibraryEntry>, String> {
+    state.library_db.get_library()
+}
+
+#[tauri::command]
+fn cmd_get_series_detail(state: State<'_, AppState>, library_id: i64) -> Result<library::SeriesDetail, String> {
+    state.library_db.get_series_detail(library_id)
+}
+
+#[tauri::command]
+fn cmd_remove_from_library(state: State<'_, AppState>, library_id: i64) -> Result<(), String> {
+    state.library_db.remove_series(library_id)
+}
+
+#[tauri::command]
+fn cmd_update_episode_status(
+    state: State<'_, AppState>, library_id: i64, episode_number: i32,
+    status: String, file_path: Option<String>,
+) -> Result<(), String> {
+    state.library_db.update_episode_status(library_id, episode_number, &status, file_path.as_deref())
+}
+
+#[tauri::command]
+fn cmd_search_library(state: State<'_, AppState>, query: String) -> Result<Vec<library::LibraryEntry>, String> {
+    state.library_db.search_library(&query)
+}
+
+#[tauri::command]
+async fn cmd_refetch_series(
+    library_id: i64,
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+) -> Result<library::SeriesDetail, String> {
+    let detail = state.library_db.get_series_detail(library_id)?;
+    let source_url = detail.entry.source_url.clone()
+        .ok_or_else(|| "No source URL stored for this series".to_string())?;
+
+    if !detail.can_refetch {
+        return Err("This series cannot be re-fetched (direct video URL)".to_string());
+    }
+
+    // Re-invoke fetch_series with stored URL
+    let new_info = fetch_series(source_url, app_handle, state).await?;
+
+    // Update library with fresh data
+    state.library_db.save_series(
+        &new_info.title, &new_info.source, Some(&new_info.source_url.unwrap_or_default()),
+        None, new_info.total_episodes, new_info.series_id,
+        &new_info.episode_urls, None,
+    ).ok();
+
+    state.library_db.get_series_detail(library_id)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Set TMPDIR to app cache directory to avoid cross-device link errors during updates
@@ -873,6 +985,19 @@ pub fn run() {
             std::env::set_var("TMPDIR", &app_tmp);
         }
     }
+
+    // Initialize library database
+    // We need the app data dir, so use a temporary path resolution
+    // The actual data dir will be available at runtime; for now use a default
+    let library_db = {
+        // Use dirs to find a suitable data directory
+        let app_data_dir = dirs::data_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("com.rongyok.downloader");
+        std::fs::create_dir_all(&app_data_dir).ok();
+        LibraryDb::new(&app_data_dir)
+            .expect("Failed to initialize library database")
+    };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -894,6 +1019,8 @@ pub fn run() {
             downloader: Mutex::new(None),
             current_series: Mutex::new(None),
             download_states: Mutex::new(HashMap::new()),
+            library_db,
+            current_library_id: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             get_domain_settings,
@@ -912,6 +1039,13 @@ pub fn run() {
             delete_files,
             play_file,
             set_taskbar_progress,
+            cmd_save_to_library,
+            cmd_get_library,
+            cmd_get_series_detail,
+            cmd_remove_from_library,
+            cmd_update_episode_status,
+            cmd_search_library,
+            cmd_refetch_series,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
