@@ -1,7 +1,7 @@
 # Feature Design: Content Library, Quality Selection, Scheduling & Proxy
 
 **Date:** 2026-04-10
-**Status:** Draft
+**Status:** Reviewed & Revised
 **Scope:** 4 features delivered in 2 phases
 **Phases:**
 - Phase 1 — Content Library & Details + Quality Selection
@@ -62,42 +62,57 @@ Clicking a library card opens a detail panel (replaces grid, with back button):
 **Backend (SQLite via rusqlite):**
 
 ```sql
-CREATE TABLE library (
-    series_id INTEGER PRIMARY KEY,
+-- Schema version tracking for future migrations
+CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY);
+INSERT INTO schema_version VALUES (1);
+
+CREATE TABLE IF NOT EXISTS library (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    parser_series_id INTEGER NOT NULL DEFAULT 0,  -- original ID from parser (often 0 for non-Rongyok)
     title TEXT NOT NULL,
     source TEXT NOT NULL,           -- "rongyok", "njav", "titan", etc.
-    source_url TEXT,
-    poster_url TEXT,                -- base64 data URL or cached file path
+    source_url TEXT,                -- original page URL (not video URL) for re-fetching
+    poster_path TEXT,               -- local cached file path: app_data_dir/library_posters/{id}.jpg
     total_episodes INTEGER DEFAULT 1,
     date_added TEXT NOT NULL,       -- ISO 8601
     last_downloaded TEXT,
-    metadata TEXT                   -- JSON: extra site-specific data
+    metadata TEXT,                  -- JSON: extra site-specific data (cookies, keys, etc.)
+    UNIQUE(source, source_url)      -- prevent duplicates based on source + URL
 );
 
-CREATE TABLE library_episodes (
+CREATE TABLE IF NOT EXISTS library_episodes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    series_id INTEGER NOT NULL,
+    library_id INTEGER NOT NULL,
     episode_number INTEGER NOT NULL,
     video_url TEXT,                 -- original video URL
     file_path TEXT,                 -- local file path after download
     quality TEXT,                   -- "1080p", "720p", etc.
     file_size INTEGER,
     status TEXT DEFAULT 'pending',  -- pending, downloading, completed, failed
-    FOREIGN KEY (series_id) REFERENCES library(series_id) ON DELETE CASCADE,
-    UNIQUE(series_id, episode_number)
+    FOREIGN KEY (library_id) REFERENCES library(id) ON DELETE CASCADE,
+    UNIQUE(library_id, episode_number)
 );
 ```
+
+**Key design decisions:**
+- Library uses **auto-increment `id`** as primary key, separate from `parser_series_id`. This avoids collisions where non-Rongyok parsers return `series_id: 0`.
+- `UNIQUE(source, source_url)` prevents duplicate entries for the same series.
+- `poster_path` stores a **local cached file path** — poster is downloaded to `app_data_dir/library_posters/{id}.jpg` on save. Falls back to original remote URL if caching fails.
+- `source_url` stores the **original page URL** (not the video URL) to enable re-fetching.
 
 **New Tauri commands:**
 
 | Command | Input | Output | Purpose |
 |---------|-------|--------|---------|
-| `save_to_library` | `UnifiedSeriesInfo` | `()` | Save or update series in library |
+| `save_to_library` | `UnifiedSeriesInfo`, `source_url: String` | `i64` (library id) | Save or update series, returns library ID |
 | `get_library` | filter, sort, page | `Vec<LibraryEntry>` | List library entries |
-| `get_series_detail` | `series_id` | `SeriesDetail` | Full detail with episode status |
-| `remove_from_library` | `series_id` | `()` | Remove series and episodes |
-| `update_episode_status` | `series_id`, ep, status, path | `()` | Update download status |
+| `get_series_detail` | `library_id: i64` | `SeriesDetail` | Full detail with episode status + `can_refetch` |
+| `remove_from_library` | `library_id: i64` | `()` | Remove series, episodes, and cached poster |
+| `update_episode_status` | `library_id`, ep, status, path | `()` | Update download status |
 | `search_library` | query string | `Vec<LibraryEntry>` | Search by title |
+| `refetch_series` | `library_id: i64` | `SeriesDetail` | Re-invoke `fetch_series()` using stored `source_url` |
+
+**Re-fetch semantics:** `refetch_series` re-runs `fetch_series()` with the stored `source_url`. For sources that require Chrome (Njav, NjavTV, BaanJeen fallback), this will launch Chrome again. The `SeriesDetail` struct includes a `can_refetch: bool` field — `true` when `source_url` is a valid series page URL (not a direct `.m3u8`/`.mp4` URL).
 
 **Data flow:**
 
@@ -179,14 +194,19 @@ This command:
 **In `downloader.rs`:**
 
 - Extract variant parsing logic from `download_hls_manual()` into a shared function: `parse_master_playlist(html: &str) -> Vec<QualityOption>`
-- `download_hls_manual()` and `download_hls_stream()` accept an optional `preferred_quality: Option<String>` parameter (resolution string like "1920x1080")
-- When `preferred_quality` is set, match against parsed variants instead of always selecting max bandwidth
-- When `None`, use current behavior (highest quality)
+- `download_episode()` gains `preferred_quality: Option<String>` parameter (resolution string like "1920x1080")
+- **Quality parameter threading:**
+  - `download_episode(video_url, ..., preferred_quality)` → dispatches to download method
+  - `download_hls_manual()`: when `preferred_quality` is set, the sub-playlist selection logic (currently picks max bandwidth) matches against the requested resolution instead
+  - `download_hls_stream()` (FFmpeg path): when quality is specified, first resolve the master playlist to find the sub-playlist URL for that quality using `parse_master_playlist()`, then pass the sub-playlist URL (not the master URL) as FFmpeg's `-i` argument. This prevents FFmpeg from picking its own variant.
+  - `download_titan_hls()` and `download_direct_file()`: `preferred_quality` is ignored (Titan uses encrypted segments with fixed quality; direct downloads have no variants)
+- When `preferred_quality` is `None`, use current behavior (highest quality)
 
 **In `lib.rs`:**
 
 - `DownloadRequest` gains `preferred_quality: Option<String>` field
-- `start_download` passes quality preference through to `VideoDownloader`
+- `start_download` threads quality preference from `DownloadRequest` through to each `download_episode()` call
+- The quality string is matched against `QualityOption.resolution` (e.g., "1920x1080") — if no exact match, falls back to nearest lower quality
 
 #### 2.4 Frontend Changes
 
@@ -246,6 +266,7 @@ struct ScheduleConfig {
 **Backend:**
 
 - Background tokio task checks schedule every 30 seconds
+- **Midnight wrap-around handling:** when `active_start > active_end` (e.g., 22:00–08:00), the active period crosses midnight. Schedule check uses: `is_active = if start > end { now >= start || now < end } else { now >= start && now < end }`
 - When transitioning between active/inactive:
   - If `auto_pause`: sends pause signal to all active downloads
   - If `auto_resume`: sends resume signal to paused downloads
@@ -267,9 +288,10 @@ struct ScheduleConfig {
 - No changes needed
 
 **HLS via FFmpeg (`download_hls_stream`):**
-- Add FFmpeg `-rate_limit` flag when speed limit is set
-- Formula: `-rate_limit {speed_limit_kbps * 1024}` bytes per second
-- This is a FFmpeg-native feature, no manual chunking needed
+- FFmpeg does not expose `-rate_limit` as a command-line flag (it's an internal AVIO context option).
+- **Strategy:** When speed limiting is active, fall through to `download_hls_manual()` instead. The manual path already supports per-segment speed control via reqwest, and the codebase already has this fallback pattern (manual path is used when FFmpeg HLS fails).
+- When speed limit is 0 (unlimited), continue using FFmpeg path for efficiency.
+- This means `download_hls_stream()` does not change — the routing logic in `download_episode()` switches paths based on speed limit.
 
 **HLS manual (`download_hls_manual`):**
 - Add per-segment download delay based on speed limit
@@ -293,10 +315,36 @@ struct DownloadState {
 }
 ```
 
-Benefits:
-- No polling overhead during pause
-- Dynamic speed limit changes propagate instantly
-- Cleaner cancellation path
+**Initialization pattern:**
+- `DownloadState::new()` creates internal channels:
+  ```rust
+  let (speed_tx, speed_rx) = watch::channel(0u64);
+  let (pause_tx, pause_rx) = watch::channel(false);
+  ```
+- Created in `start_download()` at the point where `DownloadState` is currently constructed (lib.rs ~line 530)
+- `is_paused` and `is_cancelled` remain as `Arc<AtomicBool>` for backward compatibility with existing pause/resume/cancel commands
+
+**Pause loop replacement:**
+- Current busy-wait in `download_direct_file()` (~lines 1084-1096):
+  ```rust
+  while self.state.is_paused.load(Ordering::SeqCst) {
+      tokio::time::sleep(Duration::from_millis(100)).await;
+  }
+  ```
+- New event-driven approach:
+  ```rust
+  while *self.pause_signal.borrow() {
+      self.pause_signal.changed().await.ok();
+  }
+  ```
+- Same pattern applied in `download_titan_hls()` and `download_hls_manual()` where `is_cancelled` is checked
+- `pause_download` command sets both `is_paused` (AtomicBool) and sends via `pause_tx` (watch channel)
+- `resume_download` clears `is_paused` and sends `false` via `pause_tx`
+
+**Dynamic speed limit:**
+- `update_speed_limit(kbps)` command sends new value via `speed_limit_kbps` watch sender
+- Download methods read current speed limit from `speed_limit_kbps.borrow()` instead of a fixed config value
+- Enables real-time schedule-based speed changes without restarting downloads
 
 ---
 
@@ -340,8 +388,30 @@ enum ProxyType {
 **Implementation approach:**
 1. Store `ProxyConfig` in `AppState` behind `RwLock`
 2. Create a helper function `build_client(proxy: &ProxyConfig) -> reqwest::Client` used by all parsers
-3. Parsers receive proxy config at construction or via method parameter
-4. Chrome detector adds `--proxy-server={type}://{host}:{port}` to launch args
+3. **Each parser stores `Arc<RwLock<ProxyConfig>>` instead of a `reqwest::Client`** — clients are built per-request (parsers are called once per series fetch, not high-frequency, so per-request client construction is acceptable)
+4. When `save_proxy_config` is called, parsers automatically use the new proxy on their next request (no rebuild needed)
+5. Chrome detector adds `--proxy-server={type}://{host}:{port}` to launch args
+
+**Parser change pattern (applied to all 6 parsers):**
+```rust
+// Before:
+pub struct RongyokParser {
+    client: Client,
+}
+
+// After:
+pub struct RongyokParser {
+    proxy_config: Arc<RwLock<ProxyConfig>>,
+}
+
+impl RongyokParser {
+    fn client(&self) -> Client {
+        build_client(&self.proxy_config.read().unwrap())
+    }
+}
+```
+
+This avoids the problem of needing to rebuild all parsers when proxy settings change at runtime.
 
 **New Tauri commands:**
 
@@ -391,7 +461,7 @@ Download segment/episode
 - `download_hls_manual()`: wrap segment download in retry loop
 - `download_direct_file()`: wrap entire download in retry loop with Range header resume
 - `download_titan_hls()`: wrap segment fetch in retry loop
-- Fallback URLs: replace base URL domain with mirror domain
+- Fallback URLs: domain replacement strategy is `original_url.replace(original_domain, fallback_domain)`. Note: signed CDN URLs with domain-specific tokens may make fallback ineffective — the UI should warn about this when configuring mirrors.
 
 **Retry events emitted to frontend:**
 
@@ -457,7 +527,7 @@ A lightweight background task checks schedule state every 30 seconds:
 - `src-tauri/src/lib.rs` — Register new commands, add AppState fields, auto-save to library
 - `src-tauri/src/downloader.rs` — Extract playlist parser, add quality parameter
 - `src/App.tsx` — Add library tab, integrate QualitySelector
-- `src/types/index.ts` — Add LibraryEntry, SeriesDetail, QualityOption types
+- `src/types/index.ts` — Add LibraryEntry, SeriesDetail, QualityOption types. Extend `SeriesInfo` to include `source`, `sourceUrl`, `episodeKeys`, and `cookies` fields to match backend `UnifiedSeriesInfo` (Tauri IPC already serializes these via `#[serde(rename_all = "camelCase")]`, but frontend currently discards them due to incomplete type definition)
 
 ### Phase 2
 
