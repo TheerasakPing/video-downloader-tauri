@@ -101,6 +101,31 @@ pub fn parse_master_playlist(master_text: &str, master_url: &str) -> Vec<Quality
     variants
 }
 
+/// Retry wrapper for fallible async operations.
+async fn retry_request<F, Fut, T>(
+    max_retries: u32,
+    retry_delay_ms: u64,
+    f: F,
+) -> Result<T, String>
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = Result<T, String>>,
+{
+    let mut last_error = String::new();
+    for attempt in 0..=max_retries {
+        match f().await {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                last_error = e;
+                if attempt < max_retries {
+                    tokio::time::sleep(std::time::Duration::from_millis(retry_delay_ms)).await;
+                }
+            }
+        }
+    }
+    Err(last_error)
+}
+
 #[derive(Clone)]
 pub struct DownloadConfig {
     pub speed_limit_kbps: i32,  // 0 = unlimited
@@ -917,59 +942,37 @@ impl VideoDownloader {
             }
 
             // Download segment with retry
-            let mut retries = 3;
-            loop {
-                match seg_client.get(seg_url).send().await {
-                    Ok(resp) if resp.status().is_success() => {
-                        match resp.bytes().await {
-                            Ok(data) => {
-                                let seg_size = data.len() as u64;
-                                total_bytes += seg_size;
-                                if let Err(e) = ts_file.write_all(&data) {
-                                    let _ = fs::remove_file(&ts_temp_path);
-                                    return DownloadResult {
-                                        episode, success: false, file_path: None,
-                                        error: Some(format!("Failed to write segment: {}", e)),
-                                    };
-                                }
-                            }
-                            Err(e) => {
-                                retries -= 1;
-                                if retries == 0 {
-                                    let _ = fs::remove_file(&ts_temp_path);
-                                    return DownloadResult {
-                                        episode, success: false, file_path: None,
-                                        error: Some(format!("Failed to read segment {}: {}", i+1, e)),
-                                    };
-                                }
-                                tokio::time::sleep(Duration::from_secs(1)).await;
-                                continue;
-                            }
-                        }
-                        break;
+            let seg_url_clone = seg_url.clone();
+            let segment_data = retry_request(3, 2000, || {
+                let client = seg_client.clone();
+                let url = seg_url_clone.clone();
+                async move {
+                    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+                    if resp.status().is_success() {
+                        resp.bytes().await.map_err(|e| e.to_string()).map(|b| b.to_vec())
+                    } else {
+                        Err(format!("HTTP {}", resp.status()))
                     }
-                    Ok(resp) => {
-                        retries -= 1;
-                        if retries == 0 {
-                            let _ = fs::remove_file(&ts_temp_path);
-                            return DownloadResult {
-                                episode, success: false, file_path: None,
-                                error: Some(format!("Segment {} returned HTTP {}", i+1, resp.status())),
-                            };
-                        }
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                    }
-                    Err(e) => {
-                        retries -= 1;
-                        if retries == 0 {
-                            let _ = fs::remove_file(&ts_temp_path);
-                            return DownloadResult {
-                                episode, success: false, file_path: None,
-                                error: Some(format!("Failed to download segment {}: {}", i+1, e)),
-                            };
-                        }
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                    }
+                }
+            }).await;
+
+            let data = match segment_data {
+                Ok(data) => data,
+                Err(e) => {
+                    let _ = app_handle.emit("log-warning", format!("Segment {} failed after retries: {}", seg_url, e));
+                    continue;
+                }
+            };
+
+            {
+                let seg_size = data.len() as u64;
+                total_bytes += seg_size;
+                if let Err(e) = ts_file.write_all(&data) {
+                    let _ = fs::remove_file(&ts_temp_path);
+                    return DownloadResult {
+                        episode, success: false, file_path: None,
+                        error: Some(format!("Failed to write segment: {}", e)),
+                    };
                 }
             }
 

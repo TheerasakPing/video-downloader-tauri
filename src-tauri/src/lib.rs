@@ -150,6 +150,8 @@ struct DownloadRequest {
     group_by_source: bool, // สร้าง subfolder ตามชื่อเว็บ
     #[serde(default)]
     preferred_quality: Option<String>,
+    #[serde(default)]
+    retry_config: Option<crate::proxy::RetryConfig>,
 }
 
 // Commands
