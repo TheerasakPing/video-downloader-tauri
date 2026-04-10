@@ -16,3 +16,6 @@ export { VideoPreview } from "./VideoPreview";
 export { ShortcutsHelp } from "./ShortcutsHelp";
 export { PresetSelector } from "./PresetSelector";
 export { ThemeSelector } from "./ThemeSelector";
+export { LibraryCard } from "./LibraryCard";
+export { SeriesDetail } from "./SeriesDetail";
+export { LibraryPanel } from "./LibraryPanel";
