@@ -6,6 +6,7 @@ mod njav_parser;
 mod njavtv_parser;
 mod parser;
 mod titan_parser;
+mod library;
 mod utils;
 
 use baanjeen_parser::BaanJeenParser;
