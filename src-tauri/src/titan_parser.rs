@@ -4,8 +4,8 @@ use reqwest::Client;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, RwLock};
+use crate::proxy;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,18 +47,16 @@ struct HlsApiResponse {
 }
 
 pub struct TitanParser {
-    client: Client,
+    proxy_config: Arc<RwLock<proxy::ProxyConfig>>,
 }
 
 impl TitanParser {
-    pub fn new() -> Self {
-        let client = Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .timeout(Duration::from_secs(15))
-            .build()
-            .expect("Failed to create HTTP client");
+    pub fn new(proxy_config: Arc<RwLock<proxy::ProxyConfig>>) -> Self {
+        Self { proxy_config }
+    }
 
-        Self { client }
+    fn client(&self) -> Client {
+        proxy::build_client(&self.proxy_config.read().unwrap())
     }
 
     /// Check if URL is from 357ms.com or dynamic domain
@@ -148,7 +146,7 @@ impl TitanParser {
         eprintln!("[Titan] Fetching page: {}", series_url);
 
         let response = self
-            .client
+            .client()
             .get(series_url)
             .header("Referer", "https://www.357ms.com/")
             .send()
@@ -315,12 +313,12 @@ impl TitanParser {
                     ep_links.len(),
                     CONCURRENT_FETCHES
                 );
-                let self_arc = Arc::new(self.client.clone());
+                let client_arc = Arc::new(self.client());
                 let base_arc = Arc::new(base.clone());
 
                 let results: Vec<(i32, Option<HlsApiData>)> = stream::iter(ep_links.iter().cloned())
                     .map(|(ep_num, ep_watch_url)| {
-                        let client = self_arc.clone();
+                        let client = client_arc.clone();
                         let b = base_arc.clone();
                         async move {
                             let api_url = format!(
@@ -444,7 +442,7 @@ impl TitanParser {
         };
 
         let response = self
-            .client
+            .client()
             .get(&final_url)
             .header("Accept", "image/*")
             .send()

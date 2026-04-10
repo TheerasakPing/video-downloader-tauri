@@ -4,6 +4,8 @@ use reqwest::Client;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use crate::proxy;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,17 +18,16 @@ pub struct SeriesInfo {
 }
 
 pub struct RongyokParser {
-    client: Client,
+    pub proxy_config: Arc<RwLock<proxy::ProxyConfig>>,
 }
 
 impl RongyokParser {
-    pub fn new() -> Self {
-        let client = Client::builder()
-            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
-            .build()
-            .expect("Failed to create HTTP client");
+    pub fn new(proxy_config: Arc<RwLock<proxy::ProxyConfig>>) -> Self {
+        Self { proxy_config }
+    }
 
-        Self { client }
+    fn client(&self) -> Client {
+        proxy::build_client(&self.proxy_config.read().unwrap())
     }
 
     /// Extract series_id from URL
@@ -52,7 +53,7 @@ impl RongyokParser {
         let is_thongyok = url.contains("thongyok.com");
 
         let response = self
-            .client
+            .client()
             .get(&url)
             .header("Accept", "text/html,application/xhtml+xml")
             .header("Accept-Language", "th,en-US;q=0.9,en;q=0.8")
@@ -135,7 +136,7 @@ impl RongyokParser {
         for ep in 1..=total_episodes {
             let watch_url = format!("https://thongyok.com/watch/{}/{}", series_id, ep);
 
-            match self.client
+            match self.client()
                 .get(&watch_url)
                 .header("Accept", "text/html,application/xhtml+xml")
                 .header("Accept-Language", "th,en-US;q=0.9,en;q=0.8")
@@ -160,7 +161,7 @@ impl RongyokParser {
 
     /// Fetch an image and convert it to a base64 data URL
     async fn fetch_image_as_data_url(&self, image_url: &str) -> Option<String> {
-        let response = self.client
+        let response = self.client()
             .get(image_url)
             .header("Accept", "image/*")
             .send()

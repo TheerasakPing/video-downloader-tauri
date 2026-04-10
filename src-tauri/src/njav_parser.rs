@@ -2,6 +2,8 @@ use regex::Regex;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, RwLock};
+use crate::proxy;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,18 +19,16 @@ pub struct NjavSeriesInfo {
 }
 
 pub struct NjavParser {
-    client: Client,
+    proxy_config: Arc<RwLock<proxy::ProxyConfig>>,
 }
 
 impl NjavParser {
-    pub fn new() -> Self {
-        let client = Client::builder()
-            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .expect("Failed to create HTTP client");
+    pub fn new(proxy_config: Arc<RwLock<proxy::ProxyConfig>>) -> Self {
+        Self { proxy_config }
+    }
 
-        Self { client }
+    fn client(&self) -> Client {
+        proxy::build_client(&self.proxy_config.read().unwrap())
     }
 
     /// Check if URL belongs to njav.org
@@ -114,7 +114,7 @@ impl NjavParser {
     /// Fetch page HTML
     async fn try_fetch(&self, url: &str) -> Result<String, String> {
         let response = self
-            .client
+            .client()
             .get(url)
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .header("Accept-Language", "th,en-US;q=0.9,en;q=0.8")
@@ -234,7 +234,7 @@ impl NjavParser {
     /// Follow a redirect (e.g., missav.guide/snos-034 → javxx.com/th/v/snos-034-uncensored-leaked)
     /// Returns the final URL after following all redirects.
     async fn resolve_redirect(&self, url: &str) -> Option<String> {
-        let response = self.client.get(url).send().await.ok()?;
+        let response = self.client().get(url).send().await.ok()?;
 
         let final_url = response.url().to_string();
 

@@ -4,6 +4,8 @@ use reqwest::Client;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use crate::proxy;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,17 +19,16 @@ pub struct BaanJeenSeriesInfo {
 }
 
 pub struct BaanJeenParser {
-    client: Client,
+    proxy_config: Arc<RwLock<proxy::ProxyConfig>>,
 }
 
 impl BaanJeenParser {
-    pub fn new() -> Self {
-        let client = Client::builder()
-            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .build()
-            .expect("Failed to create HTTP client");
+    pub fn new(proxy_config: Arc<RwLock<proxy::ProxyConfig>>) -> Self {
+        Self { proxy_config }
+    }
 
-        Self { client }
+    fn client(&self) -> Client {
+        proxy::build_client(&self.proxy_config.read().unwrap())
     }
 
     /// Check if URL is from บ้านจีน.com or configured dynamic domain
@@ -53,7 +54,7 @@ impl BaanJeenParser {
 
         // Fetch the main page
         let response = self
-            .client
+            .client()
             .get(series_url)
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .header("Accept-Language", "th,en-US;q=0.9,en;q=0.8")
@@ -176,7 +177,7 @@ impl BaanJeenParser {
 
             eprintln!("[BaanJeen] Fetching JS: {}", script_url);
 
-            match self.client.get(&script_url).send().await {
+            match self.client().get(&script_url).send().await {
                 Ok(response) => {
                     if let Ok(js_content) = response.text().await {
                         if let Some(video_url) = self.search_video_urls(&js_content) {
@@ -341,7 +342,7 @@ impl BaanJeenParser {
         }
 
         // Otherwise, fetch the iframe page to find the video
-        match self.client.get(iframe_src).send().await {
+        match self.client().get(iframe_src).send().await {
             Ok(response) => {
                 if let Ok(html) = response.text().await {
                     // Look for video source in iframe content
@@ -387,7 +388,7 @@ impl BaanJeenParser {
     /// Fetch an image and convert it to a base64 data URL
     async fn fetch_image_as_data_url(&self, image_url: &str) -> Option<String> {
         let response = self
-            .client
+            .client()
             .get(image_url)
             .header("Accept", "image/*")
             .send()

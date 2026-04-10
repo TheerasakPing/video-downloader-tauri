@@ -9,6 +9,8 @@ use regex::Regex;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use crate::proxy;
 
 #[derive(Debug, Clone)]
 pub struct HsckVideoInfo {
@@ -19,17 +21,16 @@ pub struct HsckVideoInfo {
 }
 
 pub struct HsckParser {
-    client: Client,
+    proxy_config: Arc<RwLock<proxy::ProxyConfig>>,
 }
 
 impl HsckParser {
-    pub fn new() -> Self {
-        let client = Client::builder()
-            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .redirect(reqwest::redirect::Policy::limited(10))
-            .build()
-            .expect("Failed to create HTTP client");
-        Self { client }
+    pub fn new(proxy_config: Arc<RwLock<proxy::ProxyConfig>>) -> Self {
+        Self { proxy_config }
+    }
+
+    fn client(&self) -> Client {
+        proxy::build_client(&self.proxy_config.read().unwrap())
     }
 
     /// ตรวจสอบว่า URL เป็น hsck123.com หรือ domain ที่กำหนด
@@ -62,7 +63,7 @@ impl HsckParser {
         eprintln!("[HSCK] Fetching video page: {}", url);
 
         let response = self
-            .client
+            .client()
             .get(url)
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
@@ -161,7 +162,7 @@ impl HsckParser {
         eprintln!("[HSCK] Fetching list page: {}", url);
 
         let response = self
-            .client
+            .client()
             .get(&url)
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .send()

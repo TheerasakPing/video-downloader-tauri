@@ -25,6 +25,7 @@ use titan_parser::{TitanParser, TitanSeriesInfo, HlsKeyInfo};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::RwLock;
 use std::fs;
 use tauri::{AppHandle, Emitter, State, Manager};
 use utils::{expand_path, sanitize_filename};
@@ -979,6 +980,28 @@ async fn cmd_refetch_series(
 }
 
 #[tauri::command]
+fn cmd_get_proxy_config(state: State<'_, AppState>) -> Result<proxy::ProxyConfig, String> {
+    let config = state.rongyok_parser.proxy_config.read().unwrap();
+    Ok(config.clone())
+}
+
+#[tauri::command]
+fn cmd_save_proxy_config(state: State<'_, AppState>, config: proxy::ProxyConfig) -> Result<(), String> {
+    let mut pc = state.rongyok_parser.proxy_config.write().unwrap();
+    *pc = config;
+    Ok(())
+}
+
+#[tauri::command]
+async fn cmd_test_proxy_connection(config: proxy::ProxyConfig) -> Result<bool, String> {
+    let client = proxy::build_client(&config);
+    match client.get("https://www.google.com").send().await {
+        Ok(resp) => Ok(resp.status().is_success()),
+        Err(e) => Err(format!("Connection failed: {}", e)),
+    }
+}
+
+#[tauri::command]
 async fn get_quality_options(url: String) -> Result<crate::downloader::QualityInfo, String> {
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0")
@@ -1034,6 +1057,8 @@ pub fn run() {
             .expect("Failed to initialize library database")
     };
 
+    let proxy_config = Arc::new(RwLock::new(proxy::ProxyConfig::default()));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -1041,12 +1066,12 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(AppState {
-            rongyok_parser: RongyokParser::new(),
-            baanjeen_parser: BaanJeenParser::new(),
-            titan_parser: TitanParser::new(),
-            hsck_parser: HsckParser::new(),
-            njavtv_parser: NjavtvParser::new(),
-            njav_parser: NjavParser::new(),
+            rongyok_parser: RongyokParser::new(proxy_config.clone()),
+            baanjeen_parser: BaanJeenParser::new(proxy_config.clone()),
+            titan_parser: TitanParser::new(proxy_config.clone()),
+            hsck_parser: HsckParser::new(proxy_config.clone()),
+            njavtv_parser: NjavtvParser::new(proxy_config.clone()),
+            njav_parser: NjavParser::new(proxy_config.clone()),
             chrome_detector: Mutex::new(ChromeVideoDetector::new().unwrap_or_else(|e| {
                 eprintln!("Warning: Chrome detector initialization failed: {}", e);
                 ChromeVideoDetector::new().unwrap()
@@ -1082,6 +1107,9 @@ pub fn run() {
             cmd_update_episode_status,
             cmd_search_library,
             cmd_refetch_series,
+            cmd_get_proxy_config,
+            cmd_save_proxy_config,
+            cmd_test_proxy_connection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

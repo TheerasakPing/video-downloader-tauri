@@ -3,6 +3,8 @@ use reqwest::Client;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use crate::proxy;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,18 +20,16 @@ pub struct NjavtvSeriesInfo {
 }
 
 pub struct NjavtvParser {
-    client: Client,
+    proxy_config: Arc<RwLock<proxy::ProxyConfig>>,
 }
 
 impl NjavtvParser {
-    pub fn new() -> Self {
-        let client = Client::builder()
-            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .expect("Failed to create HTTP client");
+    pub fn new(proxy_config: Arc<RwLock<proxy::ProxyConfig>>) -> Self {
+        Self { proxy_config }
+    }
 
-        Self { client }
+    fn client(&self) -> Client {
+        proxy::build_client(&self.proxy_config.read().unwrap())
     }
 
     /// Check if URL belongs to njavtv.com or configured njavtv domain
@@ -75,7 +75,7 @@ impl NjavtvParser {
     /// Try to fetch page HTML (may fail with Cloudflare)
     async fn try_fetch(&self, url: &str) -> Result<String, String> {
         let response = self
-            .client
+            .client()
             .get(url)
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .header("Accept-Language", "th,en-US;q=0.9,en;q=0.8")
