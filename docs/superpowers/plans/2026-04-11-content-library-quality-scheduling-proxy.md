@@ -62,6 +62,7 @@ Add under `[dependencies]`:
 
 ```toml
 rusqlite = { version = "0.31", features = ["bundled"] }
+chrono = "0.4"
 ```
 
 - [ ] **Step 2: Verify it compiles**
@@ -164,7 +165,7 @@ impl LibraryDb {
                  parser_series_id INTEGER NOT NULL DEFAULT 0,
                  title TEXT NOT NULL,
                  source TEXT NOT NULL,
-                 source_url TEXT,
+                 source_url TEXT NOT NULL DEFAULT '',
                  poster_path TEXT,
                  total_episodes INTEGER DEFAULT 1,
                  date_added TEXT NOT NULL,
@@ -375,7 +376,8 @@ pub fn search_library(&self, query: &str) -> Result<Vec<LibraryEntry>, String> {
             total_episodes: row.get(6)?, date_added: row.get(7)?, last_downloaded: row.get(8)?,
             completed_count: row.get(9)?,
         })
-    }).map_err(|e| e.to_string())?.filter_map(|e| e.ok()).collect::<Vec<_>>().into_result()
+    }).map_err(|e| e.to_string())?.filter_map(|e| e.ok()).collect::<Vec<_>>();
+    Ok(entries)
 }
 ```
 
@@ -405,6 +407,7 @@ git commit -m "feat: add SQLite library storage module with CRUD operations"
 At top of `lib.rs`, add:
 ```rust
 mod library;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 ```
 
 Extend `AppState` struct (around line 117):
@@ -500,24 +503,58 @@ Add to the `.invoke_handler()` macro:
 ```rust
 cmd_save_to_library, cmd_get_library, cmd_get_series_detail,
 cmd_remove_from_library, cmd_update_episode_status, cmd_search_library,
+cmd_refetch_series,
+```
+
+Also add the `refetch_series` command (required by spec):
+
+```rust
+#[tauri::command]
+async fn cmd_refetch_series(
+    library_id: i64,
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+) -> Result<library::SeriesDetail, String> {
+    // Get stored source_url from library
+    let detail = state.library_db.get_series_detail(library_id)?;
+    let source_url = detail.entry.source_url
+        .ok_or_else(|| "No source URL stored for this series".to_string())?;
+
+    if !detail.can_refetch {
+        return Err("This series cannot be re-fetched (direct video URL)".to_string());
+    }
+
+    // Re-invoke fetch_series with stored URL
+    let new_info = fetch_series(source_url, app_handle, state).await?;
+
+    // Update library with fresh data
+    state.library_db.save_series(
+        &new_info.title, &new_info.source, Some(&source_url),
+        None, new_info.total_episodes, new_info.series_id,
+        &new_info.episode_urls, None,
+    ).ok();
+
+    // Return updated detail
+    state.library_db.get_series_detail(library_id)
+}
 ```
 
 - [ ] **Step 5: Auto-save to library after fetch_series**
 
-At the end of `fetch_series()` (where `UnifiedSeriesInfo` is returned), add auto-save call:
+At the end of `fetch_series()` (where `UnifiedSeriesInfo` is returned), add auto-save call. **Note:** `fetch_series()` has two return paths — the early return for direct video URLs (~line 173) and the main return at the end (~line 424). The auto-save must go before both:
 
 ```rust
-// Auto-save to library
-let info_clone = info.clone();
-let source_url_input = url.clone();
-if let Ok(lib_id) = state.library_db.save_series(
-    &info_clone.title, &info_clone.source, Some(&source_url_input),
-    None, info_clone.total_episodes, info_clone.series_id,
-    &info_clone.episode_urls, None,
-) {
-    *state.current_library_id.lock().unwrap() = Some(lib_id);
-}
+// Auto-save to library (place before BOTH return statements in fetch_series)
+let lib_id = state.library_db.save_series(
+    &series_info.title, &series_info.source,
+    Some(&url),  // source_url is the input URL
+    None, series_info.total_episodes, series_info.series_id,
+    &series_info.episode_urls, None,
+).ok();
+*state.current_library_id.lock().unwrap() = lib_id;
 ```
+
+For the direct video URL path (~line 173), add the same auto-save before `return Ok(series_info)`.
 
 - [ ] **Step 6: Update episode status after download completes**
 
@@ -1554,11 +1591,38 @@ pub struct DownloadState {
     pub is_paused: Arc<std::sync::atomic::AtomicBool>,
     pub is_cancelled: Arc<std::sync::atomic::AtomicBool>,
     pub speed_tx: Arc<tokio::sync::watch::Sender<u64>>,
+    pub pause_tx: tokio::sync::watch::Sender<bool>,  // Store sender too
     pub pause_rx: tokio::sync::watch::Receiver<bool>,
 }
 ```
 
-Update `DownloadState::new()` to create channels.
+Update `DownloadState::new()`:
+```rust
+impl DownloadState {
+    pub fn new() -> Self {
+        let (speed_tx, _) = tokio::sync::watch::channel(0u64);
+        let (pause_tx, pause_rx) = tokio::sync::watch::channel(false);
+        Self {
+            is_paused: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            is_cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            speed_tx: Arc::new(speed_tx),
+            pause_tx,
+            pause_rx,
+        }
+    }
+}
+```
+
+Update `pause_download`/`resume_download` commands in `lib.rs` to send through `pause_tx`:
+```rust
+// In pause_download:
+state.download_states.lock().unwrap().get(&series_id)
+    .map(|ds| { ds.is_paused.store(true, SeqCst); ds.pause_tx.send(true).ok(); });
+
+// In resume_download:
+state.download_states.lock().unwrap().get(&series_id)
+    .map(|ds| { ds.is_paused.store(false, SeqCst); ds.pause_tx.send(false).ok(); });
+```
 
 Update pause loops in download methods to use `pause_rx.changed().await`.
 
