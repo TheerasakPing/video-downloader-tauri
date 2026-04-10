@@ -23,6 +23,7 @@ import {
   Loader2,
   CheckCircle,
   Image as ImageIcon,
+  BookOpen,
 } from "lucide-react";
 import {
   Button,
@@ -41,6 +42,7 @@ import {
   MiniMode,
   ShortcutsHelp,
 } from "./components";
+import LibraryPanel from "./components/LibraryPanel";
 import { useLogger } from "./hooks/useLogger";
 import { useSettings } from "./hooks/useSettings";
 import { useHistory } from "./hooks/useHistory";
@@ -83,7 +85,7 @@ interface BatchItem {
   error?: string;
 }
 
-type TabType = "download" | "files" | "history" | "settings" | "logs";
+type TabType = "download" | "library" | "files" | "history" | "settings" | "logs";
 
 function App() {
   const {
@@ -243,7 +245,7 @@ function App() {
   const { themes, activeThemeId, setActiveTheme } = useCustomTheme();
 
   // Tab navigation
-  const tabs: TabType[] = ["download", "files", "history", "settings", "logs"];
+  const tabs: TabType[] = ["download", "library", "files", "history", "settings", "logs"];
   const handleNextTab = useCallback(() => {
     const currentIndex = tabs.indexOf(activeTab);
     const nextIndex = (currentIndex + 1) % tabs.length;
@@ -1143,6 +1145,19 @@ function App() {
         "bg-violet-500/20 text-violet-300 border border-violet-500/40",
     },
     {
+      id: "library",
+      label: "Library",
+      icon: (
+        <BookOpen
+          size={16}
+          className="drop-shadow-[0_0_4px_rgba(168,85,247,0.6)]"
+        />
+      ),
+      glowColor: "purple",
+      activeClass:
+        "bg-purple-500/20 text-purple-300 border border-purple-500/40",
+    },
+    {
       id: "files",
       label: "Files",
       icon: (
@@ -1758,6 +1773,12 @@ function App() {
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {activeTab === "library" && (
+          <div className="page-transition animate-fade-in h-full overflow-y-auto custom-scrollbar">
+            <LibraryPanel />
           </div>
         )}
 
