@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { ScheduleConfig, ProxyConfig, RetryConfig } from "../types";
 
 export interface Settings {
   concurrentDownloads: number;
@@ -12,6 +13,10 @@ export interface Settings {
   outputDir: string;
   groupBySource: boolean; // สร้าง subfolder ตามชื่อเว็บ (rongyok/, titan/, baanjeen/, hsck/, njavtv/)
   defaultQuality: 'best' | 'ask';
+  // Phase 2 settings
+  scheduleConfig: ScheduleConfig;
+  proxyConfig: ProxyConfig;
+  retryConfig: RetryConfig;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -26,6 +31,30 @@ const DEFAULT_SETTINGS: Settings = {
   outputDir: "~/Downloads/rongyok",
   groupBySource: true, // เปิดใช้งานโดย default
   defaultQuality: 'best',
+  // Phase 2 settings
+  scheduleConfig: {
+    enabled: false,
+    activeStart: undefined,
+    activeEnd: undefined,
+    speedDuringActive: 0,
+    speedOutsideActive: 0,
+    autoPause: false,
+    autoResume: false,
+  },
+  proxyConfig: {
+    proxyType: 'Direct' as const,
+    host: '',
+    port: 0,
+    username: undefined,
+    password: undefined,
+  },
+  retryConfig: {
+    maxRetries: 3,
+    retryDelayMs: 2000,
+    fallbackUrls: [],
+    autoRetry: true,
+    skipFailedSegments: false,
+  },
 };
 
 const STORAGE_KEY = "rongyok-settings-v2";

@@ -466,6 +466,335 @@ export function SettingsPanel({
         />
       </section>
 
+      {/* Download Schedule */}
+      <section className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+        <h3 className="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
+          <span className="icon-glow icon-glow-sm icon-glow-cyan">
+            <Gauge size={16} />
+          </span>
+          Download Schedule
+        </h3>
+
+        <div className="space-y-4">
+          {/* Enable Scheduling */}
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-white">Enable Scheduling</label>
+              <p className="text-xs text-slate-500">
+                Limit downloads to specific time window
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.scheduleConfig.enabled}
+                onChange={(e) =>
+                  onUpdate("scheduleConfig", {
+                    ...settings.scheduleConfig,
+                    enabled: e.target.checked,
+                  })
+                }
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
+            </label>
+          </div>
+
+          {settings.scheduleConfig.enabled && (
+            <div className="grid grid-cols-2 gap-3 pl-2">
+              <div>
+                <label className="text-xs text-slate-500">Active Start</label>
+                <input
+                  type="time"
+                  value={settings.scheduleConfig.activeStart || ""}
+                  onChange={(e) =>
+                    onUpdate("scheduleConfig", {
+                      ...settings.scheduleConfig,
+                      activeStart: e.target.value || undefined,
+                    })
+                  }
+                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500">Active End</label>
+                <input
+                  type="time"
+                  value={settings.scheduleConfig.activeEnd || ""}
+                  onChange={(e) =>
+                    onUpdate("scheduleConfig", {
+                      ...settings.scheduleConfig,
+                      activeEnd: e.target.value || undefined,
+                    })
+                  }
+                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500">
+                  Speed During Active (KB/s)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={settings.scheduleConfig.speedDuringActive}
+                  onChange={(e) =>
+                    onUpdate("scheduleConfig", {
+                      ...settings.scheduleConfig,
+                      speedDuringActive: parseInt(e.target.value) || 0,
+                    })
+                  }
+                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500">
+                  Speed Outside Active (KB/s)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={settings.scheduleConfig.speedOutsideActive}
+                  onChange={(e) =>
+                    onUpdate("scheduleConfig", {
+                      ...settings.scheduleConfig,
+                      speedOutsideActive: parseInt(e.target.value) || 0,
+                    })
+                  }
+                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white"
+                />
+              </div>
+            </div>
+          )}
+
+          {settings.scheduleConfig.enabled && (
+            <div className="flex gap-6 pl-2">
+              {/* Auto Pause */}
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <label className="text-sm text-white">Auto Pause</label>
+                  <p className="text-xs text-slate-500">Pause outside window</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.scheduleConfig.autoPause}
+                    onChange={(e) =>
+                      onUpdate("scheduleConfig", {
+                        ...settings.scheduleConfig,
+                        autoPause: e.target.checked,
+                      })
+                    }
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
+                </label>
+              </div>
+
+              {/* Auto Resume */}
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <label className="text-sm text-white">Auto Resume</label>
+                  <p className="text-xs text-slate-500">Resume in window</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.scheduleConfig.autoResume}
+                    onChange={(e) =>
+                      onUpdate("scheduleConfig", {
+                        ...settings.scheduleConfig,
+                        autoResume: e.target.checked,
+                      })
+                    }
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Proxy Configuration */}
+      <section className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+        <h3 className="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
+          <span className="icon-glow icon-glow-sm icon-glow-blue">
+            <Globe size={16} />
+          </span>
+          Proxy Configuration
+        </h3>
+
+        <div className="space-y-4">
+          {/* Proxy Type */}
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-white">Proxy Type</label>
+              <p className="text-xs text-slate-500">Network proxy for downloads</p>
+            </div>
+            <select
+              value={settings.proxyConfig.proxyType}
+              onChange={(e) =>
+                onUpdate("proxyConfig", {
+                  ...settings.proxyConfig,
+                  proxyType: e.target.value as "Direct" | "Http" | "Socks5",
+                })
+              }
+              className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white"
+            >
+              <option value="Direct">No Proxy (Direct)</option>
+              <option value="Http">HTTP Proxy</option>
+              <option value="Socks5">SOCKS5 Proxy</option>
+            </select>
+          </div>
+
+          {settings.proxyConfig.proxyType !== "Direct" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-slate-500">Host</label>
+                <input
+                  type="text"
+                  value={settings.proxyConfig.host}
+                  onChange={(e) =>
+                    onUpdate("proxyConfig", {
+                      ...settings.proxyConfig,
+                      host: e.target.value,
+                    })
+                  }
+                  placeholder="127.0.0.1"
+                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500">Port</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={settings.proxyConfig.port}
+                  onChange={(e) =>
+                    onUpdate("proxyConfig", {
+                      ...settings.proxyConfig,
+                      port: parseInt(e.target.value) || 0,
+                    })
+                  }
+                  placeholder="8080"
+                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Retry & Fallback */}
+      <section className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+        <h3 className="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
+          <span className="icon-glow icon-glow-sm icon-glow-amber">
+            <RotateCcw size={16} />
+          </span>
+          Retry &amp; Fallback
+        </h3>
+
+        <div className="space-y-4">
+          {/* Max Retries */}
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-white">Max Retries</label>
+              <p className="text-xs text-slate-500">
+                Attempts before marking as failed (0-10)
+              </p>
+            </div>
+            <input
+              type="number"
+              min="0"
+              max="10"
+              value={settings.retryConfig.maxRetries}
+              onChange={(e) =>
+                onUpdate("retryConfig", {
+                  ...settings.retryConfig,
+                  maxRetries: parseInt(e.target.value) || 0,
+                })
+              }
+              className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white w-24"
+            />
+          </div>
+
+          {/* Retry Delay */}
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-white">Retry Delay</label>
+              <p className="text-xs text-slate-500">
+                Delay between retry attempts (ms)
+              </p>
+            </div>
+            <input
+              type="number"
+              min="100"
+              step="500"
+              value={settings.retryConfig.retryDelayMs}
+              onChange={(e) =>
+                onUpdate("retryConfig", {
+                  ...settings.retryConfig,
+                  retryDelayMs: parseInt(e.target.value) || 1000,
+                })
+              }
+              className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white w-24"
+            />
+          </div>
+
+          {/* Auto Retry */}
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-white">Auto-retry on failure</label>
+              <p className="text-xs text-slate-500">
+                Automatically retry failed downloads
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.retryConfig.autoRetry}
+                onChange={(e) =>
+                  onUpdate("retryConfig", {
+                    ...settings.retryConfig,
+                    autoRetry: e.target.checked,
+                  })
+                }
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
+            </label>
+          </div>
+
+          {/* Skip Failed Segments */}
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-white">Skip failed segments</label>
+              <p className="text-xs text-slate-500">
+                Skip unrecoverable HLS segments
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.retryConfig.skipFailedSegments}
+                onChange={(e) =>
+                  onUpdate("retryConfig", {
+                    ...settings.retryConfig,
+                    skipFailedSegments: e.target.checked,
+                  })
+                }
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+            </label>
+          </div>
+        </div>
+      </section>
+
       {/* Updates */}
       <section className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
         <h3 className="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
