@@ -50,3 +50,8 @@ hex = "0.4"
 
 # Headless browser for auto-detection
 headless_chrome = "1.0"
+
+# SQLite for content library
+rusqlite = { version = "0.31", features = ["bundled"] }
+# Date/time handling
+chrono = "0.4"
