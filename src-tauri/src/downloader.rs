@@ -38,6 +38,69 @@ pub struct DownloadResult {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QualityOption {
+    pub resolution: String,
+    pub bandwidth: u64,
+    pub label: String,
+    pub stream_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QualityInfo {
+    pub qualities: Vec<QualityOption>,
+    pub default_index: usize,
+}
+
+/// Parse HLS master playlist to extract quality variants.
+/// Returns variants sorted by bandwidth (highest first).
+pub fn parse_master_playlist(master_text: &str, master_url: &str) -> Vec<QualityOption> {
+    let base_url = master_url.rfind('/').map(|i| &master_url[..=i]).unwrap_or(master_url);
+    let mut variants: Vec<QualityOption> = Vec::new();
+    let mut current_bandwidth: i64 = -1;
+    let mut current_resolution: Option<String> = None;
+
+    for line in master_text.lines() {
+        let line = line.trim();
+        if line.starts_with("#EXT-X-STREAM-INF:") {
+            current_bandwidth = line.split(',')
+                .find_map(|part| {
+                    part.trim().strip_prefix("BANDWIDTH=")
+                        .and_then(|v| v.parse::<i64>().ok())
+                })
+                .unwrap_or(0);
+            current_resolution = line.split(',')
+                .find_map(|part| {
+                    part.trim().strip_prefix("RESOLUTION=")
+                        .map(|v| v.to_string())
+                });
+        } else if !line.is_empty() && !line.starts_with('#') && current_bandwidth >= 0 {
+            let sub_url = if line.starts_with("http") {
+                line.to_string()
+            } else {
+                format!("{}/{}", base_url.trim_end_matches('/'), line.trim_start_matches('/'))
+            };
+            let resolution = current_resolution.clone().unwrap_or_else(|| "unknown".to_string());
+            let bandwidth = current_bandwidth as u64;
+            let height = resolution.split('x').nth(1).unwrap_or("?");
+            let label = format!("{}p ({:.1} Mbps)", height, bandwidth as f64 / 1_000_000.0);
+            variants.push(QualityOption {
+                resolution,
+                bandwidth,
+                label,
+                stream_url: sub_url,
+            });
+            current_bandwidth = -1;
+            current_resolution = None;
+        }
+    }
+
+    variants.sort_by(|a, b| b.bandwidth.cmp(&a.bandwidth));
+    variants
+}
+
 #[derive(Clone)]
 pub struct DownloadConfig {
     pub speed_limit_kbps: i32,  // 0 = unlimited
@@ -120,6 +183,7 @@ impl VideoDownloader {
         cookies: &[(String, String)],
         app_handle: &AppHandle,
         download_state: Option<Arc<DownloadState>>,
+        preferred_quality: Option<String>,
     ) -> DownloadResult {
         let file_path = self.get_episode_filename(episode);
         let file_path_str = file_path.to_string_lossy().to_string();
@@ -139,7 +203,34 @@ impl VideoDownloader {
                     error: Some("FFmpeg is required for .m3u8 downloads but was not found".to_string()),
                 };
             }
-            let result = self.download_hls_stream(episode, video_url, &file_path_str, referer, cookies, app_handle, download_state.clone()).await;
+            // Pre-resolve master playlist if quality is specified
+            let effective_url = if let Some(ref quality) = preferred_quality {
+                let pre_client = Client::builder()
+                    .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+                    .build().unwrap_or_else(|_| Client::new());
+                if let Ok(resp) = pre_client.get(video_url).send().await {
+                    if let Ok(text) = resp.text().await {
+                        if text.contains("#EXT-X-STREAM-INF") {
+                            let variants = parse_master_playlist(&text, video_url);
+                            let resolved = variants.iter()
+                                .find(|v| v.resolution == *quality)
+                                .map(|v| v.stream_url.clone())
+                                .unwrap_or_else(|| video_url.to_string());
+                            resolved
+                        } else {
+                            video_url.to_string()
+                        }
+                    } else {
+                        video_url.to_string()
+                    }
+                } else {
+                    video_url.to_string()
+                }
+            } else {
+                video_url.to_string()
+            };
+
+            let result = self.download_hls_stream(episode, &effective_url, &file_path_str, referer, cookies, app_handle, download_state.clone()).await;
 
             // If FFmpeg failed due to obfuscated segment extensions (.jpeg, .html, etc.),
             // fall back to manual segment download via reqwest + FFmpeg concat
@@ -153,8 +244,8 @@ impl VideoDownloader {
                         || err_lower.contains("invalid data found")
                     {
                         let _ = app_handle.emit("log-info", "FFmpeg HLS demuxer rejected segments — retrying with manual segment download...".to_string());
-                        eprintln!("[Downloader] Retrying with manual segment download for: {}", video_url);
-                        return self.download_hls_manual(episode, video_url, &file_path_str, referer, cookies, app_handle, download_state).await;
+                        eprintln!("[Downloader] Retrying with manual segment download for: {}", effective_url);
+                        return self.download_hls_manual(episode, &effective_url, &file_path_str, referer, cookies, app_handle, download_state, preferred_quality).await;
                     }
                 }
             }
@@ -661,6 +752,7 @@ impl VideoDownloader {
         cookies: &[(String, String)],
         app_handle: &AppHandle,
         download_state: Option<Arc<DownloadState>>,
+        preferred_quality: Option<String>,
     ) -> DownloadResult {
         let _ = app_handle.emit("log-info", format!("Manual HLS: fetching master playlist..."));
         eprintln!("[ManualHLS] Fetching master playlist: {}", master_url);
@@ -708,39 +800,31 @@ impl VideoDownloader {
             }
         };
 
-        // 2. Find best quality sub-playlist URL (highest BANDWIDTH)
-        let mut best_url: Option<String> = None;
-        let mut max_bandwidth: i64 = -1;
-        let mut current_bandwidth: i64 = -1;
-        let base_url = master_url.rfind('/').map(|i| &master_url[..=i]).unwrap_or(master_url);
+        // 2. Parse master playlist and select quality variant
+        let variants = parse_master_playlist(&master_text, master_url);
 
-        for line in master_text.lines() {
-            let line = line.trim();
-            if line.starts_with("#EXT-X-STREAM-INF:") {
-                // Extract BANDWIDTH
-                current_bandwidth = line.split(',')
-                    .find_map(|part| {
-                        part.trim().strip_prefix("BANDWIDTH=")
-                            .and_then(|v| v.parse::<i64>().ok())
-                    })
-                    .unwrap_or(0);
-            } else if !line.is_empty() && !line.starts_with('#') && current_bandwidth >= 0 {
-                // This line is the URL for the preceding STREAM-INF
-                if current_bandwidth > max_bandwidth {
-                    max_bandwidth = current_bandwidth;
-                    let sub_url = if line.starts_with("http") {
-                        line.to_string()
-                    } else {
-                        format!("{}/{}", base_url.trim_end_matches('/'), line.trim_start_matches('/'))
-                    };
-                    best_url = Some(sub_url);
-                }
-                current_bandwidth = -1; // Reset
-            }
-        }
-
-        // If no variant playlists found, treat the master as a simple playlist
-        let sub_playlist_url = best_url.unwrap_or_else(|| master_url.to_string());
+        let sub_playlist_url = if let Some(ref quality) = preferred_quality {
+            variants.iter()
+                .find(|v| v.resolution == *quality)
+                .map(|v| v.stream_url.clone())
+                .unwrap_or_else(|| {
+                    // Fallback: nearest lower quality
+                    let target = quality.split('x').nth(1)
+                        .and_then(|h| h.parse::<u32>().ok())
+                        .unwrap_or(0);
+                    variants.iter()
+                        .filter(|v| {
+                            v.resolution.split('x').nth(1)
+                                .and_then(|h| h.parse::<u32>().ok())
+                                .unwrap_or(0) <= target
+                        })
+                        .map(|v| v.stream_url.clone())
+                        .next()
+                        .unwrap_or_else(|| variants.first().map(|v| v.stream_url.clone()).unwrap_or_else(|| master_url.to_string()))
+                })
+        } else {
+            variants.first().map(|v| v.stream_url.clone()).unwrap_or_else(|| master_url.to_string())
+        };
         let _ = app_handle.emit("log-info", format!("Manual HLS: using sub-playlist: {}", sub_playlist_url));
         eprintln!("[ManualHLS] Sub-playlist URL: {}", sub_playlist_url);
 

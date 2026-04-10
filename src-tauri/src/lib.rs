@@ -147,6 +147,8 @@ struct DownloadRequest {
     series_title: String,
     #[serde(default)]
     group_by_source: bool, // สร้าง subfolder ตามชื่อเว็บ
+    #[serde(default)]
+    preferred_quality: Option<String>,
 }
 
 // Commands
@@ -549,6 +551,7 @@ async fn start_download(
                 }
             );
             let ep = *episode;
+            let preferred_quality = request.preferred_quality.clone();
 
             // Create download state for this episode
             let download_state = Arc::new(DownloadState::new());
@@ -558,7 +561,7 @@ async fn start_download(
             }
 
             let handle = tokio::spawn(async move {
-                dl.download_episode(ep, &video_url, hls_key_info, referer.as_deref(), &cookies, &app, Some(download_state)).await
+                dl.download_episode(ep, &video_url, hls_key_info, referer.as_deref(), &cookies, &app, Some(download_state), preferred_quality).await
             });
             handles.push((ep, handle));
         }
@@ -975,6 +978,37 @@ async fn cmd_refetch_series(
     state.library_db.get_series_detail(library_id)
 }
 
+#[tauri::command]
+async fn get_quality_options(url: String) -> Result<crate::downloader::QualityInfo, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0")
+        .build().map_err(|e| e.to_string())?;
+
+    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    let text = resp.text().await.map_err(|e| e.to_string())?;
+
+    if text.contains("#EXT-X-STREAM-INF") {
+        let variants = crate::downloader::parse_master_playlist(&text, &url);
+        if variants.is_empty() {
+            return Ok(crate::downloader::QualityInfo { qualities: vec![], default_index: 0 });
+        }
+        Ok(crate::downloader::QualityInfo {
+            default_index: 0,
+            qualities: variants,
+        })
+    } else {
+        Ok(crate::downloader::QualityInfo {
+            qualities: vec![crate::downloader::QualityOption {
+                resolution: "original".to_string(),
+                bandwidth: 0,
+                label: "Original quality".to_string(),
+                stream_url: url,
+            }],
+            default_index: 0,
+        })
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Set TMPDIR to app cache directory to avoid cross-device link errors during updates
@@ -1031,6 +1065,7 @@ pub fn run() {
             check_ffmpeg_available,
             auto_detect_video_url,
             start_download,
+            get_quality_options,
             pause_download,
             resume_download,
             cancel_download,
