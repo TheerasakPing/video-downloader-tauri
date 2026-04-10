@@ -8,6 +8,7 @@ mod parser;
 mod titan_parser;
 mod library;
 mod proxy;
+mod scheduler;
 
 mod utils;
 
@@ -133,6 +134,7 @@ struct AppState {
     download_states: Mutex<HashMap<i32, Arc<DownloadState>>>,
     library_db: LibraryDb,
     current_library_id: Mutex<Option<i64>>,
+    schedule_config: Arc<Mutex<scheduler::ScheduleConfig>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1004,6 +1006,19 @@ async fn cmd_test_proxy_connection(config: proxy::ProxyConfig) -> Result<bool, S
 }
 
 #[tauri::command]
+fn cmd_get_schedule_config(state: State<'_, AppState>) -> Result<scheduler::ScheduleConfig, String> {
+    let cfg = state.schedule_config.lock().unwrap();
+    Ok(cfg.clone())
+}
+
+#[tauri::command]
+fn cmd_save_schedule_config(state: State<'_, AppState>, config: scheduler::ScheduleConfig) -> Result<(), String> {
+    let mut cfg = state.schedule_config.lock().unwrap();
+    *cfg = config;
+    Ok(())
+}
+
+#[tauri::command]
 async fn get_quality_options(url: String) -> Result<crate::downloader::QualityInfo, String> {
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0")
@@ -1060,6 +1075,7 @@ pub fn run() {
     };
 
     let proxy_config = Arc::new(RwLock::new(proxy::ProxyConfig::default()));
+    let schedule_config = Arc::new(Mutex::new(scheduler::ScheduleConfig::default()));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -1083,6 +1099,14 @@ pub fn run() {
             download_states: Mutex::new(HashMap::new()),
             library_db,
             current_library_id: Mutex::new(None),
+            schedule_config,
+        })
+        .setup(|app| {
+            let handle = app.handle().clone();
+            let state = app.state::<AppState>();
+            let sched_config = state.schedule_config.clone();
+            scheduler::start_scheduler(sched_config, handle);
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_domain_settings,
@@ -1112,6 +1136,8 @@ pub fn run() {
             cmd_get_proxy_config,
             cmd_save_proxy_config,
             cmd_test_proxy_connection,
+            cmd_get_schedule_config,
+            cmd_save_schedule_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
