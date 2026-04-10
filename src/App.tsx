@@ -43,6 +43,7 @@ import {
   ShortcutsHelp,
 } from "./components";
 import LibraryPanel from "./components/LibraryPanel";
+import QualitySelector from "./components/QualitySelector";
 import { useLogger } from "./hooks/useLogger";
 import { useSettings } from "./hooks/useSettings";
 import { useHistory } from "./hooks/useHistory";
@@ -106,6 +107,7 @@ function App() {
   const [ffmpegAvailable, setFfmpegAvailable] = useState(false);
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [selectedQuality, setSelectedQuality] = useState<string | null>(null);
 
   // Batch Mode State
   const [isBatchMode, setIsBatchMode] = useState(false);
@@ -410,6 +412,7 @@ function App() {
             fileNaming: settings.fileNaming,
             seriesTitle: targetSeries.title,
             groupBySource: settings.groupBySource,
+            preferredQuality: selectedQuality,
           },
         });
 
@@ -1514,6 +1517,15 @@ function App() {
                     onSelectAll={selectAllEpisodes}
                     onDeselectAll={deselectAllEpisodes}
                     disabled={downloadState.isDownloading}
+                  />
+                )}
+
+                {/* Quality Selector */}
+                {series && (
+                  <QualitySelector
+                    episodeUrl={Object.values(series.episodeUrls)[0]}
+                    onSelect={(q) => setSelectedQuality(q)}
+                    defaultQuality={settings.defaultQuality || 'best'}
                   />
                 )}
 

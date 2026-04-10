@@ -11,6 +11,7 @@ export interface Settings {
   fileNaming: "ep_001" | "episode_1" | "title_ep1";
   outputDir: string;
   groupBySource: boolean; // สร้าง subfolder ตามชื่อเว็บ (rongyok/, titan/, baanjeen/, hsck/, njavtv/)
+  defaultQuality: 'best' | 'ask';
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -24,6 +25,7 @@ const DEFAULT_SETTINGS: Settings = {
   fileNaming: "ep_001",
   outputDir: "~/Downloads/rongyok",
   groupBySource: true, // เปิดใช้งานโดย default
+  defaultQuality: 'best',
 };
 
 const STORAGE_KEY = "rongyok-settings-v2";
