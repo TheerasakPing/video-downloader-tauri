@@ -19,6 +19,7 @@ use njav_parser::NjavParser;
 use njavtv_parser::NjavtvParser;
 use parser::RongyokParser;
 use serde::{Deserialize, Serialize};
+use base64::Engine;
 use library::LibraryDb;
 use titan_parser::{TitanParser, TitanSeriesInfo, HlsKeyInfo};
 use std::collections::HashMap;
@@ -962,7 +963,7 @@ async fn cmd_refetch_series(
     }
 
     // Re-invoke fetch_series with stored URL
-    let new_info = fetch_series(source_url, app_handle, state).await?;
+    let new_info = fetch_series(source_url, app_handle, state.clone()).await?;
 
     // Update library with fresh data
     state.library_db.save_series(
