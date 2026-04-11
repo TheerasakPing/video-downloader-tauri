@@ -1076,6 +1076,96 @@ async fn get_quality_options(url: String) -> Result<crate::downloader::QualityIn
     }
 }
 
+#[tauri::command]
+async fn search_sites(
+    query: String,
+    page: i32,
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Vec<SearchResponse>, String> {
+    if query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let settings = get_domain_settings(app_handle);
+    let futures: Vec<std::pin::Pin<Box<dyn std::future::Future<Output = Option<SearchResponse>> + Send>>> = vec![
+        Box::pin(async {
+            match state.rongyok_parser.search(&query, page, &settings.rongyok_domain).await {
+                Ok(results) => {
+                    let has_more = results.len() >= 20;
+                    Some(SearchResponse { results, source: "rongyok".into(), page, has_more })
+                }
+                Err(_) => None,
+            }
+        }),
+        Box::pin(async {
+            match state.baanjeen_parser.search(&query, page, &settings.baanjeen_domain).await {
+                Ok(results) => {
+                    let has_more = results.len() >= 20;
+                    Some(SearchResponse { results, source: "baanjeen".into(), page, has_more })
+                }
+                Err(_) => None,
+            }
+        }),
+        Box::pin(async {
+            match state.titan_parser.search(&query, page, &settings.titan_domain).await {
+                Ok(results) => {
+                    let has_more = results.len() >= 20;
+                    Some(SearchResponse { results, source: "titan".into(), page, has_more })
+                }
+                Err(_) => None,
+            }
+        }),
+        Box::pin(async {
+            match state.hsck_parser.search(&query, page, &settings.hsck_domain).await {
+                Ok(results) => {
+                    let has_more = results.len() >= 20;
+                    Some(SearchResponse { results, source: "hsck".into(), page, has_more })
+                }
+                Err(_) => None,
+            }
+        }),
+    ];
+
+    let responses: Vec<SearchResponse> = futures_util::future::join_all(futures)
+        .await
+        .into_iter()
+        .flatten()
+        .collect();
+
+    Ok(responses)
+}
+
+#[tauri::command]
+fn get_browse_categories(state: State<'_, AppState>) -> Result<Vec<SiteCategory>, String> {
+    let mut categories = Vec::new();
+    categories.extend(state.rongyok_parser.list_categories("rongyok.com"));
+    categories.extend(state.baanjeen_parser.list_categories("xn--82c7abb4jua0l.com"));
+    categories.extend(state.titan_parser.list_categories("51cg1.com"));
+    categories.extend(state.hsck_parser.list_categories("hsck123.com"));
+    Ok(categories)
+}
+
+#[tauri::command]
+async fn browse_category(
+    source: String,
+    category: String,
+    page: i32,
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+) -> Result<SearchResponse, String> {
+    let settings = get_domain_settings(app_handle);
+    let results = match source.as_str() {
+        "rongyok" => state.rongyok_parser.browse(&category, page, &settings.rongyok_domain).await?,
+        "baanjeen" => state.baanjeen_parser.browse(&category, page, &settings.baanjeen_domain).await?,
+        "titan" => state.titan_parser.browse(&category, page, &settings.titan_domain).await?,
+        "hsck" => state.hsck_parser.browse(&category, page, &settings.hsck_domain).await?,
+        _ => return Err(format!("Unknown source: {}", source)),
+    };
+    let has_more = results.len() >= 20;
+    Ok(SearchResponse { results, source, page, has_more })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Set TMPDIR to app cache directory to avoid cross-device link errors during updates
@@ -1165,6 +1255,9 @@ pub fn run() {
             cmd_test_proxy_connection,
             cmd_get_schedule_config,
             cmd_save_schedule_config,
+            search_sites,
+            get_browse_categories,
+            browse_category,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
