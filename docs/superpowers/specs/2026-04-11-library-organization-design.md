@@ -38,13 +38,17 @@ CREATE TABLE IF NOT EXISTS library_tag_map (
 
 **Why a column for favorite but a table for tags:** Favorite is a simple boolean per series — a column is the simplest representation. Tags are many-to-many (a series can have multiple tags, a tag can be on multiple series) — a join table is the correct relational model.
 
-**Foreign key enforcement:** SQLite foreign keys are disabled by default. Add `PRAGMA foreign_keys = ON` to the connection setup in `LibraryDb::new()`, combined with the existing WAL pragma:
+**Foreign key enforcement:** SQLite foreign keys are disabled by default. Modify the existing WAL pragma line in `LibraryDb::new()` (currently at `library.rs:58`) to include foreign key enforcement:
 
 ```rust
+// BEFORE (library.rs:58):
+conn.execute_batch("PRAGMA journal_mode=WAL;")
+
+// AFTER:
 conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
 ```
 
-The existing `ON DELETE CASCADE` on `library_episodes` will also become active, which is correct behavior — deleting a library entry should cascade to episodes and tag mappings.
+The existing `ON DELETE CASCADE` on `library_episodes` will also become active, which is correct behavior — deleting a library entry should cascade to episodes and tag mappings. The explicit episode deletion in `remove_series()` becomes redundant but harmless (acts as a safety net).
 
 **Migration implementation pattern:** Each migration is a method that checks prerequisites and applies changes idempotently:
 
@@ -57,7 +61,7 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
 
     if current_version < 2 {
         migration_2_add_favorites_and_tags(conn)?;
-        conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (2)", [])
+        conn.execute("INSERT OR IGNORE INTO schema_version (version) VALUES (2)", [])
             .map_err(|e| e.to_string())?;
     }
     // future migrations: if current_version < 3 { ... }
@@ -147,6 +151,7 @@ Note: `Default` derive enables `LibraryQuery::default()` for the deprecation wra
 | `run_migrations()` | Apply pending schema migrations |
 | `get_library(query: Option<LibraryQuery>)` | Return filtered/sorted library entries with tags and completed count. `None` = default sort |
 | `get_tags()` | Return all tags with usage count. SQL: `SELECT t.id, t.name, COUNT(tmap.library_id) as usage_count FROM library_tags t LEFT JOIN library_tag_map tmap ON tmap.tag_id = t.id GROUP BY t.id ORDER BY t.name` |
+| `get_tags_for_entries(ids: &[i64])` | Private helper — load tags for specific library entries (called internally by `get_library`). See Section 2.1 for SQL. |
 | `create_tag(name: &str)` | Create a new tag |
 | `delete_tag(tag_id: i64)` | Delete tag and all its mappings |
 | `assign_tag(library_id: i64, tag_id: i64)` | Add tag to series |
@@ -182,7 +187,7 @@ UPDATE library SET last_downloaded = datetime('now') WHERE id = ?
 
 **Filter clauses** (applied to the base query):
 
-The base query uses a CTE to compute `completed_count` once, then filters on it:
+The base query uses a CTE to compute `completed_count` once, then filters on it. **Tags are NOT joined in this query** — they are loaded separately (see Section 2.1 tags loading approach).
 
 ```sql
 WITH entry_counts AS (
@@ -191,29 +196,28 @@ WITH entry_counts AS (
     LEFT JOIN library_episodes e ON e.library_id = l.id
     GROUP BY l.id
 )
-SELECT ec.*, t.id as tag_id, t.name as tag_name
+SELECT ec.*
 FROM entry_counts ec
-LEFT JOIN library_tag_map tmap ON tmap.library_id = ec.id
-LEFT JOIN library_tags t ON t.id = tmap.tag_id
 WHERE 1=1
 -- dynamic filters appended here:
 -- source:      AND ec.source = ?
 -- favorite:    AND ec.favorite = 1
 -- search:      AND LOWER(ec.title) LIKE LOWER(? || '%')
 -- status:      AND [status condition on ec.completed_count / ec.total_episodes]
--- tag:         AND tmap.tag_id = ?  (INNER JOIN replaces LEFT JOIN for tag_map when filtering)
-GROUP BY ec.id
+-- tag:         AND ec.id IN (SELECT library_id FROM library_tag_map WHERE tag_id = ?)
 ORDER BY [sort column] [ASC|DESC]
 ```
+
+**Tag filter:** Uses a subquery `AND ec.id IN (SELECT library_id FROM library_tag_map WHERE tag_id = ?)` instead of JOIN — this avoids row duplication and keeps the query clean. Filtering by tag means "show only items that HAVE this tag". Untagged items are excluded. After fetching entries, load their tags via the separate query documented in Section 2.1. Filtered entries still show ALL their tags (not just the filtered tag) in the UI.
 
 **Status filter conditions:**
 - `"complete"`: `completed_count = total_episodes`
 - `"in_progress"`: `completed_count > 0 AND completed_count < total_episodes`
 - `"not_started"`: `completed_count = 0`
 
-**Tag filter:** When a tag filter is active, change the `LEFT JOIN library_tag_map` to an `INNER JOIN` — this is intentional: filtering by tag means "show only items that HAVE this tag". Untagged items are excluded.
-
 **Search:** Backend wraps the pattern (`format!("%{}%", query)`), frontend passes the raw search string. Note: this changes existing behavior from case-sensitive to case-insensitive — an intentional UX improvement.
+
+**Dynamic SQL building:** Use rusqlite's parameterized queries with string interpolation only for known-safe fragments (column names from whitelist, WHERE clause structure). User input (search text, source name) is always passed as `?` parameters to prevent SQL injection.
 
 ### 2.5 Tauri Commands
 
@@ -228,6 +232,8 @@ fn cmd_search_library(state: State<'_, AppState>, query: String) -> Result<Vec<L
     state.library_db.get_library(Some(LibraryQuery { search: Some(query), ..Default::default() }))
 }
 ```
+
+The backend `search_library()` method in `library.rs` is also deprecated — `get_library(Some(query))` replaces it. Mark both the method and the command with `// DEPRECATED` comments for future removal.
 
 | Command | Parameters | Returns |
 |---------|-----------|---------|
@@ -359,7 +365,7 @@ User clicks episode (failed) → retry single episode download → update status
 ### Backend (Rust)
 | File | Change |
 |------|--------|
-| `src-tauri/src/library.rs` | Add `LibraryTag`, `LibraryQuery` structs; add `favorite`/`tags` fields to `LibraryEntry`; add migration runner, tag CRUD, modified `get_library(Option<LibraryQuery>)`, fix `update_episode_status`; deprecate `search_library` |
+| `src-tauri/src/library.rs` | Add `LibraryTag`, `LibraryQuery` structs; add `favorite`/`tags` fields to `LibraryEntry`; add migration runner, tag CRUD, modified `get_library(Option<LibraryQuery>)`, private `get_tags_for_entries()`, fix `update_episode_status`; deprecate `search_library()` method |
 | `src-tauri/src/lib.rs` | Modify `cmd_get_library` to accept `Option<LibraryQuery>`; add 7 new Tauri commands for tags, favorites, episode open |
 
 ### Frontend (React/TypeScript)
