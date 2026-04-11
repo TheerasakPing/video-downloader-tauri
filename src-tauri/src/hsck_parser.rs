@@ -11,6 +11,7 @@ use scraper::{Html, Selector};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use crate::proxy;
+use crate::{SearchResult, SiteCategory};
 
 #[derive(Debug, Clone)]
 pub struct HsckVideoInfo {
@@ -219,6 +220,69 @@ impl HsckParser {
 
         eprintln!("[HSCK] Found {} videos on list page", videos.len());
         Ok(videos)
+    }
+
+    pub async fn search(&self, query: &str, page: i32, domain: &str) -> Result<Vec<SearchResult>, String> {
+        let url = format!("https://{}?s={}&p={}", domain, query, page);
+        let resp = self.client().get(&url).send().await.map_err(|e| e.to_string())?;
+        let html_text = resp.text().await.map_err(|e| e.to_string())?;
+        let document = Html::parse_document(&html_text);
+
+        let mut results = Vec::new();
+        let link_selector = Selector::parse(r#"a[href*="/view/?id="]"#).unwrap();
+
+        for el in document.select(&link_selector) {
+            let href = el.value().attr("href").unwrap_or("").to_string();
+            let title = el.value().attr("title").unwrap_or("").to_string();
+            if title.is_empty() || href.is_empty() { continue; }
+
+            let poster = el.select(&Selector::parse("img").unwrap())
+                .next()
+                .and_then(|img| img.value().attr("data-original").or_else(|| img.value().attr("src")).map(|s| s.to_string()));
+
+            let full_url = if href.starts_with("http") {
+                href
+            } else {
+                format!("https://{}{}", domain, if href.starts_with('/') { "" } else { "/" }) + &href
+            };
+
+            results.push(SearchResult {
+                title,
+                poster_url: poster,
+                url: full_url,
+                source: "hsck".to_string(),
+                total_episodes: None,
+            });
+        }
+
+        // Deduplicate by URL
+        let mut seen = std::collections::HashSet::new();
+        results.retain(|r| seen.insert(r.url.clone()));
+        Ok(results)
+    }
+
+    pub fn list_categories(&self, _domain: &str) -> Vec<SiteCategory> {
+        vec![
+            SiteCategory { id: "latest".into(), label: "Latest".into(), source: "hsck".into() },
+            SiteCategory { id: "hot".into(), label: "Hot".into(), source: "hsck".into() },
+            SiteCategory { id: "chinese".into(), label: "Chinese".into(), source: "hsck".into() },
+            SiteCategory { id: "japanese".into(), label: "Japanese".into(), source: "hsck".into() },
+            SiteCategory { id: "korean".into(), label: "Korean".into(), source: "hsck".into() },
+        ]
+    }
+
+    pub async fn browse(&self, category: &str, page: i32, domain: &str) -> Result<Vec<SearchResult>, String> {
+        let cat = if category == "latest" { None } else { Some(category) };
+        let items = self.list_videos(domain, page as u32, cat).await?;
+        Ok(items.into_iter().map(|(id, title, poster)| {
+            SearchResult {
+                title,
+                poster_url: poster,
+                url: format!("https://{}/view/?id={}", domain, id),
+                source: "hsck".to_string(),
+                total_episodes: None,
+            }
+        }).collect())
     }
 
     /// ดึงข้อมูล series จาก URL (สำหรับ UnifiedSeriesInfo)
