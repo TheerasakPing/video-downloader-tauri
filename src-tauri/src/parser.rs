@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use crate::proxy;
+use crate::{SearchResult, SiteCategory};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -326,6 +327,70 @@ impl RongyokParser {
             .unwrap_or(1);
 
         max_ep
+    }
+
+    pub async fn search(&self, query: &str, page: i32, domain: &str) -> Result<Vec<SearchResult>, String> {
+        let url = format!("https://{}?s={}&paged={}", domain, query, page);
+        let resp = self.client().get(&url).send().await.map_err(|e| e.to_string())?;
+        let html_text = resp.text().await.map_err(|e| e.to_string())?;
+        self.parse_listing_html(&html_text, domain)
+    }
+
+    pub fn list_categories(&self, _domain: &str) -> Vec<SiteCategory> {
+        vec![
+            SiteCategory { id: "latest".into(), label: "Latest".into(), source: "rongyok".into() },
+            SiteCategory { id: "popular".into(), label: "Popular".into(), source: "rongyok".into() },
+        ]
+    }
+
+    pub async fn browse(&self, category: &str, page: i32, domain: &str) -> Result<Vec<SearchResult>, String> {
+        let url = match category {
+            "latest" => format!("https://{}?paged={}", domain, page),
+            "popular" => format!("https://{}/popular/?paged={}", domain, page),
+            _ => format!("https://{}?paged={}", domain, page),
+        };
+        let resp = self.client().get(&url).send().await.map_err(|e| e.to_string())?;
+        let html_text = resp.text().await.map_err(|e| e.to_string())?;
+        self.parse_listing_html(&html_text, domain)
+    }
+
+    fn parse_listing_html(&self, html_text: &str, domain: &str) -> Result<Vec<SearchResult>, String> {
+        let document = Html::parse_document(html_text);
+        let mut results = Vec::new();
+
+        let heading_sel = Selector::parse("h2 a, h3 a, .entry-title a, .post-title a").unwrap();
+        let link_sel = Selector::parse("a").unwrap();
+        let img_sel = Selector::parse("img").unwrap();
+
+        // Try common WordPress selectors for post/article containers
+        let selectors = ["article", ".post-item", ".entry-item", ".type-post", ".post"];
+        for sel_str in &selectors {
+            if let Ok(selector) = Selector::parse(sel_str) {
+                for el in document.select(&selector) {
+                    let link = el.select(&link_sel).next()
+                        .and_then(|a| a.value().attr("href").map(|h| h.to_string()));
+                    let title = el.select(&heading_sel).next()
+                        .map(|a| a.text().collect::<String>().trim().to_string())
+                        .or_else(|| el.select(&link_sel).next()
+                            .and_then(|a| a.value().attr("title").map(|t| t.to_string())));
+                    let poster = el.select(&img_sel).next()
+                        .and_then(|img| img.value().attr("src").or_else(|| img.value().attr("data-src")).map(|s| s.to_string()));
+
+                    if let (Some(url), Some(title)) = (link, title) {
+                        if title.is_empty() || url.contains("wp-admin") || url.contains("wp-login") { continue; }
+                        results.push(SearchResult {
+                            title,
+                            poster_url: poster,
+                            url,
+                            source: "rongyok".to_string(),
+                            total_episodes: None,
+                        });
+                    }
+                }
+            }
+            if !results.is_empty() { break; }
+        }
+        Ok(results)
     }
 }
 
