@@ -1,13 +1,14 @@
 import { LibraryEntry } from '../types';
-import { Play, Trash2 } from 'lucide-react';
+import { Play, Trash2, Star } from 'lucide-react';
 
 interface LibraryCardProps {
   entry: LibraryEntry;
   onClick: (id: number) => void;
   onRemove: (id: number) => void;
+  onToggleFavorite: (id: number) => void;
 }
 
-export function LibraryCard({ entry, onClick, onRemove }: LibraryCardProps) {
+export function LibraryCard({ entry, onClick, onRemove, onToggleFavorite }: LibraryCardProps) {
   const progress = entry.totalEpisodes > 0
     ? Math.round((entry.completedCount / entry.totalEpisodes) * 100)
     : 0;
@@ -46,6 +47,16 @@ export function LibraryCard({ entry, onClick, onRemove }: LibraryCardProps) {
         <span className={`absolute top-2 right-2 px-2 py-0.5 rounded text-xs font-medium text-white ${statusColor}`}>
           {progress === 100 ? 'Complete' : progress > 0 ? `${progress}%` : 'New'}
         </span>
+        {/* Favorite star */}
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggleFavorite(entry.id); }}
+          className="absolute bottom-2 right-2 p-1 rounded-full bg-black/40 hover:bg-black/60 transition-all"
+        >
+          <Star
+            size={16}
+            className={entry.favorite ? 'text-yellow-400 fill-yellow-400' : 'text-white/60'}
+          />
+        </button>
       </div>
 
       {/* Info */}
@@ -53,6 +64,18 @@ export function LibraryCard({ entry, onClick, onRemove }: LibraryCardProps) {
         <h3 className="text-sm font-medium text-[var(--text)] truncate" title={entry.title}>
           {entry.title}
         </h3>
+        {entry.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {entry.tags.slice(0, 2).map(tag => (
+              <span key={tag.id} className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--accent)]/10 text-[var(--accent)] truncate max-w-[80px]">
+                {tag.name}
+              </span>
+            ))}
+            {entry.tags.length > 2 && (
+              <span className="text-[10px] text-[var(--text)] opacity-40">+{entry.tags.length - 2}</span>
+            )}
+          </div>
+        )}
         <div className="flex items-center justify-between mt-1">
           <span className="text-xs text-[var(--text)] opacity-60">
             {entry.completedCount}/{entry.totalEpisodes} episodes
