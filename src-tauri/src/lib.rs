@@ -957,7 +957,7 @@ fn cmd_save_to_library(
 
 #[tauri::command]
 fn cmd_get_library(state: State<'_, AppState>) -> Result<Vec<library::LibraryEntry>, String> {
-    state.library_db.get_library()
+    state.library_db.get_library(None)
 }
 
 #[tauri::command]
