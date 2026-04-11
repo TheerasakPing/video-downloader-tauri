@@ -134,3 +134,24 @@ export interface RetryConfig {
   autoRetry: boolean;
   skipFailedSegments: boolean;
 }
+
+export interface SearchResult {
+  title: string;
+  posterUrl?: string;
+  url: string;
+  source: string;
+  totalEpisodes?: number;
+}
+
+export interface SiteCategory {
+  id: string;
+  label: string;
+  source: string;
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+  source: string;
+  page: number;
+  hasMore: boolean;
+}
