@@ -120,6 +120,33 @@ pub struct UnifiedSeriesInfo {
     pub cookies: Vec<(String, String)>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchResult {
+    pub title: String,
+    pub poster_url: Option<String>,
+    pub url: String,
+    pub source: String,
+    pub total_episodes: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SiteCategory {
+    pub id: String,
+    pub label: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchResponse {
+    pub results: Vec<SearchResult>,
+    pub source: String,
+    pub page: i32,
+    pub has_more: bool,
+}
+
 // App state
 struct AppState {
     rongyok_parser: RongyokParser,
