@@ -70,6 +70,8 @@ export interface LibraryEntry {
   dateAdded: string;
   lastDownloaded?: string;
   completedCount: number;
+  favorite: boolean;
+  tags: LibraryTag[];
 }
 
 export interface LibraryEpisode {
@@ -87,6 +89,22 @@ export interface SeriesDetail {
   entry: LibraryEntry;
   episodes: LibraryEpisode[];
   canRefetch: boolean;
+}
+
+export interface LibraryTag {
+  id: number;
+  name: string;
+  usageCount: number;
+}
+
+export interface LibraryQuery {
+  sort?: string;
+  order?: string;
+  source?: string;
+  status?: string;
+  tagId?: number;
+  favoriteOnly?: boolean;
+  search?: string;
 }
 
 // --- Quality types ---
