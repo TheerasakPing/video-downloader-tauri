@@ -956,8 +956,8 @@ fn cmd_save_to_library(
 }
 
 #[tauri::command]
-fn cmd_get_library(state: State<'_, AppState>) -> Result<Vec<library::LibraryEntry>, String> {
-    state.library_db.get_library(None)
+fn cmd_get_library(state: State<'_, AppState>, query: Option<library::LibraryQuery>) -> Result<Vec<library::LibraryEntry>, String> {
+    state.library_db.get_library(query)
 }
 
 #[tauri::command]
@@ -978,9 +978,54 @@ fn cmd_update_episode_status(
     state.library_db.update_episode_status(library_id, episode_number, &status, file_path.as_deref())
 }
 
+// DEPRECATED: use cmd_get_library(Some(LibraryQuery { search: Some(query), ..Default::default() }))
 #[tauri::command]
 fn cmd_search_library(state: State<'_, AppState>, query: String) -> Result<Vec<library::LibraryEntry>, String> {
     state.library_db.search_library(&query)
+}
+
+#[tauri::command]
+fn cmd_get_tags(state: State<'_, AppState>) -> Result<Vec<library::LibraryTag>, String> {
+    state.library_db.get_tags()
+}
+
+#[tauri::command]
+fn cmd_create_tag(state: State<'_, AppState>, name: String) -> Result<i64, String> {
+    state.library_db.create_tag(&name)
+}
+
+#[tauri::command]
+fn cmd_delete_tag(state: State<'_, AppState>, tag_id: i64) -> Result<(), String> {
+    state.library_db.delete_tag(tag_id)
+}
+
+#[tauri::command]
+fn cmd_assign_tag(state: State<'_, AppState>, library_id: i64, tag_id: i64) -> Result<(), String> {
+    state.library_db.assign_tag(library_id, tag_id)
+}
+
+#[tauri::command]
+fn cmd_unassign_tag(state: State<'_, AppState>, library_id: i64, tag_id: i64) -> Result<(), String> {
+    state.library_db.unassign_tag(library_id, tag_id)
+}
+
+#[tauri::command]
+fn cmd_toggle_favorite(state: State<'_, AppState>, library_id: i64) -> Result<bool, String> {
+    state.library_db.toggle_favorite(library_id)
+}
+
+#[tauri::command]
+fn cmd_open_episode(state: State<'_, AppState>, library_id: i64, episode_number: i32) -> Result<(), String> {
+    let path = state.library_db.get_episode_file_path(library_id, episode_number)?;
+    let path = path.ok_or("Episode file not found")?;
+
+    #[cfg(target_os = "macos")]
+    { std::process::Command::new("open").arg(&path).spawn().map_err(|e| e.to_string())?; }
+    #[cfg(target_os = "windows")]
+    { std::process::Command::new("cmd").args(["/c", "start", "", &path]).spawn().map_err(|e| e.to_string())?; }
+    #[cfg(target_os = "linux")]
+    { std::process::Command::new("xdg-open").arg(&path).spawn().map_err(|e| e.to_string())?; }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1249,6 +1294,13 @@ pub fn run() {
             cmd_remove_from_library,
             cmd_update_episode_status,
             cmd_search_library,
+            cmd_get_tags,
+            cmd_create_tag,
+            cmd_delete_tag,
+            cmd_assign_tag,
+            cmd_unassign_tag,
+            cmd_toggle_favorite,
+            cmd_open_episode,
             cmd_refetch_series,
             cmd_get_proxy_config,
             cmd_save_proxy_config,
