@@ -20,7 +20,7 @@ pub struct SearchResult {
     pub poster_url: Option<String>,
     pub url: String,
     pub source: String,
-    pub episode_count: Option<i32>,
+    pub total_episodes: Option<i32>,  // matches existing SeriesInfo/UnifiedSeriesInfo convention
 }
 ```
 
@@ -54,6 +54,8 @@ pub struct SearchResponse {
 ```
 
 Results from one site. `search_sites` returns a `Vec<SearchResponse>` so the frontend can group results by source.
+
+**Pagination:** `has_more` is `true` if the parser found a "next page" link in the HTML OR if `results.len() >= 20` (expected page size). This gives a reliable signal without requiring exact page count.
 
 ---
 
@@ -119,7 +121,7 @@ fn get_browse_categories(
 ) -> Result<Vec<SiteCategory>, String>
 ```
 
-Returns static category lists from each parser. No network request needed — categories are hardcoded per-site based on known site structure.
+Returns category lists from each parser. Categories are mostly static and hardcoded per-site based on known site structure. For sites where categories change (e.g., baanjeen), a lightweight homepage fetch extracts category navigation links and caches them for the session.
 
 ### 3.3 browse_category
 
@@ -133,7 +135,7 @@ async fn browse_category(
 ) -> Result<SearchResponse, String>
 ```
 
-Browse a single site's category with pagination. Routes to the correct parser based on `source` string.
+Browse a single site's category with pagination. Routes to the correct parser based on `source` string. Returns `Err("Unknown source: {source}")` if source doesn't match any parser (e.g., "njavtv" which is out of scope).
 
 ---
 
@@ -174,7 +176,7 @@ Detail view when a result is clicked:
 - "Load Series" button → calls existing `fetch_series` command with the result URL
 - Loading spinner while fetching
 - Once loaded: shows episode selector + download button (reuses EpisodeSelector and quality/download controls from Download tab)
-- Error state: "Could not load series details"
+- Error state: "Could not load series details" with retry button. Do NOT show EpisodeSelector with empty state — only show it after `fetch_series` succeeds.
 
 ### 4.5 State Management
 
@@ -232,10 +234,12 @@ User clicks result card → setDetail(result)
 
 ## 6. Error Handling
 
+- **Empty/whitespace query:** Return empty results immediately without network requests. Frontend shows validation error "Please enter a search term".
 - **Parser search failure:** Silently omit failed parser results. Frontend shows whatever succeeded.
 - **No results:** Show "No results found" empty state with suggestion to try different keywords.
 - **Network error:** Show warning toast, allow retry.
-- **fetch_series failure from detail:** Show error in BrowseDetail with retry button.
+- **Unknown source in browse_category:** Return `Err("Unknown source: {source}")`. Frontend shows error toast.
+- **fetch_series failure from detail:** Show error in BrowseDetail with retry button. Do NOT show EpisodeSelector with empty state.
 
 ---
 
