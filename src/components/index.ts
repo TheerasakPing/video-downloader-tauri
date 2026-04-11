@@ -19,3 +19,6 @@ export { ThemeSelector } from "./ThemeSelector";
 export { LibraryCard } from "./LibraryCard";
 export { SeriesDetail } from "./SeriesDetail";
 export { LibraryPanel } from "./LibraryPanel";
+export { default as BrowsePanel } from "./BrowsePanel";
+export { default as BrowseCard } from "./BrowseCard";
+export { default as BrowseDetail } from "./BrowseDetail";

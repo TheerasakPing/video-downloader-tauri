@@ -24,6 +24,7 @@ import {
   CheckCircle,
   Image as ImageIcon,
   BookOpen,
+  Compass,
 } from "lucide-react";
 import {
   Button,
@@ -41,6 +42,7 @@ import {
   UpdateDialog,
   MiniMode,
   ShortcutsHelp,
+  BrowsePanel,
 } from "./components";
 import LibraryPanel from "./components/LibraryPanel";
 import QualitySelector from "./components/QualitySelector";
@@ -86,7 +88,7 @@ interface BatchItem {
   error?: string;
 }
 
-type TabType = "download" | "library" | "files" | "history" | "settings" | "logs";
+type TabType = "download" | "library" | "browse" | "files" | "history" | "settings" | "logs";
 
 function App() {
   const {
@@ -247,7 +249,7 @@ function App() {
   const { themes, activeThemeId, setActiveTheme } = useCustomTheme();
 
   // Tab navigation
-  const tabs: TabType[] = ["download", "library", "files", "history", "settings", "logs"];
+  const tabs: TabType[] = ["download", "library", "browse", "files", "history", "settings", "logs"];
   const handleNextTab = useCallback(() => {
     const currentIndex = tabs.indexOf(activeTab);
     const nextIndex = (currentIndex + 1) % tabs.length;
@@ -1161,6 +1163,18 @@ function App() {
         "bg-purple-500/20 text-purple-300 border border-purple-500/40",
     },
     {
+      id: "browse",
+      label: "Browse",
+      icon: (
+        <Compass
+          size={16}
+          className="drop-shadow-[0_0_4px_rgba(52,211,153,0.6)]"
+        />
+      ),
+      glowColor: "emerald",
+      activeClass: "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40",
+    },
+    {
       id: "files",
       label: "Files",
       icon: (
@@ -1791,6 +1805,11 @@ function App() {
         {activeTab === "library" && (
           <div className="page-transition animate-fade-in h-full overflow-y-auto custom-scrollbar">
             <LibraryPanel />
+          </div>
+        )}
+        {activeTab === "browse" && (
+          <div className="page-transition animate-fade-in h-full overflow-hidden">
+            <BrowsePanel settings={settings} ffmpegAvailable={ffmpegAvailable} />
           </div>
         )}
 
