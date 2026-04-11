@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use crate::proxy;
+use crate::{SearchResult, SiteCategory};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -462,6 +463,59 @@ impl TitanParser {
         let base64_data = BASE64.encode(&bytes);
 
         Some(format!("data:{};base64,{}", content_type, base64_data))
+    }
+
+    pub async fn search(&self, query: &str, page: i32, domain: &str) -> Result<Vec<SearchResult>, String> {
+        let url = format!("https://{}?s={}&paged={}", domain, query, page);
+        let resp = self.client().get(&url).send().await.map_err(|e| e.to_string())?;
+        let html_text = resp.text().await.map_err(|e| e.to_string())?;
+        self.parse_listing_html(&html_text, domain)
+    }
+
+    pub fn list_categories(&self, _domain: &str) -> Vec<SiteCategory> {
+        vec![
+            SiteCategory { id: "latest".into(), label: "Latest".into(), source: "titan".into() },
+            SiteCategory { id: "archives".into(), label: "Archives".into(), source: "titan".into() },
+        ]
+    }
+
+    pub async fn browse(&self, category: &str, page: i32, domain: &str) -> Result<Vec<SearchResult>, String> {
+        let url = match category {
+            "latest" => format!("https://{}?paged={}", domain, page),
+            "archives" => format!("https://{}/archives/?paged={}", domain, page),
+            other => format!("https://{}/tag/{}/?paged={}", domain, other, page),
+        };
+        let resp = self.client().get(&url).send().await.map_err(|e| e.to_string())?;
+        let html_text = resp.text().await.map_err(|e| e.to_string())?;
+        self.parse_listing_html(&html_text, domain)
+    }
+
+    fn parse_listing_html(&self, html_text: &str, domain: &str) -> Result<Vec<SearchResult>, String> {
+        let document = Html::parse_document(html_text);
+        let mut results = Vec::new();
+        let article_sel = Selector::parse("article, .post-item, .entry-item").unwrap();
+
+        for el in document.select(&article_sel) {
+            let link_sel = Selector::parse("a").unwrap();
+            let link = el.select(&link_sel).next().and_then(|a| a.value().attr("href")).map(|h| h.to_string());
+            let title = el.select(&Selector::parse("h2 a, h3 a, .entry-title a").unwrap()).next()
+                .map(|a| a.text().collect::<String>().trim().to_string())
+                .or_else(|| el.select(&link_sel).next().and_then(|a| a.value().attr("title")).map(|t| t.to_string()));
+            let poster = el.select(&Selector::parse("img").unwrap()).next()
+                .and_then(|img| img.value().attr("src").or_else(|| img.value().attr("data-src")).map(|s| s.to_string()));
+
+            if let (Some(url), Some(title)) = (link, title) {
+                if title.is_empty() || url.contains("wp-admin") { continue; }
+                results.push(SearchResult {
+                    title,
+                    poster_url: poster,
+                    url,
+                    source: "titan".to_string(),
+                    total_episodes: None,
+                });
+            }
+        }
+        Ok(results)
     }
 }
 
