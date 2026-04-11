@@ -161,6 +161,8 @@ Note: `Default` derive enables `LibraryQuery::default()` for the deprecation wra
 
 **Note on `remove_series()`:** With `PRAGMA foreign_keys = ON` enabled (Section 1.2), `ON DELETE CASCADE` on `library_tag_map.library_id` will automatically remove tag mappings when a library entry is deleted. The existing explicit episode deletion in `remove_series()` can remain as a safety net — the CASCADE will be a no-op for already-deleted rows.
 
+**Note on `get_series_detail()`:** This method must also be updated to SELECT the `favorite` column and call `get_tags_for_entries(&[library_id])` for the single entry. Otherwise, the SeriesDetail view will show `favorite: false` and `tags: []` regardless of actual state.
+
 ### 2.3 Fix `update_episode_status()`
 
 After setting episode status, also update `last_downloaded` on the parent library row when the episode status is `'completed'`:
@@ -202,7 +204,7 @@ WHERE 1=1
 -- dynamic filters appended here:
 -- source:      AND ec.source = ?
 -- favorite:    AND ec.favorite = 1
--- search:      AND LOWER(ec.title) LIKE LOWER(? || '%')
+-- search:      AND LOWER(ec.title) LIKE LOWER(?)
 -- status:      AND [status condition on ec.completed_count / ec.total_episodes]
 -- tag:         AND ec.id IN (SELECT library_id FROM library_tag_map WHERE tag_id = ?)
 ORDER BY [sort column] [ASC|DESC]
