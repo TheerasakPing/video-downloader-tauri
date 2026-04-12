@@ -1,4 +1,5 @@
 mod baanjeen_parser;
+mod backup;
 mod chrome_detector;
 mod downloader;
 mod hsck_parser;
@@ -7,8 +8,11 @@ mod njavtv_parser;
 mod parser;
 mod titan_parser;
 mod library;
+mod notifications;
 mod proxy;
+mod queue_db;
 mod scheduler;
+mod webhook;
 
 mod utils;
 
@@ -22,12 +26,23 @@ use parser::RongyokParser;
 use serde::{Deserialize, Serialize};
 use base64::Engine;
 use library::LibraryDb;
+use notifications::NotificationDb;
+use queue_db::QueueDb;
 use titan_parser::{TitanParser, TitanSeriesInfo, HlsKeyInfo};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::RwLock;
-use std::fs;
+
+/// Decode a data URL (e.g. `data:image/jpeg;base64,...`) into raw bytes.
+/// Returns `None` if the string is not a valid data URL.
+fn decode_data_url(data_url: &str) -> Option<Vec<u8>> {
+    if !data_url.starts_with("data:") {
+        return None;
+    }
+    let base64_part = data_url.split(',').nth(1)?;
+    base64::engine::general_purpose::STANDARD.decode(base64_part).ok()
+}
 use tauri::{AppHandle, Emitter, State, Manager};
 use utils::{expand_path, sanitize_filename};
 
@@ -128,6 +143,11 @@ pub struct SearchResult {
     pub url: String,
     pub source: String,
     pub total_episodes: Option<i32>,
+    pub description: Option<String>,
+    pub rating: Option<f64>,
+    pub year: Option<i32>,
+    pub genre: Option<String>,
+    pub duration: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -160,8 +180,13 @@ struct AppState {
     current_series: Mutex<Option<UnifiedSeriesInfo>>,
     download_states: Mutex<HashMap<i32, Arc<DownloadState>>>,
     library_db: LibraryDb,
+    notification_db: NotificationDb,
+    queue_db: QueueDb,
+    schedule_db: scheduler::ScheduleDb,
     current_library_id: Mutex<Option<i64>>,
     schedule_config: Arc<Mutex<scheduler::ScheduleConfig>>,
+    webhook_config: Arc<Mutex<webhook::WebhookConfig>>,
+    backup_manager: backup::BackupManager,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -216,7 +241,7 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
         let lib_id = state.library_db.save_series(
             &series_info.title, &series_info.source,
             Some(&url), None, series_info.total_episodes, series_info.series_id,
-            &series_info.episode_urls, None,
+            &series_info.episode_urls, None, None,
         ).ok();
         *state.current_library_id.lock().unwrap() = lib_id;
 
@@ -471,11 +496,12 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
     // Store in state
     *state.current_series.lock().unwrap() = Some(series_info.clone());
 
-    // Auto-save to library
+    // Auto-save to library (with poster extracted from data URL)
+    let poster_data = series_info.poster_url.as_ref().and_then(|u| decode_data_url(u));
     let lib_id = state.library_db.save_series(
         &series_info.title, &series_info.source,
-        Some(&url), None, series_info.total_episodes, series_info.series_id,
-        &series_info.episode_urls, None,
+        Some(&url), poster_data.as_deref(), series_info.total_episodes, series_info.series_id,
+        &series_info.episode_urls, None, None,
     ).ok();
     *state.current_library_id.lock().unwrap() = lib_id;
 
@@ -621,6 +647,26 @@ async fn start_download(
                             lib_id, ep, if result.success { "completed" } else { "failed" },
                             result.file_path.as_deref(),
                         ).ok();
+
+                        // Send webhook notification
+                        let webhook_config = state.webhook_config.lock().unwrap().clone();
+                        if webhook_config.enabled {
+                            let event_type = if result.success { "download_complete" } else { "download_failed" };
+                            let title = if result.success {
+                                format!("Download Complete: Episode {}", ep)
+                            } else {
+                                format!("Download Failed: Episode {}", ep)
+                            };
+                            let message = if result.success {
+                                format!("Episode {} of {} downloaded successfully", ep, series.title)
+                            } else {
+                                format!("Episode {} of {} failed: {}", ep, series.title, result.error.as_ref().map(|s| s.as_str()).unwrap_or("Unknown error"))
+                            };
+
+                            tauri::async_runtime::spawn(async move {
+                                let _ = webhook::send_webhook(&webhook_config, event_type, &title, &message).await;
+                            });
+                        }
                     }
 
                     results.push(result);
@@ -951,7 +997,7 @@ fn cmd_save_to_library(
     state.library_db.save_series(
         &title, &source, source_url.as_deref(),
         poster_data.as_deref(), total_episodes, parser_series_id,
-        &episode_urls, metadata.as_deref(),
+        &episode_urls, metadata.as_deref(), None,
     )
 }
 
@@ -1045,11 +1091,12 @@ async fn cmd_refetch_series(
     // Re-invoke fetch_series with stored URL
     let new_info = fetch_series(source_url, app_handle, state.clone()).await?;
 
-    // Update library with fresh data
+    // Update library with fresh data (including poster)
+    let poster_data = new_info.poster_url.as_ref().and_then(|u| decode_data_url(u));
     state.library_db.save_series(
         &new_info.title, &new_info.source, Some(&new_info.source_url.unwrap_or_default()),
-        None, new_info.total_episodes, new_info.series_id,
-        &new_info.episode_urls, None,
+        poster_data.as_deref(), new_info.total_episodes, new_info.series_id,
+        &new_info.episode_urls, None, None,
     ).ok();
 
     state.library_db.get_series_detail(library_id)
@@ -1236,8 +1283,43 @@ pub fn run() {
             .expect("Failed to initialize library database")
     };
 
+    let notification_db = {
+        let app_data_dir = dirs::data_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("com.rongyok.downloader");
+        std::fs::create_dir_all(&app_data_dir).ok();
+        NotificationDb::new(&app_data_dir)
+            .expect("Failed to initialize notification database")
+    };
+
+    let queue_db = {
+        let app_data_dir = dirs::data_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("com.rongyok.downloader");
+        std::fs::create_dir_all(&app_data_dir).ok();
+        QueueDb::new(&app_data_dir)
+            .expect("Failed to initialize queue database")
+    };
+
     let proxy_config = Arc::new(RwLock::new(proxy::ProxyConfig::default()));
     let schedule_config = Arc::new(Mutex::new(scheduler::ScheduleConfig::default()));
+    let webhook_config = Arc::new(Mutex::new(webhook::WebhookConfig::default()));
+
+    let schedule_db = {
+        let app_data_dir = dirs::data_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("com.rongyok.downloader");
+        std::fs::create_dir_all(&app_data_dir).ok();
+        scheduler::ScheduleDb::new(&app_data_dir)
+            .expect("Failed to initialize schedule database")
+    };
+
+    let backup_mgr = {
+        let app_data_dir = dirs::data_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("com.rongyok.downloader");
+        backup::BackupManager::new(&app_data_dir)
+    };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -1260,8 +1342,13 @@ pub fn run() {
             current_series: Mutex::new(None),
             download_states: Mutex::new(HashMap::new()),
             library_db,
+            notification_db,
+            queue_db,
+            schedule_db,
             current_library_id: Mutex::new(None),
             schedule_config,
+            webhook_config,
+            backup_manager: backup_mgr,
         })
         .setup(|app| {
             let handle = app.handle().clone();
@@ -1310,7 +1397,199 @@ pub fn run() {
             search_sites,
             get_browse_categories,
             browse_category,
+            // Phase 3: Watch Progress
+            cmd_get_library_stats,
+            cmd_mark_episode_watched,
+            cmd_mark_episode_unwatched,
+            cmd_update_watch_progress,
+            cmd_get_watch_progress,
+            // Phase 3: Notifications
+            cmd_get_notifications,
+            cmd_mark_notification_read,
+            cmd_mark_all_read,
+            cmd_get_unread_count,
+            cmd_clear_notifications,
+            cmd_log_notification,
+            // Phase 3: Queue Persistence
+            cmd_persist_queue_item,
+            cmd_get_persistent_queue,
+            cmd_update_queue_item,
+            cmd_remove_queue_item,
+            cmd_clear_queue_completed,
+            cmd_restore_queue,
+            cmd_get_queue_stats,
+            // Phase 3: Scheduler
+            scheduler::cmd_create_schedule,
+            scheduler::cmd_get_schedules,
+            scheduler::cmd_update_schedule,
+            scheduler::cmd_toggle_schedule,
+            scheduler::cmd_delete_schedule,
+            scheduler::cmd_get_due_schedules,
+            scheduler::cmd_mark_schedule_run,
+            // Phase 7: Webhooks
+            webhook::cmd_get_webhook_config,
+            webhook::cmd_save_webhook_config,
+            webhook::cmd_test_webhook,
+            webhook::cmd_check_new_episodes,
+            webhook::cmd_send_test_notification,
+            // Phase 5: Import & Export
+            cmd_export_library,
+            cmd_import_library,
+            cmd_batch_parse_urls,
+            // File I/O utilities
+            read_file,
+            write_file,
+            // Phase 8: Backup & Duplicate Detection
+            cmd_create_backup,
+            cmd_restore_backup,
+            cmd_find_duplicates,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+// --- Phase 3: Wrapper commands accessing DBs through AppState ---
+
+// Watch Progress & Library Stats
+#[tauri::command]
+fn cmd_get_library_stats(state: State<'_, AppState>) -> Result<library::LibraryStats, String> {
+    state.library_db.get_library_stats()
+}
+
+#[tauri::command]
+fn cmd_mark_episode_watched(state: State<'_, AppState>, library_id: i64, episode_number: i32) -> Result<(), String> {
+    state.library_db.mark_episode_watched(library_id, episode_number)
+}
+
+#[tauri::command]
+fn cmd_mark_episode_unwatched(state: State<'_, AppState>, library_id: i64, episode_number: i32) -> Result<(), String> {
+    state.library_db.mark_episode_unwatched(library_id, episode_number)
+}
+
+#[tauri::command]
+fn cmd_update_watch_progress(state: State<'_, AppState>, library_id: i64, episode_number: i32, position_seconds: f64, duration_seconds: f64) -> Result<(), String> {
+    state.library_db.update_watch_progress(library_id, episode_number, position_seconds, duration_seconds)
+}
+
+#[tauri::command]
+fn cmd_get_watch_progress(state: State<'_, AppState>, library_id: i64, episode_number: i32) -> Result<Option<library::WatchProgress>, String> {
+    state.library_db.get_watch_progress(library_id, episode_number)
+}
+
+// Notifications
+#[tauri::command]
+fn cmd_get_notifications(state: State<'_, AppState>, limit: i32, unread_only: bool) -> Result<Vec<notifications::NotificationEntry>, String> {
+    state.notification_db.get_notifications(limit, unread_only)
+}
+
+#[tauri::command]
+fn cmd_mark_notification_read(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+    state.notification_db.mark_read(id)
+}
+
+#[tauri::command]
+fn cmd_mark_all_read(state: State<'_, AppState>) -> Result<(), String> {
+    state.notification_db.mark_all_read()
+}
+
+#[tauri::command]
+fn cmd_get_unread_count(state: State<'_, AppState>) -> Result<i32, String> {
+    state.notification_db.get_unread_count()
+}
+
+#[tauri::command]
+fn cmd_clear_notifications(state: State<'_, AppState>, days: i32) -> Result<usize, String> {
+    state.notification_db.clear_old(days)
+}
+
+#[tauri::command]
+fn cmd_log_notification(state: State<'_, AppState>, category: String, title: String, message: String, action_type: Option<String>, action_data: Option<String>) -> Result<i64, String> {
+    state.notification_db.log_notification(&category, &title, &message, action_type.as_deref(), action_data.as_deref())
+}
+
+// Queue Persistence
+#[tauri::command]
+fn cmd_persist_queue_item(state: State<'_, AppState>, url: String) -> Result<i64, String> {
+    state.queue_db.add_item(&url)
+}
+
+#[tauri::command]
+fn cmd_get_persistent_queue(state: State<'_, AppState>) -> Result<Vec<queue_db::PersistentQueueItem>, String> {
+    state.queue_db.get_all()
+}
+
+#[tauri::command]
+fn cmd_update_queue_item(state: State<'_, AppState>, id: i64, status: String, series_info: Option<String>, error: Option<String>) -> Result<(), String> {
+    state.queue_db.update_status(id, &status, series_info.as_deref(), error.as_deref())
+}
+
+#[tauri::command]
+fn cmd_remove_queue_item(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+    state.queue_db.remove_item(id)
+}
+
+#[tauri::command]
+fn cmd_clear_queue_completed(state: State<'_, AppState>) -> Result<usize, String> {
+    state.queue_db.clear_completed()
+}
+
+#[tauri::command]
+fn cmd_restore_queue(state: State<'_, AppState>) -> Result<Vec<queue_db::PersistentQueueItem>, String> {
+    state.queue_db.get_pending()
+}
+
+#[tauri::command]
+fn cmd_get_queue_stats(state: State<'_, AppState>) -> Result<queue_db::QueueStats, String> {
+    state.queue_db.get_stats()
+}
+
+// Phase 5: Import & Export
+#[tauri::command]
+fn cmd_export_library(state: State<'_, AppState>) -> Result<String, String> {
+    state.library_db.export_to_json()
+}
+
+#[tauri::command]
+fn cmd_import_library(state: State<'_, AppState>, json_data: String) -> Result<i32, String> {
+    state.library_db.import_from_json(&json_data)
+}
+
+#[tauri::command]
+async fn cmd_batch_parse_urls(urls: String, app_handle: AppHandle, state: State<'_, AppState>) -> Result<Vec<UnifiedSeriesInfo>, String> {
+    let url_list: Vec<&str> = urls.lines().filter(|l| !l.trim().is_empty()).collect();
+    let mut results = Vec::new();
+    for url in url_list {
+        match fetch_series(url.to_string(), app_handle.clone(), state.clone()).await {
+            Ok(info) => results.push(info),
+            Err(_) => continue,
+        }
+    }
+    Ok(results)
+}
+
+// File I/O utilities for import/export
+#[tauri::command]
+fn read_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_file(path: String, contents: String) -> Result<(), String> {
+    std::fs::write(&path, contents).map_err(|e| e.to_string())
+}
+
+// Phase 8: Backup & Duplicate Detection
+#[tauri::command]
+fn cmd_create_backup(state: State<'_, AppState>, output_path: String) -> Result<String, String> {
+    state.backup_manager.create_backup(&output_path)
+}
+
+#[tauri::command]
+fn cmd_restore_backup(state: State<'_, AppState>, backup_path: String) -> Result<i32, String> {
+    state.backup_manager.restore_backup(&backup_path)
+}
+
+#[tauri::command]
+fn cmd_find_duplicates(state: State<'_, AppState>) -> Result<Vec<(library::LibraryEntry, Vec<library::LibraryEntry>)>, String> {
+    state.library_db.find_duplicates()
 }
