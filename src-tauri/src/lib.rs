@@ -3,6 +3,7 @@ mod backup;
 mod chrome_detector;
 mod downloader;
 mod hsck_parser;
+mod javwow_parser;
 mod njav_parser;
 mod njavtv_parser;
 mod parser;
@@ -20,6 +21,7 @@ use baanjeen_parser::BaanJeenParser;
 use chrome_detector::ChromeVideoDetector;
 use downloader::{check_ffmpeg, merge_videos_with_progress, DownloadConfig, DownloadResult, DownloadState, VideoDownloader};
 use hsck_parser::HsckParser;
+use javwow_parser::JavwowParser;
 use njav_parser::NjavParser;
 use njavtv_parser::NjavtvParser;
 use parser::RongyokParser;
@@ -72,6 +74,8 @@ pub struct DomainSettings {
     pub njavtv_domain: String,
     #[serde(default = "DomainSettings::default_njav_domain")]
     pub njav_domain: String,
+    #[serde(default = "DomainSettings::default_javwow_domain")]
+    pub javwow_domain: String,
 }
 
 impl DomainSettings {
@@ -84,6 +88,9 @@ impl DomainSettings {
     fn default_njav_domain() -> String {
         "njav.org".to_string()
     }
+    fn default_javwow_domain() -> String {
+        "javwow.com".to_string()
+    }
 }
 
 impl Default for DomainSettings {
@@ -95,6 +102,7 @@ impl Default for DomainSettings {
             hsck_domain: "hsck123.com".to_string(),
             njavtv_domain: "njavtv.com".to_string(),
             njav_domain: "njav.org".to_string(),
+            javwow_domain: "javwow.com".to_string(),
         }
     }
 }
@@ -187,6 +195,7 @@ struct AppState {
     baanjeen_parser: BaanJeenParser,
     titan_parser: TitanParser,
     hsck_parser: HsckParser,
+    javwow_parser: JavwowParser,
     njavtv_parser: NjavtvParser,
     njav_parser: NjavParser,
     chrome_detector: Mutex<ChromeVideoDetector>,
@@ -439,6 +448,56 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             cookies: Vec::new(),
             source: "hsck".to_string(),
         }
+    } else if JavwowParser::is_javwow_url(&url, &settings.javwow_domain) {
+        // Use JavWow Parser (javwow.com — Cloudflare protected, uses Chrome detector)
+        let _ = app_handle.emit("log-info", "Detected javwow.com — extracting metadata...".to_string());
+        let javwow_info = state.javwow_parser.get_series_info(&url, &settings.javwow_domain).await?;
+
+        // Always use Chrome detector for video URL (Cloudflare + onlysubthai.com iframe)
+        let _ = app_handle.emit("log-info", "Launching Chrome to detect video from javwow.com...".to_string());
+        let mut detector = state.chrome_detector.safe_lock();
+
+        let _ = app_handle.emit("log-info", format!("Detecting video from: {}", url));
+        let mut episode_urls: HashMap<i32, String> = HashMap::new();
+
+        // If we found an embed URL, detect from that first (faster than full page)
+        let detect_url = javwow_info.embed_url.as_deref().unwrap_or(&url);
+
+        match detector.detect_video_url(detect_url, Some(&app_handle)) {
+            Ok(Some(video_url)) => {
+                let _ = app_handle.emit("log-info", format!("Found video URL: {}", video_url));
+                episode_urls.insert(1, video_url);
+            }
+            Ok(None) => {
+                // Try from the main page if embed URL failed
+                if detect_url != url {
+                    let _ = app_handle.emit("log-info", "Embed URL found no video, trying main page...".to_string());
+                    if let Ok(Some(video_url)) = detector.detect_video_url(&url, Some(&app_handle)) {
+                        episode_urls.insert(1, video_url);
+                    }
+                }
+                if episode_urls.is_empty() {
+                    let _ = app_handle.emit("log-info", "Chrome detector found no video on javwow.com page".to_string());
+                    return Err("Could not find video URL on javwow.com page. The video may be region-blocked or require login.".to_string());
+                }
+            }
+            Err(e) => {
+                return Err(format!("Chrome detection failed: {}", e));
+            }
+        }
+
+        let cookies = detector.get_last_cookies().to_vec();
+        UnifiedSeriesInfo {
+            series_id: 0,
+            title: javwow_info.title,
+            total_episodes: 1,
+            poster_url: javwow_info.poster_url,
+            episode_urls,
+            source_url: Some(url.clone()),
+            episode_keys: Default::default(),
+            cookies,
+            source: "javwow".to_string(),
+        }
     } else if TitanParser::is_titan_url(&url, &settings.titan_domain) {
         // Use Titan Parser
         let mut titan_info = state.titan_parser.get_series_info(&url, &settings.titan_domain).await?;
@@ -570,6 +629,7 @@ async fn start_download(
             "hsck" => "hsck",
             "njavtv" => "njavtv",
             "njav" => "njav",
+            "javwow" => "javwow",
             "titan" => "titan",
             "direct" => "direct",
             _ => "rongyok", // default
@@ -1231,6 +1291,15 @@ async fn search_sites(
                 Err(_) => None,
             }
         }),
+        Box::pin(async {
+            match state.javwow_parser.search(&query, page, &settings.javwow_domain).await {
+                Ok(results) => {
+                    let has_more = results.len() >= 20;
+                    Some(SearchResponse { results, source: "javwow".into(), page, has_more })
+                }
+                Err(_) => None,
+            }
+        }),
     ];
 
     let responses: Vec<SearchResponse> = futures_util::future::join_all(futures)
@@ -1249,6 +1318,7 @@ fn get_browse_categories(state: State<'_, AppState>) -> Result<Vec<SiteCategory>
     categories.extend(state.baanjeen_parser.list_categories("xn--82c7abb4jua0l.com"));
     categories.extend(state.titan_parser.list_categories("51cg1.com"));
     categories.extend(state.hsck_parser.list_categories("hsck123.com"));
+    categories.extend(state.javwow_parser.list_categories("javwow.com"));
     Ok(categories)
 }
 
@@ -1266,6 +1336,7 @@ async fn browse_category(
         "baanjeen" => state.baanjeen_parser.browse(&category, page, &settings.baanjeen_domain).await?,
         "titan" => state.titan_parser.browse(&category, page, &settings.titan_domain).await?,
         "hsck" => state.hsck_parser.browse(&category, page, &settings.hsck_domain).await?,
+        "javwow" => state.javwow_parser.browse(&category, page, &settings.javwow_domain).await?,
         _ => return Err(format!("Unknown source: {}", source)),
     };
     let has_more = results.len() >= 20;
@@ -1320,6 +1391,7 @@ pub fn run() {
             baanjeen_parser: BaanJeenParser::new(proxy_config.clone()),
             titan_parser: TitanParser::new(proxy_config.clone()),
             hsck_parser: HsckParser::new(proxy_config.clone()),
+            javwow_parser: JavwowParser::new(proxy_config.clone()),
             njavtv_parser: NjavtvParser::new(proxy_config.clone()),
             njav_parser: NjavParser::new(proxy_config.clone()),
             chrome_detector: Mutex::new(
