@@ -1,0 +1,70 @@
+wing: video_downloader_tauri
+rooms:
+- name: documentation
+  description: Files from docs/
+  keywords:
+  - documentation
+  - docs
+- name: python_script
+  description: Files from python_script/
+  keywords:
+  - python_script
+  - python_script
+- name: public
+  description: Files from public/
+  keywords:
+  - public
+  - public
+- name: scripts
+  description: Files from scripts/
+  keywords:
+  - scripts
+  - scripts
+- name: src_tauri
+  description: Files from src-tauri/
+  keywords:
+  - src_tauri
+  - src-tauri
+- name: thoughts
+  description: Files from thoughts/
+  keywords:
+  - thoughts
+  - thoughts
+- name: playwright_report
+  description: Files from playwright-report/
+  keywords:
+  - playwright_report
+  - playwright-report
+- name: skills
+  description: Files from skills/
+  keywords:
+  - skills
+  - skills
+- name: test_results
+  description: Files from test-results/
+  keywords:
+  - test_results
+  - test-results
+- name: src
+  description: Files from src/
+  keywords:
+  - src
+  - src
+- name: testing
+  description: Files from tests/
+  keywords:
+  - testing
+  - tests
+- name: frontend
+  description: Files from components/
+  keywords:
+  - frontend
+  - components
+- name: design
+  description: Files from assets/
+  keywords:
+  - design
+  - assets
+- name: general
+  description: Files that don't fit other rooms
+  keywords: []

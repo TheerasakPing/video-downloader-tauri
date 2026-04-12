@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Eye, X, Play, Loader2 } from "lucide-react";
 import { Button } from "./Button";
+import { useI18n } from "../hooks/useI18n";
 
 interface VideoPreviewProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
 }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const { t } = useI18n();
 
   if (!isOpen) return null;
 
@@ -39,12 +41,13 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
               <Eye size={16} />
             </span>
             <span className="text-sm font-medium text-white">
-              {seriesTitle ? `${seriesTitle} - Episode ${episodeNumber}` : `Episode ${episodeNumber} Preview`}
+              {seriesTitle ? t("preview.episodeTitle", { title: seriesTitle, number: episodeNumber ?? 0 }) : t("preview.episodePreview", { number: episodeNumber ?? 0 })}
             </span>
           </div>
           <button
             onClick={onClose}
             className="p-2 hover:bg-red-500/20 rounded-lg transition-colors"
+            aria-label={t("preview.close")}
           >
             <X size={18} className="text-slate-400 hover:text-red-400" />
           </button>
@@ -56,7 +59,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
             <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
               <div className="flex flex-col items-center gap-3">
                 <Loader2 size={48} className="text-violet-400 animate-spin" />
-                <span className="text-slate-400 text-sm">Loading preview...</span>
+                <span className="text-slate-400 text-sm">{t("preview.loading")}</span>
               </div>
             </div>
           )}
@@ -67,9 +70,9 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                 <div className="icon-glow icon-glow-lg icon-glow-red">
                   <X size={32} />
                 </div>
-                <span className="text-slate-300 font-medium">Preview not available</span>
+                <span className="text-slate-300 font-medium">{t("preview.notAvailable")}</span>
                 <span className="text-slate-500 text-sm">
-                  This video cannot be previewed. Try downloading it instead.
+                  {t("preview.cannotPreview")}
                 </span>
               </div>
             </div>
@@ -86,7 +89,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                 setHasError(true);
               }}
             >
-              Your browser does not support the video tag.
+              {t("preview.unsupported")}
             </video>
           ) : (
             <div className="absolute inset-0 flex items-center justify-center">
@@ -94,7 +97,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                 <div className="icon-glow icon-glow-lg icon-glow-violet">
                   <Play size={48} />
                 </div>
-                <span className="text-slate-400 text-sm">Select an episode to preview</span>
+                <span className="text-slate-400 text-sm">{t("preview.selectEpisode")}</span>
               </div>
             </div>
           )}
@@ -103,7 +106,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
         {/* Footer */}
         <div className="flex justify-end gap-2 px-4 py-3 border-t border-slate-700/50">
           <Button variant="secondary" onClick={onClose}>
-            Close
+            {t("common.close")}
           </Button>
         </div>
       </div>

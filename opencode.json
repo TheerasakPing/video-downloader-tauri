@@ -1,0 +1,70 @@
+{
+  "mcp": {
+    "Artin0123-gemini-image-mcp-server": {
+      "type": "remote",
+      "url": "https://server.smithery.ai/@Artin0123/gemini-image-mcp-server/mcp"
+    },
+    "contextlayer-mcp": {
+      "command": [
+        "npx",
+        "-y",
+        "@contextlayer/mcp@0.0.3"
+      ],
+      "type": "local"
+    },
+    "ghost-os": {
+      "command": [
+        "/opt/homebrew/bin/ghost",
+        "mcp"
+      ],
+      "type": "local"
+    },
+    "maestro-status": {
+      "command": [
+        "/Applications/Maestro.app/Contents/MacOS/maestro-mcp-server"
+      ],
+      "enabled": true,
+      "environment": {
+        "MAESTRO_INSTANCE_ID": "bbc31edf-1e42-4f60-bf1c-f9ab23a726b6",
+        "MAESTRO_SESSION_ID": "3",
+        "MAESTRO_STATUS_URL": "http://127.0.0.1:9900/status"
+      },
+      "type": "local"
+    },
+    "mcp-server": {
+      "type": "remote",
+      "url": "https://api.adadvisor.ai/mcp"
+    },
+    "octocode": {
+      "command": [
+        "npx",
+        "octocode-mcp@latest"
+      ],
+      "type": "local"
+    },
+    "server": {
+      "command": [
+        "npx",
+        "-y",
+        "ponlo-ai"
+      ],
+      "type": "local"
+    },
+    "test-mcp-server": {
+      "type": "remote",
+      "url": "https://test.alpic.ai/"
+    },
+    "web-reader": {
+      "type": "remote",
+      "url": "https://api.z.ai/api/mcp/web_reader/mcp"
+    },
+    "web-search-prime": {
+      "type": "remote",
+      "url": "https://api.z.ai/api/mcp/web_search_prime/mcp"
+    },
+    "zread": {
+      "type": "remote",
+      "url": "https://api.z.ai/api/mcp/zread/mcp"
+    }
+  }
+}

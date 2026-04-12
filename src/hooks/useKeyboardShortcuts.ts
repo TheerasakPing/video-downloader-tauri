@@ -5,38 +5,89 @@ export const SHORTCUTS = [
     key: "Ctrl + V",
     description: "Paste URL from clipboard",
     descriptionTh: "วางลิงก์จากคลิปบอร์ด",
+    category: "download",
   },
   {
     key: "Ctrl + D",
     description: "Start Download",
     descriptionTh: "เริ่มดาวน์โหลด",
+    category: "download",
   },
   {
     key: "Space",
     description: "Pause / Resume",
     descriptionTh: "พัก / ต่อการดาวน์โหลด",
+    category: "download",
   },
   {
     key: "Esc",
     description: "Cancel Download",
     descriptionTh: "ยกเลิกการดาวน์โหลด",
+    category: "download",
   },
   {
     key: "Ctrl + M",
     description: "Toggle Mini Mode",
     descriptionTh: "เปิด/ปิด โหมดย่อ",
+    category: "ui",
   },
   {
     key: "Ctrl + Tab",
     description: "Next Tab",
     descriptionTh: "แท็บถัดไป",
+    category: "navigation",
   },
   {
     key: "Ctrl + Shift + Tab",
     description: "Previous Tab",
     descriptionTh: "แท็บก่อนหน้า",
+    category: "navigation",
+  },
+  {
+    key: "Ctrl + ?",
+    description: "Show Keyboard Shortcuts",
+    descriptionTh: "แสดงปุ่มลัด",
+    category: "help",
+  },
+  {
+    key: "Ctrl + B",
+    description: "Toggle Browse Panel",
+    descriptionTh: "สลับแผงค้นหา",
+    category: "navigation",
+  },
+  {
+    key: "Ctrl + L",
+    description: "Toggle Library Panel",
+    descriptionTh: "สลับแผงคลัง",
+    category: "navigation",
+  },
+  {
+    key: "Ctrl + F",
+    description: "Focus Search Box",
+    descriptionTh: "โฟกัสช่องค้นหา",
+    category: "navigation",
+  },
+  {
+    key: "F5",
+    description: "Refresh Library",
+    descriptionTh: "รีเฟรชคลัง",
+    category: "library",
+  },
+  {
+    key: "Ctrl + I",
+    description: "Open Import/Export",
+    descriptionTh: "เปิดนำเข้า/ส่งออก",
+    category: "library",
   },
 ];
+
+export const SHORTCUT_CATEGORIES = {
+  download: { label: "Download", labelTh: "การดาวน์โหลด" },
+  navigation: { label: "Navigation", labelTh: "การนำทาง" },
+  library: { label: "Library", labelTh: "คลัง" },
+  ui: { label: "Interface", labelTh: "ส่วนติดต่อ" },
+  help: { label: "Help", labelTh: "ช่วยเหลือ" },
+};
 
 interface ShortcutHandlers {
   onPaste: () => void;

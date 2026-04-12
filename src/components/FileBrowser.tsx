@@ -9,6 +9,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { Button } from "./Button";
+import { useI18n } from "../hooks/useI18n";
 
 interface FileInfo {
   name: string;
@@ -44,6 +45,7 @@ export function FileBrowser({
   onPlay,
 }: FileBrowserProps) {
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const { t } = useI18n();
 
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
   const episodeFiles = files.filter((f) => f.isEpisode);
@@ -86,7 +88,7 @@ export function FileBrowser({
             <span className="truncate">{outputDir}</span>
           </h3>
           <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1">
-            {files.length} files • {formatBytes(totalSize)}
+            {t("files.count", { count: files.length, size: formatBytes(totalSize) })}
           </p>
         </div>
         <div className="flex gap-2">
@@ -97,7 +99,7 @@ export function FileBrowser({
             onClick={onRefresh}
             className="hover-scale"
           >
-            <span className="hidden sm:inline">Refresh</span>
+            <span className="hidden sm:inline">{t("files.refresh")}</span>
             <span className="sm:hidden">🔄</span>
           </Button>
           <Button
@@ -107,8 +109,8 @@ export function FileBrowser({
             onClick={onOpenFolder}
             className="hover-lift"
           >
-            <span className="hidden sm:inline">Open Folder</span>
-            <span className="sm:hidden">Open</span>
+            <span className="hidden sm:inline">{t("files.openFolder")}</span>
+            <span className="sm:hidden">{t("files.open")}</span>
           </Button>
         </div>
       </div>
@@ -118,8 +120,8 @@ export function FileBrowser({
         <div className="glass rounded-lg p-2 sm:p-3 border border-violet-500/30 bg-violet-500/10">
           <div className="flex items-center gap-1 sm:gap-2 text-violet-400 text-[10px] sm:text-xs mb-0.5 sm:mb-1">
             <Film size={12} className="drop-shadow-[0_0_4px_currentColor]" />
-            <span className="hidden sm:inline">Episodes</span>
-            <span className="sm:hidden">Eps</span>
+            <span className="hidden sm:inline">{t("files.episodes")}</span>
+            <span className="sm:hidden">{t("files.eps")}</span>
           </div>
           <div className="text-sm sm:text-lg font-bold text-white">
             {episodeFiles.length}
@@ -128,7 +130,7 @@ export function FileBrowser({
         <div className="glass rounded-lg p-2 sm:p-3 border border-emerald-500/30 bg-emerald-500/10">
           <div className="flex items-center gap-1 sm:gap-2 text-emerald-400 text-[10px] sm:text-xs mb-0.5 sm:mb-1">
             <FileVideo size={12} className="drop-shadow-[0_0_4px_currentColor]" />
-            Merged
+            {t("files.merged")}
           </div>
           <div className="text-sm sm:text-lg font-bold text-white">
             {mergedFiles.length}
@@ -137,8 +139,8 @@ export function FileBrowser({
         <div className="glass rounded-lg p-2 sm:p-3 border border-blue-500/30 bg-blue-500/10">
           <div className="flex items-center gap-1 sm:gap-2 text-blue-400 text-[10px] sm:text-xs mb-0.5 sm:mb-1">
             <HardDrive size={12} className="drop-shadow-[0_0_4px_currentColor]" />
-            <span className="hidden sm:inline">Total Size</span>
-            <span className="sm:hidden">Size</span>
+            <span className="hidden sm:inline">{t("files.totalSize")}</span>
+            <span className="sm:hidden">{t("files.size")}</span>
           </div>
           <div className="text-sm sm:text-lg font-bold text-white">
             {formatBytes(totalSize)}
@@ -150,10 +152,10 @@ export function FileBrowser({
       {files.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 animate-fade-in">
           <Button size="sm" variant="ghost" onClick={selectAll} className="hover-scale btn-ripple">
-            Select All
+            {t("files.selectAll")}
           </Button>
           <Button size="sm" variant="ghost" onClick={deselectAll} className="hover-scale btn-ripple">
-            Deselect
+            {t("files.deselect")}
           </Button>
           {selectedFiles.size > 0 && (
             <Button
@@ -163,7 +165,7 @@ export function FileBrowser({
               onClick={deleteSelected}
               className="hover-lift btn-ripple animate-scale-in"
             >
-              Delete ({selectedFiles.size})
+              {t("files.deleteSelected", { count: selectedFiles.size })}
             </Button>
           )}
         </div>
@@ -174,7 +176,7 @@ export function FileBrowser({
         {files.length === 0 ? (
           <div className="p-6 sm:p-8 text-center text-slate-500 text-sm animate-fade-in">
             <FolderOpen size={28} className="mx-auto mb-3 drop-shadow-[0_0_4px_currentColor]" />
-            No files in output directory
+            {t("files.empty")}
           </div>
         ) : (
           <div className="max-h-48 sm:max-h-64 overflow-y-auto divide-y divide-slate-700/50 scrollbar-hide">
@@ -214,6 +216,7 @@ export function FileBrowser({
                     onPlay(file.path);
                   }}
                   className="p-1 sm:p-1.5 text-emerald-400 hover:text-emerald-300 hover:bg-slate-700 rounded-lg transition-colors hover-scale"
+                  aria-label={t("files.playFile")}
                 >
                   <Play size={12} className="sm:w-3.5 sm:h-3.5 drop-shadow-[0_0_4px_currentColor]" />
                 </button>

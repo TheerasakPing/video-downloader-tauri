@@ -461,6 +461,11 @@ impl BaanJeenParser {
                     url,
                     source: source.to_string(),
                     total_episodes: None,
+                    description: None,
+                    rating: None,
+                    year: None,
+                    genre: None,
+                    duration: None,
                 });
             }
         }

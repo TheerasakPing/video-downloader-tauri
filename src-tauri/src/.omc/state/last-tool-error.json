@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"tail -5 /Volumes/Data/workspace/git/video-downloader-tauri/src-tauri/src/queue_db.rs | cat -A\",\"description\":\"Check file ending with special chars\"}",
+  "error": "Exit code 1\ncat: illegal option -- A\nusage: cat [-belnstuv] [file ...]",
+  "timestamp": "2026-04-11T09:36:17.122Z",
+  "retry_count": 1
+}

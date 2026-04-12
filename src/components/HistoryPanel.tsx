@@ -10,6 +10,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { Button } from "./Button";
+import { useI18n } from "../hooks/useI18n";
 
 interface HistoryPanelProps {
   history: DownloadRecord[];
@@ -31,9 +32,9 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
 
-function formatDate(dateStr: string): string {
+function formatDate(dateStr: string, locale?: string): string {
   const date = new Date(dateStr);
-  return date.toLocaleDateString("th-TH", {
+  return date.toLocaleDateString(locale || undefined, {
     day: "numeric",
     month: "short",
     hour: "2-digit",
@@ -47,6 +48,8 @@ export function HistoryPanel({
   onDelete,
   onClear,
 }: HistoryPanelProps) {
+  const { t, language } = useI18n();
+  const locale = language === "th" ? "th-TH" : undefined;
   return (
     <div className="space-y-6">
       {/* Stats Cards */}
@@ -54,7 +57,7 @@ export function HistoryPanel({
         <div className="glass rounded-xl p-4 border border-violet-500/30 bg-violet-500/10">
           <div className="flex items-center gap-2 text-violet-400 mb-2">
             <Film size={16} className="drop-shadow-[0_0_4px_currentColor]" />
-            <span className="text-xs font-medium">Total Downloads</span>
+            <span className="text-xs font-medium">{t("history.totalDownloads")}</span>
           </div>
           <div className="text-2xl font-bold text-white">
             {stats.totalDownloads}
@@ -64,7 +67,7 @@ export function HistoryPanel({
         <div className="glass rounded-xl p-4 border border-emerald-500/30 bg-emerald-500/10">
           <div className="flex items-center gap-2 text-emerald-400 mb-2">
             <CheckCircle size={16} className="drop-shadow-[0_0_4px_currentColor]" />
-            <span className="text-xs font-medium">Episodes</span>
+            <span className="text-xs font-medium">{t("history.episodes")}</span>
           </div>
           <div className="text-2xl font-bold text-white">
             {stats.totalEpisodes}
@@ -74,7 +77,7 @@ export function HistoryPanel({
         <div className="glass rounded-xl p-4 border border-blue-500/30 bg-blue-500/10">
           <div className="flex items-center gap-2 text-blue-400 mb-2">
             <HardDrive size={16} className="drop-shadow-[0_0_4px_currentColor]" />
-            <span className="text-xs font-medium">Total Size</span>
+            <span className="text-xs font-medium">{t("history.totalSize")}</span>
           </div>
           <div className="text-2xl font-bold text-white">
             {formatBytes(stats.totalSize)}
@@ -84,7 +87,7 @@ export function HistoryPanel({
         <div className="glass rounded-xl p-4 border border-amber-500/30 bg-amber-500/10">
           <div className="flex items-center gap-2 text-amber-400 mb-2">
             <TrendingUp size={16} className="drop-shadow-[0_0_4px_currentColor]" />
-            <span className="text-xs font-medium">Success Rate</span>
+            <span className="text-xs font-medium">{t("history.successRate")}</span>
           </div>
           <div className="text-2xl font-bold text-white">
             {stats.successRate.toFixed(0)}%
@@ -97,7 +100,7 @@ export function HistoryPanel({
         <div className="flex items-center justify-between px-4 py-3 bg-slate-800/30 border-b border-slate-700/50">
           <h3 className="text-sm font-medium text-slate-300 flex items-center gap-2">
             <Clock size={16} className="text-cyan-400 drop-shadow-[0_0_4px_currentColor]" />
-            Download History
+            {t("history.downloadHistory")}
           </h3>
           {history.length > 0 && (
             <Button
@@ -106,7 +109,7 @@ export function HistoryPanel({
               leftIcon={<Trash2 size={14} />}
               onClick={onClear}
             >
-              Clear All
+              {t("history.clear")}
             </Button>
           )}
         </div>
@@ -115,7 +118,7 @@ export function HistoryPanel({
           {history.length === 0 ? (
             <div className="p-8 text-center text-slate-500">
               <Clock size={24} className="mx-auto mb-3 drop-shadow-[0_0_4px_currentColor]" />
-              No download history yet
+              {t("history.empty")}
             </div>
           ) : (
             <div className="divide-y divide-slate-700/30">
@@ -142,21 +145,22 @@ export function HistoryPanel({
                         </span>
                       </div>
                       <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
-                        <span>ID: {record.seriesId}</span>
+                        <span>{t("history.id")} {record.seriesId}</span>
                         <span>•</span>
                         <span>
-                          {record.completedEpisodes.length}/{record.episodes.length} episodes
+                          {t("history.episodesCount", { completed: record.completedEpisodes.length, total: record.episodes.length })}
                         </span>
                         <span>•</span>
                         <span>{formatBytes(record.totalSize)}</span>
                       </div>
                       <div className="text-xs text-slate-600 mt-1">
-                        {formatDate(record.startTime)}
+                        {formatDate(record.startTime, locale)}
                       </div>
                     </div>
                     <button
                       onClick={() => onDelete(record.id)}
                       className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                      aria-label={t("history.deleteRecord")}
                     >
                       <Trash2 size={14} className="drop-shadow-[0_0_4px_currentColor]" />
                     </button>

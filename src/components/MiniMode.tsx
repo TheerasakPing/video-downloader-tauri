@@ -1,6 +1,7 @@
 import React from "react";
 import { Maximize2, X, Download, Pause, Play } from "lucide-react";
 import { ProgressBar } from "./ProgressBar";
+import { useI18n } from "../hooks/useI18n";
 
 interface MiniModeProps {
   isOpen: boolean;
@@ -33,6 +34,8 @@ export const MiniMode: React.FC<MiniModeProps> = ({
   onResume,
   seriesTitle,
 }) => {
+  const { t } = useI18n();
+
   if (!isOpen) return null;
 
   return (
@@ -44,21 +47,23 @@ export const MiniMode: React.FC<MiniModeProps> = ({
             <Download size={14} />
           </span>
           <span className="text-sm font-medium text-white truncate max-w-[160px]">
-            {seriesTitle || "Downloading..."}
+            {seriesTitle || t("mini.downloading")}
           </span>
         </div>
         <div className="flex items-center gap-1">
           <button
             onClick={onExpand}
             className="p-1.5 hover:bg-slate-700/50 rounded-lg transition-colors"
-            title="Expand"
+            title={t("mini.expandTitle")}
+            aria-label={t("mini.expandTitle")}
           >
             <Maximize2 size={14} className="text-slate-400" />
           </button>
           <button
             onClick={onClose}
             className="p-1.5 hover:bg-red-500/20 rounded-lg transition-colors"
-            title="Close"
+            title={t("mini.closeTitle")}
+            aria-label={t("mini.closeTitle")}
           >
             <X size={14} className="text-slate-400 hover:text-red-400" />
           </button>
@@ -70,7 +75,7 @@ export const MiniMode: React.FC<MiniModeProps> = ({
         {/* Current Episode */}
         <div>
           <div className="flex justify-between text-xs text-slate-400 mb-1">
-            <span>Episode {progress.episode}</span>
+            <span>{t("mini.episode")} {progress.episode}</span>
             <span>{(progress.speed / 1024 / 1024).toFixed(1)} MB/s</span>
           </div>
           <ProgressBar percentage={progress.percentage} />
@@ -79,7 +84,7 @@ export const MiniMode: React.FC<MiniModeProps> = ({
         {/* Overall Progress */}
         <div>
           <div className="flex justify-between text-xs text-slate-400 mb-1">
-            <span>Overall</span>
+            <span>{t("mini.overall")}</span>
             <span>
               {completedEpisodes}/{totalEpisodes}
             </span>
@@ -100,12 +105,12 @@ export const MiniMode: React.FC<MiniModeProps> = ({
             {isPaused ? (
               <>
                 <Play size={16} />
-                <span className="text-sm">Resume</span>
+                <span className="text-sm">{t("mini.resume")}</span>
               </>
             ) : (
               <>
                 <Pause size={16} />
-                <span className="text-sm">Pause</span>
+                <span className="text-sm">{t("mini.pause")}</span>
               </>
             )}
           </button>

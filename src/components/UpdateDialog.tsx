@@ -3,6 +3,7 @@ import { Download, X, RefreshCw, Sparkles, ArrowUpCircle, ExternalLink } from "l
 import { Button } from "./Button";
 import { ProgressBar } from "./ProgressBar";
 import { UpdateInfo } from "../hooks/useUpdater";
+import { useI18n } from "../hooks/useI18n";
 
 interface UpdateDialogProps {
   isOpen: boolean;
@@ -23,6 +24,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
   onDownload,
   onDismiss,
 }) => {
+  const { t } = useI18n();
   if (!isOpen || !updateInfo) return null;
 
   return (
@@ -39,6 +41,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
         <button
           onClick={onDismiss}
           className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white transition-colors"
+          aria-label={t("update.close")}
         >
           <X size={20} />
         </button>
@@ -52,7 +55,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
 
         {/* Title */}
         <h2 className="text-xl font-bold text-center mb-2">
-          Update Available!
+          {t("update.title")}
         </h2>
 
         {/* Version info */}
@@ -64,7 +67,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
 
         {/* Release notes */}
         <div className="bg-slate-800/50 rounded-xl p-4 mb-4 max-h-40 overflow-y-auto">
-          <h3 className="text-sm font-medium text-slate-300 mb-2">What's New:</h3>
+          <h3 className="text-sm font-medium text-slate-300 mb-2">{t("update.whatsNew")}</h3>
           <div className="text-sm text-slate-400 whitespace-pre-wrap">
             {updateInfo.body}
           </div>
@@ -75,7 +78,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
           <div className="mb-4 animate-fade-in">
             <ProgressBar
               percentage={progress}
-              label="Downloading update..."
+              label={t("update.downloading")}
               sublabel={`${progress.toFixed(0)}%`}
               variant="success"
             />
@@ -85,7 +88,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
         {/* Error message */}
         {error && (
           <div className="mb-4 p-3 bg-red-500/20 rounded-lg border border-red-500/30 animate-fade-in">
-            <div className="text-red-300 text-sm font-medium mb-1">Update Failed</div>
+            <div className="text-red-300 text-sm font-medium mb-1">{t("update.failed")}</div>
             <div className="text-red-400/80 text-xs">{error}</div>
             {error.includes("manually") && (
               <a
@@ -95,7 +98,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
                 className="inline-flex items-center gap-1 mt-2 text-xs text-blue-400 hover:text-blue-300"
               >
                 <ExternalLink size={12} />
-                Open GitHub Releases
+                {t("update.openGithub")}
               </a>
             )}
           </div>
@@ -109,7 +112,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
             disabled={downloading}
             className="flex-1"
           >
-            Later
+            {t("update.later")}
           </Button>
           <Button
             onClick={onDownload}
@@ -118,7 +121,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
             leftIcon={downloading ? <RefreshCw size={16} className="animate-spin" /> : <Download size={16} />}
             className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600"
           >
-            {downloading ? "Updating..." : error ? "Retry Update" : "Update Now"}
+            {downloading ? t("update.updating") : error ? t("update.retryUpdate") : t("update.updateNow")}
           </Button>
         </div>
       </div>

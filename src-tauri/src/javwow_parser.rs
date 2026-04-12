@@ -63,11 +63,16 @@ impl JavwowParser {
         let response = self
             .client()
             .get(url)
+            .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .header("Accept-Language", "th,en-US;q=0.9,en;q=0.8")
             .header("Accept-Encoding", "gzip, deflate, br")
             .header("Connection", "keep-alive")
             .header("Upgrade-Insecure-Requests", "1")
+            .header("Cache-Control", "max-age=0")
+            .header("Sec-Fetch-Dest", "document")
+            .header("Sec-Fetch-Mode", "navigate")
+            .header("Sec-Fetch-Site", "none")
             .send()
             .await
             .map_err(|e| format!("HTTP request failed: {}", e))?;
@@ -201,15 +206,17 @@ impl JavwowParser {
 
     /// Extract embed iframe URL from page (onlysubthai.com)
     fn extract_embed_url(&self, document: &Html, html: &str) -> Option<String> {
-        // Look for iframe with onlysubthai.com
+        // Method 1: Look for iframe with onlysubthai.com
         if let Ok(sel) = Selector::parse("iframe") {
             for iframe in document.select(&sel) {
-                if let Some(src) = iframe.value().attr("src") {
+                if let Some(src) = iframe.value().attr("src")
+                    .or_else(|| iframe.value().attr("data-src"))
+                    .or_else(|| iframe.value().attr("data-lazy-src"))
+                {
                     if src.contains("onlysubthai.com") || src.contains("onlysubthai") {
                         let url = if src.starts_with("//") {
                             format!("https:{}", src)
                         } else if src.starts_with("/") {
-                            // Relative URL — shouldn't happen for embed but handle it
                             return None;
                         } else {
                             src.to_string()
@@ -220,8 +227,21 @@ impl JavwowParser {
             }
         }
 
-        // Fallback: regex search for onlysubthai URL in raw HTML
-        let re = Regex::new(r#"(https?://[^"'\s<>]*onlysubthai\.com[^"'\s<>]*)"#).ok()?;
+        // Method 2: Check og:video meta tag
+        for prop in &["og:video", "og:video:url", "og:video:secure_url"] {
+            if let Ok(sel) = Selector::parse(&format!("meta[property='{}']", prop)) {
+                if let Some(el) = document.select(&sel).next() {
+                    if let Some(content) = el.value().attr("content") {
+                        if content.contains("onlysubthai") || content.contains("subthai") {
+                            return Some(content.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Method 3: Regex search for onlysubthai URL in raw HTML
+        let re = Regex::new(r#"(https?://[^"'\s<>]*onlysubthai[^"'\s<>]*)"#).ok()?;
         re.captures(html)
             .and_then(|c| c.get(1))
             .map(|m| m.as_str().to_string())

@@ -55,6 +55,8 @@ export interface DomainSettings {
   hsckDomain?: string;
   njavtvDomain?: string;
   njavDomain?: string;
+  javwowDomain?: string;
+  avkuyDomain?: string;
 }
 
 // --- Library types ---
@@ -72,6 +74,12 @@ export interface LibraryEntry {
   completedCount: number;
   favorite: boolean;
   tags: LibraryTag[];
+  watchedCount?: number;
+  description?: string;
+  rating?: number;
+  year?: number;
+  genre?: string;
+  duration?: string;
 }
 
 export interface LibraryEpisode {
@@ -83,6 +91,8 @@ export interface LibraryEpisode {
   quality?: string;
   fileSize?: number;
   status: string;
+  watched: boolean;
+  watchedAt?: string;
 }
 
 export interface SeriesDetail {
@@ -133,6 +143,33 @@ export interface ScheduleConfig {
   autoResume: boolean;
 }
 
+export interface ScheduleEntry {
+  id: number;
+  name: string;
+  url: string;
+  outputDir: string;
+  cronExpression: string;
+  enabled: boolean;
+  lastRun?: string;
+  nextRun?: string;
+  createdAt: string;
+}
+
+export interface CreateScheduleRequest {
+  name: string;
+  url: string;
+  outputDir: string;
+  cronExpression: string;
+}
+
+export interface UpdateScheduleRequest {
+  id: number;
+  name?: string;
+  url?: string;
+  outputDir?: string;
+  cronExpression?: string;
+}
+
 // --- Proxy types ---
 
 export interface ProxyConfig {
@@ -159,6 +196,11 @@ export interface SearchResult {
   url: string;
   source: string;
   totalEpisodes?: number;
+  description?: string;
+  rating?: number;
+  year?: number;
+  genre?: string;
+  duration?: string;
 }
 
 export interface SiteCategory {

@@ -1,0 +1,10 @@
+{
+  "_metadata": {
+    "created_at": "2026-04-12T02:24:28.919334+00:00",
+    "databases": [
+      "sample.db"
+    ],
+    "version": "1.0"
+  },
+  "sample.db": {}
+}

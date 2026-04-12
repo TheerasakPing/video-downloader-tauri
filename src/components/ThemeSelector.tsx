@@ -1,6 +1,7 @@
 import React from "react";
 import { Palette, Check } from "lucide-react";
 import { CustomTheme } from "../hooks/useCustomTheme";
+import { useI18n } from "../hooks/useI18n";
 
 interface ThemeSelectorProps {
   themes: CustomTheme[];
@@ -13,13 +14,14 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
   activeThemeId,
   onSelect,
 }) => {
+  const { t } = useI18n();
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
         <span className="icon-glow icon-glow-sm icon-glow-fuchsia">
           <Palette size={14} />
         </span>
-        Color Theme
+        {t("settings.colorTheme")}
       </div>
 
       <div className="grid grid-cols-5 gap-2">
@@ -33,6 +35,8 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
                 : "border-slate-700/50 bg-slate-800/30 hover:bg-slate-700/30"
             }`}
             title={theme.name}
+            aria-label={t("theme.selectAria", { name: theme.name })}
+            aria-pressed={activeThemeId === theme.id}
           >
             {/* Color preview */}
             <div className="relative w-10 h-10 rounded-lg overflow-hidden">

@@ -1,7 +1,7 @@
 {
-  "tool_name": "Grep",
-  "tool_input_preview": "{\"pattern\":\"NjavTV detected.*extracting\",\"path\":\"/Volumes/Data/_workspace/_git/video-downloader-tauri/src-tauri/src\",\"output_mode\":\"content\",\"-A\":50}",
-  "error": "spawn /Users/baemon/.clawgod/vendor/ripgrep/arm64-darwin/rg ENOENT",
-  "timestamp": "2026-04-05T16:46:50.423Z",
+  "tool_name": "mcp__ghost-os__ghost_focus",
+  "tool_input_preview": "{\"app\":\"tauri-app\"}",
+  "error": "{\"error\":\"Failed to activate 'tauri-app'\",\"success\":false,\"suggestion\":\"The app may be unresponsive. Try ghost_state to check its status.\"}",
+  "timestamp": "2026-04-12T05:31:43.071Z",
   "retry_count": 1
 }

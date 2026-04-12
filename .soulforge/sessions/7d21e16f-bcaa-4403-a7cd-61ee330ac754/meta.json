@@ -1,0 +1,45 @@
+{
+  "id": "7d21e16f-bcaa-4403-a7cd-61ee330ac754",
+  "title": "hi",
+  "cwd": "/Volumes/Data/workspace/git/video-downloader-tauri",
+  "startedAt": 1775836379359,
+  "updatedAt": 1775911156615,
+  "activeTabId": "7e388af3-f2a9-4f9f-a4e4-0522cdcb8725",
+  "forgeMode": "default",
+  "tabs": [
+    {
+      "id": "7d21e16f-bcaa-4403-a7cd-61ee330ac754",
+      "label": "hi",
+      "activeModel": "openrouter/openrouter/free",
+      "sessionId": "7d21e16f-bcaa-4403-a7cd-61ee330ac754",
+      "planMode": false,
+      "planRequest": null,
+      "coAuthorCommits": true,
+      "forgeMode": "auto",
+      "tokenUsage": {
+        "prompt": 77797,
+        "completion": 2312,
+        "total": 80349,
+        "cacheRead": 240,
+        "cacheWrite": 0,
+        "subagentInput": 0,
+        "subagentOutput": 0,
+        "lastStepInput": 9366,
+        "lastStepOutput": 778,
+        "lastStepCacheRead": 80,
+        "modelBreakdown": {
+          "openrouter/openrouter/free": {
+            "input": 77797,
+            "output": 2312,
+            "cacheRead": 240,
+            "cacheWrite": 0
+          }
+        }
+      },
+      "messageRange": {
+        "startLine": 0,
+        "endLine": 8
+      }
+    }
+  ]
+}
