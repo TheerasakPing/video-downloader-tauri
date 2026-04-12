@@ -34,6 +34,20 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::RwLock;
 
+/// Extension trait for safe Mutex locking that recovers from poison.
+trait SafeMutexLock<T> {
+    fn safe_lock(&self) -> std::sync::MutexGuard<'_, T>;
+}
+
+impl<T> SafeMutexLock<T> for Mutex<T> {
+    fn safe_lock(&self) -> std::sync::MutexGuard<'_, T> {
+        self.lock().unwrap_or_else(|e| {
+            eprintln!("Warning: Mutex poisoned, recovering...");
+            e.into_inner()
+        })
+    }
+}
+
 /// Decode a data URL (e.g. `data:image/jpeg;base64,...`) into raw bytes.
 /// Returns `None` if the string is not a valid data URL.
 fn decode_data_url(data_url: &str) -> Option<Vec<u8>> {
@@ -235,7 +249,7 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             source: "direct".to_string(),
         };
 
-        *state.current_series.lock().unwrap() = Some(series_info.clone());
+        *state.current_series.safe_lock() = Some(series_info.clone());
 
         // Auto-save to library
         let lib_id = state.library_db.save_series(
@@ -243,7 +257,7 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             Some(&url), None, series_info.total_episodes, series_info.series_id,
             &series_info.episode_urls, None, None,
         ).ok();
-        *state.current_library_id.lock().unwrap() = lib_id;
+        *state.current_library_id.safe_lock() = lib_id;
 
         return Ok(series_info);
     }
@@ -261,7 +275,7 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             let _ = app_handle.emit("log-info", "Static parsing failed, activating Chrome detector...".to_string());
 
             // Acquire lock and run detection
-            let mut detector = state.chrome_detector.lock().unwrap();
+            let mut detector = state.chrome_detector.safe_lock();
 
             // 1. Try Main URL
             let mut found_url = detector.detect_video_url(&url, Some(&app_handle)).ok().flatten();
@@ -319,7 +333,7 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
 
         // Always use Chrome detector since njavtv.com is Cloudflare protected
         let _ = app_handle.emit("log-info", "Launching Chrome to bypass Cloudflare...".to_string());
-        let mut detector = state.chrome_detector.lock().unwrap();
+        let mut detector = state.chrome_detector.safe_lock();
 
         let mut episode_urls: HashMap<i32, String> = HashMap::new();
 
@@ -376,7 +390,7 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
 
         // Always use Chrome detector since video is loaded through nested iframes
         let _ = app_handle.emit("log-info", "Launching Chrome to detect video from njav.org iframes...".to_string());
-        let mut detector = state.chrome_detector.lock().unwrap();
+        let mut detector = state.chrome_detector.safe_lock();
 
         let page_url = njav_info.direct_page_url
             .as_deref()
@@ -435,7 +449,7 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             
             // Use Chrome detector to find video URL (lock is released immediately after)
             let detected_url = {
-                let mut detector = state.chrome_detector.lock().unwrap();
+                let mut detector = state.chrome_detector.safe_lock();
                 detector.detect_video_url(&url, Some(&app_handle))?
             }; // Lock released here
             
@@ -494,7 +508,7 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
     let series_info = series_info;
 
     // Store in state
-    *state.current_series.lock().unwrap() = Some(series_info.clone());
+    *state.current_series.safe_lock() = Some(series_info.clone());
 
     // Auto-save to library (with poster extracted from data URL)
     let poster_data = series_info.poster_url.as_ref().and_then(|u| decode_data_url(u));
@@ -503,7 +517,7 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
         Some(&url), poster_data.as_deref(), series_info.total_episodes, series_info.series_id,
         &series_info.episode_urls, None, None,
     ).ok();
-    *state.current_library_id.lock().unwrap() = lib_id;
+    *state.current_library_id.safe_lock() = lib_id;
 
     Ok(series_info)
 }
@@ -530,7 +544,7 @@ fn set_taskbar_progress(app_handle: AppHandle, progress: i32) {
 async fn auto_detect_video_url(url: String, app_handle: AppHandle, state: State<'_, AppState>) -> Result<Option<String>, String> {
     eprintln!("[AutoDetect] Starting auto-detection for: {}", url);
 
-    let mut detector = state.chrome_detector.lock().unwrap();
+    let mut detector = state.chrome_detector.safe_lock();
     let video_url = detector.detect_video_url(&url, Some(&app_handle))?;
 
     Ok(video_url)
@@ -572,7 +586,7 @@ async fn start_download(
         series_title: request.series_title.clone(),
     };
     let _downloader = VideoDownloader::with_config(&effective_output_dir, config.clone());
-    *state.downloader.lock().unwrap() = Some(VideoDownloader::with_config(&effective_output_dir, config));
+    *state.downloader.safe_lock() = Some(VideoDownloader::with_config(&effective_output_dir, config));
 
     let mut results = Vec::new();
     let mut successful_files = Vec::new();
@@ -614,7 +628,7 @@ async fn start_download(
             // Create download state for this episode
             let download_state = Arc::new(DownloadState::new());
             {
-                let mut states = state.download_states.lock().unwrap();
+                let mut states = state.download_states.safe_lock();
                 states.insert(ep, download_state.clone());
             }
 
@@ -630,7 +644,7 @@ async fn start_download(
                 Ok(result) => {
                     // Remove from download states when done
                     {
-                        let mut states = state.download_states.lock().unwrap();
+                        let mut states = state.download_states.safe_lock();
                         states.remove(&ep);
                     }
 
@@ -642,14 +656,14 @@ async fn start_download(
                     let _ = app_handle.emit("download-result", &result);
 
                     // Update library episode status
-                    if let Some(lib_id) = *state.current_library_id.lock().unwrap() {
+                    if let Some(lib_id) = *state.current_library_id.safe_lock() {
                         state.library_db.update_episode_status(
                             lib_id, ep, if result.success { "completed" } else { "failed" },
                             result.file_path.as_deref(),
                         ).ok();
 
                         // Send webhook notification
-                        let webhook_config = state.webhook_config.lock().unwrap().clone();
+                        let webhook_config = state.webhook_config.safe_lock().clone();
                         if webhook_config.enabled {
                             let event_type = if result.success { "download_complete" } else { "download_failed" };
                             let title = if result.success {
@@ -674,7 +688,7 @@ async fn start_download(
                 Err(e) => {
                     // Remove from download states on error
                     {
-                        let mut states = state.download_states.lock().unwrap();
+                        let mut states = state.download_states.safe_lock();
                         states.remove(&ep);
                     }
                     let result = DownloadResult {
@@ -781,7 +795,7 @@ async fn start_download(
 
 #[tauri::command]
 async fn pause_download(episode: i32, state: State<'_, AppState>) -> Result<(), String> {
-    let states = state.download_states.lock().unwrap();
+    let states = state.download_states.safe_lock();
     if let Some(download_state) = states.get(&episode) {
         download_state.is_paused.store(true, std::sync::atomic::Ordering::SeqCst);
         Ok(())
@@ -792,7 +806,7 @@ async fn pause_download(episode: i32, state: State<'_, AppState>) -> Result<(), 
 
 #[tauri::command]
 async fn resume_download(episode: i32, state: State<'_, AppState>) -> Result<(), String> {
-    let states = state.download_states.lock().unwrap();
+    let states = state.download_states.safe_lock();
     if let Some(download_state) = states.get(&episode) {
         download_state.is_paused.store(false, std::sync::atomic::Ordering::SeqCst);
         Ok(())
@@ -803,7 +817,7 @@ async fn resume_download(episode: i32, state: State<'_, AppState>) -> Result<(),
 
 #[tauri::command]
 async fn cancel_download(episode: i32, state: State<'_, AppState>) -> Result<(), String> {
-    let states = state.download_states.lock().unwrap();
+    let states = state.download_states.safe_lock();
     if let Some(download_state) = states.get(&episode) {
         download_state.is_cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
         Ok(())
@@ -820,7 +834,7 @@ async fn get_episode_url(
     app_handle: AppHandle,
 ) -> Result<String, String> {
     // Try from cached series first
-    if let Some(series) = state.current_series.lock().unwrap().as_ref() {
+    if let Some(series) = state.current_series.safe_lock().as_ref() {
         if series.series_id == series_id {
             if let Some(url) = series.episode_urls.get(&episode) {
                 return Ok(url.clone());
@@ -849,7 +863,7 @@ async fn update_series_state(
     series: UnifiedSeriesInfo,
     state: State<'_, AppState>,
 ) -> Result<UpdateSeriesResponse, String> {
-    *state.current_series.lock().unwrap() = Some(series);
+    *state.current_series.safe_lock() = Some(series);
     Ok(UpdateSeriesResponse { success: true })
 }
 
@@ -1126,13 +1140,13 @@ async fn cmd_test_proxy_connection(config: proxy::ProxyConfig) -> Result<bool, S
 
 #[tauri::command]
 fn cmd_get_schedule_config(state: State<'_, AppState>) -> Result<scheduler::ScheduleConfig, String> {
-    let cfg = state.schedule_config.lock().unwrap();
+    let cfg = state.schedule_config.safe_lock();
     Ok(cfg.clone())
 }
 
 #[tauri::command]
 fn cmd_save_schedule_config(state: State<'_, AppState>, config: scheduler::ScheduleConfig) -> Result<(), String> {
-    let mut cfg = state.schedule_config.lock().unwrap();
+    let mut cfg = state.schedule_config.safe_lock();
     *cfg = config;
     Ok(())
 }
@@ -1270,56 +1284,30 @@ pub fn run() {
         }
     }
 
-    // Initialize library database
-    // We need the app data dir, so use a temporary path resolution
-    // The actual data dir will be available at runtime; for now use a default
-    let library_db = {
-        // Use dirs to find a suitable data directory
-        let app_data_dir = dirs::data_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join("com.rongyok.downloader");
-        std::fs::create_dir_all(&app_data_dir).ok();
-        LibraryDb::new(&app_data_dir)
-            .expect("Failed to initialize library database")
-    };
+    // Initialize app data directory (computed once, used by all subsystems)
+    let app_data_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("com.rongyok.downloader");
+    std::fs::create_dir_all(&app_data_dir)
+        .expect("Failed to create application data directory");
 
-    let notification_db = {
-        let app_data_dir = dirs::data_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join("com.rongyok.downloader");
-        std::fs::create_dir_all(&app_data_dir).ok();
-        NotificationDb::new(&app_data_dir)
-            .expect("Failed to initialize notification database")
-    };
+    let library_db = LibraryDb::new(&app_data_dir)
+        .expect("Failed to initialize library database");
 
-    let queue_db = {
-        let app_data_dir = dirs::data_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join("com.rongyok.downloader");
-        std::fs::create_dir_all(&app_data_dir).ok();
-        QueueDb::new(&app_data_dir)
-            .expect("Failed to initialize queue database")
-    };
+    let notification_db = NotificationDb::new(&app_data_dir)
+        .expect("Failed to initialize notification database");
+
+    let queue_db = QueueDb::new(&app_data_dir)
+        .expect("Failed to initialize queue database");
 
     let proxy_config = Arc::new(RwLock::new(proxy::ProxyConfig::default()));
     let schedule_config = Arc::new(Mutex::new(scheduler::ScheduleConfig::default()));
     let webhook_config = Arc::new(Mutex::new(webhook::WebhookConfig::default()));
 
-    let schedule_db = {
-        let app_data_dir = dirs::data_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join("com.rongyok.downloader");
-        std::fs::create_dir_all(&app_data_dir).ok();
-        scheduler::ScheduleDb::new(&app_data_dir)
-            .expect("Failed to initialize schedule database")
-    };
+    let schedule_db = scheduler::ScheduleDb::new(&app_data_dir)
+        .expect("Failed to initialize schedule database");
 
-    let backup_mgr = {
-        let app_data_dir = dirs::data_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join("com.rongyok.downloader");
-        backup::BackupManager::new(&app_data_dir)
-    };
+    let backup_mgr = backup::BackupManager::new(&app_data_dir);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -1334,10 +1322,10 @@ pub fn run() {
             hsck_parser: HsckParser::new(proxy_config.clone()),
             njavtv_parser: NjavtvParser::new(proxy_config.clone()),
             njav_parser: NjavParser::new(proxy_config.clone()),
-            chrome_detector: Mutex::new(ChromeVideoDetector::new().unwrap_or_else(|e| {
-                eprintln!("Warning: Chrome detector initialization failed: {}", e);
-                ChromeVideoDetector::new().unwrap()
-            })),
+            chrome_detector: Mutex::new(
+                ChromeVideoDetector::new()
+                    .expect("Chrome detector initialization failed. Please ensure Chrome/Chromium is installed.")
+            ),
             downloader: Mutex::new(None),
             current_series: Mutex::new(None),
             download_states: Mutex::new(HashMap::new()),
@@ -1436,9 +1424,6 @@ pub fn run() {
             cmd_export_library,
             cmd_import_library,
             cmd_batch_parse_urls,
-            // File I/O utilities
-            read_file,
-            write_file,
             // Phase 8: Backup & Duplicate Detection
             cmd_create_backup,
             cmd_restore_backup,
@@ -1567,16 +1552,6 @@ async fn cmd_batch_parse_urls(urls: String, app_handle: AppHandle, state: State<
     Ok(results)
 }
 
-// File I/O utilities for import/export
-#[tauri::command]
-fn read_file(path: String) -> Result<String, String> {
-    std::fs::read_to_string(&path).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn write_file(path: String, contents: String) -> Result<(), String> {
-    std::fs::write(&path, contents).map_err(|e| e.to_string())
-}
 
 // Phase 8: Backup & Duplicate Detection
 #[tauri::command]
