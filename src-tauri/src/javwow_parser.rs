@@ -2,16 +2,18 @@
 ///
 /// โครงสร้างของเว็บ:
 /// - หน้าวิดีโอ: `https://javwow.com/START-383/` (slug-based)
-/// - มี Cloudflare protection → ต้องใช้ Chrome detector
+/// - มี Cloudflare protection → ใช้ WebView (Tauri WKWebView) bypass
 /// - Metadata อยู่ใน og:tags (og:title, og:image, og:url)
 /// - Video ฝังผ่าน iframe → `onlysubthai.com/v/{videoId}?sid=5917&t=hls`
-/// - Stream จริงเป็น HLS (.m3u8) ที่โหลดจากใน iframe
+/// - Player page (onlysubthai.com) ใช้ packed JS (JWPlayer) → unpack เพื่อเอา stream URL
+/// - Stream จริงเป็น HLS ที่โหลดจาก CDN (dednaja.com) มี PNG prefix anti-scraping
 ///
-/// วิธีการ:
-/// 1. ลอง HTTP fetch ก่อน (อาจผ่าน Cloudflare ได้)
-/// 2. ถ้า fail → ใช้ Chrome detector ที่ lib.rs (เหมือน NjavTV pattern)
-/// 3. Extract metadata จาก og:tags
-/// 4. Video URL ต้อง detect ผ่าน Chrome (intercept .m3u8 requests)
+/// วิธีการ (ใน lib.rs):
+/// 1. HTTP fetch metadata (อาจผ่าน Cloudflare ได้) → ถ้าได้ embed URL → packer unpack เลย
+/// 2. ถ้า fail → ใช้ WebView bypass Cloudflare → extract embed URL + cookies
+/// 3. HTTP fetch onlysubthai.com player page ด้วย cookies → unpack packed JS → stream URL
+/// 4. Chrome detector เป็น fallback สุดท้ายเท่านั้น
+/// 5. Manual HLS download with PNG prefix stripping (เหมือน avkuy.com)
 
 use regex::Regex;
 use reqwest::Client;

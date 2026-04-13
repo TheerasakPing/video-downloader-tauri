@@ -211,26 +211,39 @@ async fn fetch_avkuy_stream_from_player_page(
 use tauri::{AppHandle, Emitter, State, Manager};
 use utils::{expand_path, sanitize_filename};
 
+fn parse_cookie_string(cookie_str: &str) -> Vec<(String, String)> {
+    cookie_str
+        .split(';')
+        .filter_map(|pair| {
+            let mut parts = pair.splitn(2, '=');
+            let key = parts.next()?.trim().to_string();
+            let val = parts.next()?.trim().to_string();
+            if key.is_empty() { None } else { Some((key, val)) }
+        })
+        .collect()
+}
+
 
 #[derive(Debug, Default, Clone)]
-struct AvkuyWebviewResult {
+struct WebviewExtractResult {
     title: Option<String>,
     poster_url: Option<String>,
     iframe_url: Option<String>,
     video_url: Option<String>,
+    cookies: Vec<(String, String)>,
 }
 
 /// AVKuy-specific extraction via real Tauri WebView (better Cloudflare compatibility than CDP).
 /// Returns best-effort metadata (title/poster/iframe) and direct video URL when detected.
-async fn fetch_avkuy_via_webview(
+async fn fetch_via_webview(
     app_handle: &AppHandle,
     url: &str,
-) -> AvkuyWebviewResult {
+) -> WebviewExtractResult {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
 
     const LABEL: &str = "avkuy-helper";
 
-    let mut result = AvkuyWebviewResult::default();
+    let mut result = WebviewExtractResult::default();
 
     let log_path = dirs::data_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
@@ -313,14 +326,14 @@ async fn fetch_avkuy_via_webview(
                     frames[i].getAttribute('data-lazy-src') ||
                     '';
                 if (!src) continue;
-                if (src.includes('av-kuy.com/v/') || src.includes('/v/')) {
+                if (src.includes('/v/')) {
                     iframe = src.startsWith('//') ? 'https:' + src : src;
                     break;
                 }
             }
             if (!iframe) {
                 const html = document.documentElement.outerHTML;
-                const m = html.match(/(https?:\/\/[^"'\s<>]*av-kuy\.com\/v\/[^"'\s<>]*)/i);
+                const m = html.match(/(https?:\/\/[^"'\s<>]*\/v\/[^"'\s<>]*)/i);
                 if (m) iframe = m[1];
             }
 
@@ -336,6 +349,7 @@ async fn fetch_avkuy_via_webview(
                     get("video", 'poster') ||
                     '',
                 iframe,
+                cookies: document.cookie,
             };
             window.location.hash = 'ak_meta=' + encodeURIComponent(JSON.stringify(payload));
         })()
@@ -367,6 +381,10 @@ async fn fetch_avkuy_via_webview(
                             .and_then(|v| v.as_str())
                             .map(|s| s.trim().to_string())
                             .filter(|s| !s.is_empty());
+                        // Extract cookies from main page
+                        if let Some(cookie_str) = json.get("cookies").and_then(|v| v.as_str()) {
+                            result.cookies = parse_cookie_string(cookie_str);
+                        }
                         break;
                     }
                 }
@@ -480,6 +498,27 @@ async fn fetch_avkuy_via_webview(
             }
 
             let _ = app_handle.emit("log-info", format!("AVKuy player scan {}/14...", attempt + 1));
+        }
+
+        // Extract cookies from player page
+        let cookie_js = "window.location.hash = 'ak_cookies=' + encodeURIComponent(document.cookie);";
+        let _ = window2.eval(cookie_js);
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        if let Ok(cur) = window2.url() {
+            let hash = cur.fragment().unwrap_or("").to_string();
+            if let Some(encoded) = hash.strip_prefix("ak_cookies=") {
+                if let Ok(decoded) = urlencoding::decode(encoded) {
+                    let player_cookies = parse_cookie_string(&decoded);
+                    // Merge with main page cookies (player cookies take precedence)
+                    for (k, v) in player_cookies {
+                        if let Some(pos) = result.cookies.iter().position(|(ck, _)| ck == &k) {
+                            result.cookies[pos] = (k, v);
+                        } else {
+                            result.cookies.push((k, v));
+                        }
+                    }
+                }
+            }
         }
 
         let _ = window2.close();
@@ -883,39 +922,121 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             source: "hsck".to_string(),
         }
     } else if JavwowParser::is_javwow_url(&url, &settings.javwow_domain) {
-        // Use JavWow Parser (javwow.com — Cloudflare protected)
-        let _ = app_handle.emit("log-info", "Detected javwow.com — using Chrome detector...".to_string());
+        // JavWow: WebView for Cloudflare bypass + metadata, then packer unpack for stream URL.
+        // Chrome detector only used as last resort when WebView approach fails.
+        let _ = app_handle.emit("log-info", "Detected javwow — using WebView extractor...".to_string());
         let javwow_info = state.javwow_parser.get_series_info(&url, &settings.javwow_domain).await?;
-
+        let mut detected_title: Option<String> = Some(javwow_info.title.clone()).filter(|t| !t.is_empty());
+        let mut detected_poster = javwow_info.poster_url.clone();
+        let mut cookies: Vec<(String, String)> = Vec::new();
         let mut episode_urls: HashMap<i32, String> = HashMap::new();
+        let mut embed_url = javwow_info.embed_url.clone();
 
-        // Use Chrome detector (has javwow-specific logic built-in)
-        let _ = app_handle.emit("log-info", "Launching Chrome to bypass Cloudflare...".to_string());
-        let mut detector = state.chrome_detector.safe_lock();
+        // Try packer unpack if we already have embed URL from HTTP fetch
+        if let Some(ref eu) = embed_url {
+            let _ = app_handle.emit("log-info", format!("Found javwow embed URL via HTTP: {}", eu));
+            if let Some((stream_url, player_poster)) =
+                fetch_avkuy_stream_from_player_page(eu, &url, &cookies).await
+            {
+                let _ = app_handle.emit("log-info", format!("Found javwow stream: {}", stream_url));
+                episode_urls.insert(1, stream_url);
+                if detected_poster.is_none() {
+                    detected_poster = player_poster;
+                }
+            }
+        }
 
-        match detector.detect_video_url(&url, Some(&app_handle)) {
-            Ok(Some(video_url)) => {
-                let _ = app_handle.emit("log-info", format!("Found video URL: {}", video_url));
+        // If HTTP failed (Cloudflare blocked), use WebView approach
+        if episode_urls.is_empty() {
+            let webview_result = fetch_via_webview(&app_handle, &url).await;
+            if detected_title.is_none() {
+                detected_title = webview_result.title.clone();
+            }
+            if detected_poster.is_none() {
+                detected_poster = webview_result.poster_url.clone();
+            }
+            cookies = webview_result.cookies.clone();
+
+            if let Some(video_url) = webview_result.video_url {
+                let _ = app_handle.emit("log-info", format!("Found javwow video via WebView: {}", video_url));
                 episode_urls.insert(1, video_url);
             }
-            Ok(None) => {
-                let _ = app_handle.emit("log-info", "Could not find video URL on javwow.com page".to_string());
-                return Err("Could not find video URL on javwow.com page. The video may be region-blocked or require login.".to_string());
+
+            // Try packer unpack with WebView embed URL and cookies
+            if episode_urls.is_empty() {
+                if let Some(ref eu) = webview_result.iframe_url {
+                    embed_url = Some(eu.clone());
+                    if !cookies.is_empty() {
+                        let _ = app_handle.emit("log-info", "Trying javwow player HTML extraction (WebView cookies)...".to_string());
+                        if let Some((stream_url, player_poster)) =
+                            fetch_avkuy_stream_from_player_page(eu, &url, &cookies).await
+                        {
+                            let _ = app_handle.emit("log-info", format!("Found javwow stream via player HTML: {}", stream_url));
+                            episode_urls.insert(1, stream_url);
+                            if detected_poster.is_none() {
+                                detected_poster = player_poster;
+                            }
+                        }
+                    }
+                }
             }
-            Err(e) => {
-                return Err(format!("Chrome detection failed: {}", e));
+        }
+
+        // Chrome detector as last resort only if WebView approach failed
+        if episode_urls.is_empty() {
+            let _ = app_handle.emit("log-info", "WebView approach failed, falling back to Chrome detector...".to_string());
+            {
+                let mut detector = state.chrome_detector.safe_lock();
+                match detector.detect_video_url(&url, Some(&app_handle)) {
+                    Ok(Some(video_url)) => {
+                        let _ = app_handle.emit("log-info", format!("Found video URL: {}", video_url));
+                        episode_urls.insert(1, video_url);
+                    }
+                    Ok(None) => {
+                        let _ = app_handle.emit("log-info", "Chrome detector found no video on javwow page".to_string());
+                    }
+                    Err(e) => {
+                        return Err(format!("Chrome detection failed: {}", e));
+                    }
+                }
+                if detected_title.is_none() {
+                    detected_title = detector.get_last_title().map(|s| s.to_string());
+                }
+                if detected_poster.is_none() {
+                    detected_poster = detector.get_last_poster_url().map(|s| s.to_string());
+                }
+                cookies = detector.get_last_cookies().to_vec();
+            } // detector lock dropped here
+
+            // Try packer unpack with Chrome cookies
+            if episode_urls.is_empty() {
+                if let Some(ref eu) = embed_url {
+                    let _ = app_handle.emit("log-info", "Trying javwow player HTML extraction (Chrome cookies)...".to_string());
+                    if let Some((stream_url, player_poster)) =
+                        fetch_avkuy_stream_from_player_page(eu, &url, &cookies).await
+                    {
+                        episode_urls.insert(1, stream_url);
+                        if detected_poster.is_none() {
+                            detected_poster = player_poster;
+                        }
+                    }
+                }
             }
+        }
+
+        if episode_urls.is_empty() {
+            return Err("Could not find video URL on javwow.com page. The video may be region-blocked or require login.".to_string());
         }
 
         UnifiedSeriesInfo {
             series_id: 0,
-            title: javwow_info.title,
+            title: detected_title.unwrap_or_else(|| derive_title_from_url(&url, "JavWow Video")),
             total_episodes: 1,
-            poster_url: javwow_info.poster_url,
+            poster_url: detected_poster,
             episode_urls,
             source_url: Some(url.clone()),
             episode_keys: Default::default(),
-            cookies: Vec::new(),
+            cookies,
             source: "javwow".to_string(),
         }
     } else if settings
@@ -926,13 +1047,14 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
         || url.contains("avkuy.com")
         || url.contains("av-kuy.com")
     {
-        // AVKuy: try real Tauri WebView first (better Cloudflare compatibility), then Chrome detector fallback.
+        // AVKuy: WebView for Cloudflare bypass + metadata, then HTTP packer unpack.
+        // Chrome detector only used as last resort when WebView cookies are insufficient.
         let _ = app_handle.emit("log-info", "Detected avkuy — using WebView extractor...".to_string());
-        let webview_result = fetch_avkuy_via_webview(&app_handle, &url).await;
+        let webview_result = fetch_via_webview(&app_handle, &url).await;
         let mut episode_urls: HashMap<i32, String> = HashMap::new();
         let mut detected_title = webview_result.title.clone();
         let mut detected_poster = webview_result.poster_url.clone();
-        let mut cookies: Vec<(String, String)> = Vec::new();
+        let mut cookies = webview_result.cookies.clone();
         let iframe_url = webview_result.iframe_url.clone();
 
         if let Some(video_url) = webview_result.video_url {
@@ -940,44 +1062,67 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             episode_urls.insert(1, video_url);
         }
 
-        if episode_urls.is_empty() {
-            let _ = app_handle.emit("log-info", "WebView not enough, falling back to Chrome detector...".to_string());
-            let mut detector = state.chrome_detector.safe_lock();
-
-            let detect_target = iframe_url.as_deref().unwrap_or(&url);
-            let _ = app_handle.emit("log-info", format!("Detecting video from: {}", detect_target));
-            match detector.detect_video_url(detect_target, Some(&app_handle)) {
-                Ok(Some(video_url)) => {
-                    let _ = app_handle.emit("log-info", format!("Found video URL: {}", video_url));
-                    episode_urls.insert(1, video_url);
-                }
-                Ok(None) => {
-                    let _ = app_handle.emit("log-info", "Chrome detector found no video on AVKuy player page".to_string());
-                }
-                Err(e) => {
-                    return Err(format!("Chrome detection failed: {}", e));
-                }
-            }
-
-            if detected_title.is_none() {
-                detected_title = detector.get_last_title().map(|s| s.to_string());
-            }
-            if detected_poster.is_none() {
-                detected_poster = detector.get_last_poster_url().map(|s| s.to_string());
-            }
-            cookies = detector.get_last_cookies().to_vec();
-        }
-
+        // Try packer unpack with WebView cookies first (avoids heavy Chrome)
         if episode_urls.is_empty() {
             if let Some(player_url) = iframe_url.as_deref() {
-                let _ = app_handle.emit("log-info", "Trying AVKuy player HTML extraction...".to_string());
-                if let Some((stream_url, player_poster)) =
-                    fetch_avkuy_stream_from_player_page(player_url, &url, &cookies).await
-                {
-                    let _ = app_handle.emit("log-info", format!("Found AVKuy stream via player HTML: {}", stream_url));
-                    episode_urls.insert(1, stream_url);
-                    if detected_poster.is_none() {
-                        detected_poster = player_poster;
+                if !cookies.is_empty() {
+                    let _ = app_handle.emit("log-info", "Trying AVKuy player HTML extraction (WebView cookies)...".to_string());
+                    if let Some((stream_url, player_poster)) =
+                        fetch_avkuy_stream_from_player_page(player_url, &url, &cookies).await
+                    {
+                        let _ = app_handle.emit("log-info", format!("Found AVKuy stream via player HTML: {}", stream_url));
+                        episode_urls.insert(1, stream_url);
+                        if detected_poster.is_none() {
+                            detected_poster = player_poster;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Chrome detector as last resort only if WebView approach failed
+        if episode_urls.is_empty() {
+            let _ = app_handle.emit("log-info", "WebView cookies not enough, falling back to Chrome detector...".to_string());
+            // Scope Chrome detector lock to avoid holding MutexGuard across await
+            {
+                let mut detector = state.chrome_detector.safe_lock();
+
+                let detect_target = iframe_url.as_deref().unwrap_or(&url);
+                let _ = app_handle.emit("log-info", format!("Detecting video from: {}", detect_target));
+                match detector.detect_video_url(detect_target, Some(&app_handle)) {
+                    Ok(Some(video_url)) => {
+                        let _ = app_handle.emit("log-info", format!("Found video URL: {}", video_url));
+                        episode_urls.insert(1, video_url);
+                    }
+                    Ok(None) => {
+                        let _ = app_handle.emit("log-info", "Chrome detector found no video on AVKuy player page".to_string());
+                    }
+                    Err(e) => {
+                        return Err(format!("Chrome detection failed: {}", e));
+                    }
+                }
+
+                if detected_title.is_none() {
+                    detected_title = detector.get_last_title().map(|s| s.to_string());
+                }
+                if detected_poster.is_none() {
+                    detected_poster = detector.get_last_poster_url().map(|s| s.to_string());
+                }
+                cookies = detector.get_last_cookies().to_vec();
+            } // detector lock dropped here
+
+            // Try packer unpack with Chrome cookies (no MutexGuard held)
+            if episode_urls.is_empty() {
+                if let Some(player_url) = iframe_url.as_deref() {
+                    let _ = app_handle.emit("log-info", "Trying AVKuy player HTML extraction (Chrome cookies)...".to_string());
+                    if let Some((stream_url, player_poster)) =
+                        fetch_avkuy_stream_from_player_page(player_url, &url, &cookies).await
+                    {
+                        let _ = app_handle.emit("log-info", format!("Found AVKuy stream via player HTML: {}", stream_url));
+                        episode_urls.insert(1, stream_url);
+                        if detected_poster.is_none() {
+                            detected_poster = player_poster;
+                        }
                     }
                 }
             }
@@ -1113,7 +1258,7 @@ async fn auto_detect_video_url(url: String, app_handle: AppHandle, state: State<
         || url.contains("av-kuy.com");
 
     if is_avkuy {
-        let detected = fetch_avkuy_via_webview(&app_handle, &url).await;
+        let detected = fetch_via_webview(&app_handle, &url).await;
         if let Some(video_url) = detected.video_url {
             return Ok(Some(video_url));
         }

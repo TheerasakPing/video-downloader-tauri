@@ -1,384 +1,215 @@
-# AVKuy.com Download Workflow
+# AVKuy Download Workflow
 
-## Overview
+## เป้าหมาย
 
-AVKuy (www2.avkuy.com / av-kuy.com) เป็นเว็บที่มี Cloudflare protection และใช้ iframe player ฝังตัวจาก av-kuy.com เพื่อเล่นวิดีโอ ระบบใช้กลยุทธ์ 3 ชั้นเพื่อดึง video URL ออกมา:
+- รองรับ URL หน้าโพสต์ของ `www2.avkuy.com`
+- Auto detect URL จาก clipboard/ช่องกรอก
+- แสดง `title` และ `thumbnail`
+- แยกไฟล์ดาวน์โหลดลงโฟลเดอร์ `avkuy/`
+- ดึง stream จริงจาก player ที่มี Cloudflare/iframe protection
+- **ไม่ต้องใช้ Chrome detector** (ประหยัด RAM ~200-500MB)
 
-1. **Tauri WebView** (primary) - ใช้ WKWebView จริงข้าม Cloudflare ได้ดีกว่า
-2. **Chrome Detector** (fallback) - ใช้ headless Chrome CDP
-3. **HTTP + Packer Unpack** (last resort) - ใช้ reqwest ดึง HTML แล้ว unpack JavaScript packer
+## ตัวอย่าง URL ทดสอบ
 
----
+| ประเภท | URL |
+|--------|-----|
+| หน้าโพสต์ | `https://www2.avkuy.com/avsubthai-adn-750/` |
+| iframe player | `https://av-kuy.com/v/LQ76ROcLox2aZSg?sid=17081&t=hls` |
+| HLS stream | `https://cache11224510.kuylive.com/hls/.../xfgdYshjhYhj=!sdsHsyG` |
 
 ## Flow Diagram
 
 ```
-User paste URL (e.g. https://www2.avkuy.com/avsubthai-adn-750/)
+User paste URL (https://www2.avkuy.com/avsubthai-adn-750/)
         |
         v
-[URL Detection] -- avkuy.com / av-kuy.com ตรงกับไหม?
+[URL Detection] -- avkuy.com / av-kuy.com ตรงไหม?
         |
-        +-- NO --> ไป parser อื่น (rongyok, hsck, njav, etc.)
+        +-- NO --> ไป parser อื่น
         |
-        +-- YES --> [Strategy 1: Tauri WebView]
+        +-- YES --> [Phase A: WebView Main Page]
                         |
                         v
-                   [Phase A: Main Page Extraction]
+                   +------------------------------+
+                   | Create WKWebView window      |
+                   | (off-screen, hidden)         |
+                   | Load avkuy.com URL           |
+                   +------------------------------+
                         |
                         v
-                   +---------------------------+
-                   | Create WebView Window     |
-                   | (off-screen, 1024x768)    |
-                   | Load avkuy.com URL        |
-                   +---------------------------+
+                   [Wait for Cloudflare] (poll 20รอบ, ~50s max)
                         |
                         v
-                   [Wait for Cloudflare]
-                   (ตรวจจับ "Just a moment" / challenge-running)
-                   (poll 20 รอบ, 2.5s/รอบ = ~50s max)
-                        |
-                        v
-                   [Extract Metadata via JS]
-                   - title: og:title / h1 / document.title
-                   - poster: og:image / twitter:image / video[poster]
-                   - iframe: iframe[src*='av-kuy.com/v/']
+                   [Extract via JS + location.hash]
+                   - title: og:title / h1
+                   - poster: og:image
+                   - iframe: av-kuy.com/v/ URL
+                   - cookies: document.cookie
                         |
                         v
                    +-----+------+
-                   | iframe URL |--- YES --> [Phase B: Player Page]
+                   | iframe URL |--- YES --> [Phase B: WebView Player Page]
                    |  พบ?       |                |
                    +-----+------+                v
-                         | NO               +---------------------------+
-                         |                  | Open iframe URL in new    |
-                         v                  | WebView window            |
-                   [Strategy 2: Chrome]     +---------------------------+
-                                              |
-                                              v
-                                         [Setup PerformanceObserver]
-                                         (monitor .m3u8 / .mp4 requests)
-                                              |
-                                              v
-                                         [Click + Poll Loop]
-                                         (click play buttons, video, poster)
-                                         (poll 14 รอบ, ~2.6s/รอบ)
-                                              |
-                                              v
-                                         +----------+
-                                         | Video URL |--- YES --> return
-                                         | .m3u8/.mp4|              |
-                                         |  พบ?      |              v
-                                         +-----+-----+     [Build UnifiedSeriesInfo]
-                                               | NO         - title
-                                               v            - poster_url
-                                         [window close]     - episode_urls[1] = video_url
-                                                            - source: "avkuy"
-                                                            - cookies
+                         | NO               +--------------------------+
+                         v                  | Open player URL in new   |
+                   [Skip to packer]         | WebView window           |
+                                            +--------------------------+
+                                                 |
+                                                 v
+                                            [Click + Poll 14รอบ]
+                                            (PerformanceObserver for .m3u8/.mp4)
+                                            [Extract player cookies via document.cookie]
+                                                 |
+                                                 v
+                                            [Close window]
+                        |
+                        v
+                   [Packer Unpack with WebView cookies]
+                        |
+                        v
+                   reqwest GET player URL + cookies
+                        |
+                        v
+                   Unpack packed JS → JWPlayer config
+                        |
+                        v
+                   file: "https://cache11224510.kuylive.com/hls/..."
+                        |
+                        v
+                   +--------+--------+
+                   | Stream URL พบ?  |--- YES --> [Download HLS]
+                   +--------+--------+                  |
+                            | NO                        v
+                            v                      [Content-based HLS detection]
+                   [Chrome Detector fallback]        (probe URL for #EXTM3U)
+                   (last resort only)                      |
+                                                           v
+                                                      FFmpeg download
+                                                      (strip PNG prefix from segments)
+                                                           |
+                                                           v
+                                                      Save to avkuy/ folder
 ```
 
----
+## ขั้นตอนที่ 1: WebView Main Page Extraction
 
-## Phase A: Main Page via WebView
+**Code**: `src-tauri/src/lib.rs` → `fetch_avkuy_via_webview()` Phase A
 
-**File**: `src-tauri/src/lib.rs` - `fetch_avkuy_via_webview()`
-
-### Step 1: Create Hidden WebView Window
-
-```rust
-// สร้าง window ที่มองไม่เห็น (position -32000,-32000)
-let window = WebviewWindowBuilder::new(app_handle, "avkuy-helper", WebviewUrl::External(url))
-    .inner_size(1024.0, 768.0)
-    .position(-32000.0, -32000.0)
-    .visible(true)
-    .decorations(false)
-    .build();
-```
-
-### Step 2: Wait & Poll for Metadata
-
-JavaScript injection ทำงาน 2 อย่าง:
-- **ตรวจ Cloudflare**: ดู `document.title` มี "just a moment" หรือ `#challenge-running` อยู่
-- **ดึง metadata**: เมื่อ Cloudflare ผ่านแล้ว ดึง title, poster, iframe URL
-
-การสื่อสารระหว่าง WebView -> Rust ใช้ **location.hash side-channel**:
-- `#ak_status=cf` = กำลังรอ Cloudflare
-- `#ak_meta={json}` = metadata พร้อมแล้ว
+เปิด avkuy.com ใน WKWebView รอ Cloudflare ผ่าน แล้วดึง metadata:
 
 ```javascript
-// ตัวอย่าง payload ที่ส่งผ่าน hash
+// JS injection ดึง metadata + cookies
 {
-  "title": "AVSUBTHAI ADN-750 ...",
-  "poster": "https://avkuy.com/wp-content/uploads/...",
-  "iframe": "https://av-kuy.com/v/xxxxx"
+    title: document.querySelector("meta[property='og:title']")?.content || document.title,
+    poster: document.querySelector("meta[property='og:image']")?.content || '',
+    iframe: "https://av-kuy.com/v/xxxxx",  // จาก iframe[src]
+    cookies: document.cookie                // << สำคัญมาก
 }
 ```
 
-### Step 3: Timeout
+**Side-channel**: `window.location.hash = 'ak_meta=' + encodeURIComponent(JSON.stringify(payload))`
 
-Poll สูงสุด 20 รอบ (รอบละ ~2.5 วินาที) = **~50 วินาที** สำหรับ Cloudflare
+## ขั้นตอนที่ 2: WebView Player Page (Phase B)
 
----
+**Code**: `src-tauri/src/lib.rs` → `fetch_avkuy_via_webview()` Phase B
 
-## Phase B: Player Page via WebView
+เปิด iframe URL (av-kuy.com) ใน WebView window ใหม่:
 
-**File**: `src-tauri/src/lib.rs` - `fetch_avkuy_via_webview()` (ต่อ)
-
-### Step 1: Close Main Window, Open Player Window
-
-```rust
-let _ = window.close();  // ปิด main page window
-// เปิดใหม่ด้วย iframe URL เช่น https://av-kuy.com/v/xxxxx
-let window2 = WebviewWindowBuilder::new(app_handle, "avkuy-helper", WebviewUrl::External(iframe_url))
-    .build();
-```
-
-### Step 2: Monitor Network Requests
-
-ใช้ `PerformanceObserver` ติดตาม resource requests:
 ```javascript
-// ตั้ง observer จับ .m3u8 / .mp4 requests
+// ตั้ง PerformanceObserver จับ .m3u8/.mp4 requests
 const o = new PerformanceObserver((list) => {
     list.getEntries().forEach(e => {
         if (e.name.includes('.m3u8') || e.name.includes('.mp4'))
             window.__FOUND_URLS.push(e.name);
     });
 });
-o.observe({ entryTypes: ['resource'] });
+
+// Click + Poll 14 รอบ
+// สุดท้ายดึง cookies:
+window.location.hash = 'ak_cookies=' + encodeURIComponent(document.cookie);
 ```
 
-### Step 3: Click + Poll
+## ขั้นตอนที่ 3: Packer Unpack (ไม่ต้องใช้ Chrome)
 
-- **Click JS**: คลิกทุก element ที่เป็น `button, video, .jw-poster, .jw-display-icon-container`
-- **Check JS**: อ่าน `window.__FOUND_URLS` หรือ regex หา `.m3u8` ใน HTML
-- **Communication**: `#ak_video={encoded_url}`
-- **Poll**: 14 รอบ x ~2.6s = **~36 วินาที** max
+**Code**: `src-tauri/src/lib.rs` → `fetch_avkuy_stream_from_player_page()`
 
-### Step 4: Return Result
-
-```rust
-AvkuyWebviewResult {
-    title: Some("AVSUBTHAI ADN-750 ..."),
-    poster_url: Some("https://..."),
-    iframe_url: Some("https://av-kuy.com/v/xxxxx"),
-    video_url: Some("https://cdn.xxx/xxx.m3u8"),  // << สิ่งที่ต้องการ
-}
-```
-
----
-
-## Strategy 2: Chrome Detector Fallback
-
-**File**: `src-tauri/src/chrome_detector.rs` - `detect_video_url()`
-
-ถ้า WebView หา video URL ไม่ได้ จะใช้ Chrome Detector:
-
-### Flow
+ใช้ cookies จาก WebView ยิง HTTP request ไป player page:
 
 ```
-Chrome Detector (headless Chrome CDP)
-        |
-        v
-[Navigate to URL / iframe URL]
-        |
-        v
-[Wait for Cloudflare] (wait_for_cloudflare, max 60s)
-        |
-        v
-[Cloudflare ผ่านแล้ว - ตรวจสอบว่าไม่หลุดไป homepage]
-        |
-        v
-+-------+--------+
-| Video URL บน   |--- YES --> return URL
-| main page?      |
-+-------+--------+
-        | NO
-        v
-[Click + Poll 8 รอบ บน main page]
-        |
-        v
-+-------+--------+
-| พบ?             |--- YES --> return URL
-+-------+--------+
-        | NO
-        v
-[Extract iframe URL จาก DOM]
-(ดู iframe[src*='av-kuy.com/v/'] หรือ regex ใน HTML)
-        |
-        v
-+-------+--------+
-| iframe พบ?      |--- NO --> general detection fallback
-+-------+--------+
-        | YES
-        v
-[Navigate to iframe URL]
-        |
-        v
-[Handle Cloudflare on iframe page]
-(บางครั้ง iframe URL ก็มี Cloudflare ของตัวเอง)
-        |
-        v
-[Setup observer + Click + Poll 10 รอบ]
-        |
-        v
-+-------+--------+
-| .m3u8 / .mp4?   |--- YES --> return URL
-+-------+--------+
-        | NO
-        v
-[General detection fallback]
+reqwest GET https://av-kuy.com/v/xxxxx
+  - Cookie: cf_clearance=xxx; PHPSESSID=xxx  (จาก WebView)
+  - Referer: https://www2.avkuy.com/...
+  → ได้ HTML ที่มี packed JavaScript
 ```
 
----
+Unpack algorithm:
+1. Regex หา `eval(function(p,a,c,k,e,d){...}('payload',radix,count,'symtab'.split('|'),...)`
+2. Base-N decode (radix 10-62) แปลง index → keyword
+3. Replace keywords ใน payload
+4. Extract `file` และ `image` จาก unpacked JS
 
-## Strategy 3: HTTP + Packer Unpack (Last Resort)
+## ขั้นตอนที่ 4: HLS Download (PNG Prefix Stripping)
 
-**File**: `src-tauri/src/lib.rs` - `fetch_avkuy_stream_from_player_page()`
+**Code**: `src-tauri/src/downloader.rs` → `download_hls_manual()` + `strip_png_prefix()`
 
-ใช้เมื่อทั้ง WebView และ Chrome detector หา video URL ไม่ได้ แต่ iframe URL มีอยู่:
-
-### Flow
-
-```
-[มี iframe URL] เช่น https://av-kuy.com/v/xxxxx
-        |
-        v
-[reqwest GET iframe URL]
-- User-Agent: Chrome
-- Referer: avkuy.com post URL
-- Cookie: ใช้ cookie จาก Chrome detector
-        |
-        v
-[Unpack JavaScript Packer]
-- หา obfuscated packer pattern: function(p,a,c,k,e,d){...}
-- ถอดรหัส base-N encoded strings
-        |
-        v
-[Extract from unpacked JS]
-- file: "https://cdn.xxx/stream.m3u8"
-- image: "https://cdn.xxx/poster.jpg"
-        |
-        v
-return (stream_url, poster_url)
-```
-
-### Packer Unpack Algorithm
+CDN (kuylive.com) ใส่ PNG header ด้านหน้า segment เป็น anti-scraping:
 
 ```
-Input:  obfuscated packer call with packed_string, radix, count, dictionary
-        |
-        v
-[Base-N decode] แปลง key เป็น keyword ด้วย radix-based encoding
-        |
-        v
-[Replace keywords] แทนที่ keys ด้วย decoded words
-        |
-        v
-Output: unpacked JavaScript containing 'file': 'https://....m3u8'
+[68 bytes PNG 1x1] [2 bytes header] [MPEG-TS video data]
+89 50 4E 47 ... IEND ... 0x82 0x20 ... 47 40 11 ... (h264 1280x720)
 ```
 
----
+**Fix**: `strip_png_prefix()` หา IEND marker → skip → หา MPEG-TS sync byte `0x47` → return data ที่เหลือ
 
-## Download Phase
+## Flow เปรียบเทียบ
 
-**File**: `src-tauri/src/lib.rs` - `start_download()`
-
-เมื่อได้ `UnifiedSeriesInfo` แล้ว:
-
+### ก่อน (ใช้ Chrome):
 ```
-[UnifiedSeriesInfo]
-  - title: "AVSUBTHAI ADN-750 ..."
-  - poster_url: "https://..."
-  - episode_urls: { 1: "https://cdn.xxx/stream.m3u8" }
-  - source: "avkuy"
-  - cookies: [(cf_clearance, xxx), ...]
-        |
-        v
-[User clicks Download]
-        |
-        v
-[Create output directory]
-  - group_by_source=true --> {output_dir}/avkuy/
-  - group_by_source=false --> {output_dir}/
-        |
-        v
-[HLS Download (.m3u8)]
-  - ใช้ cookies สำหรับ CDN authentication
-  - referer = source_url (avkuy post URL)
-  - Decrypt AES-128 segments (ถ้ามี HLS key)
-  - Merge TS segments into final .mp4
-        |
-        v
-[Progress events emitted to frontend]
-  - download-progress: { episode, percent, speed }
-  - download-complete: { episode, path }
+WebView → Chrome detector (หนัก) → Packer unpack → Download
+          ~200-500MB RAM          ~2-3 นาที
 ```
 
----
-
-## URL Detection Logic
-
-```rust
-// ใน get_series_info() และ auto_detect_video_url()
-let is_avkuy = settings.avkuy_domain.split(',')
-    .map(|d| d.trim())
-    .any(|d| !d.is_empty() && url.contains(d))
-    || url.contains("avkuy.com")
-    || url.contains("av-kuy.com");
+### ตอนนี้ (ไม่ใช้ Chrome):
+```
+WebView (เบา) → Packer unpack → Download
+  ~50MB RAM      ~5 วินาที
 ```
 
-Default domain: `www2.avkuy.com` (configurable ใน Settings)
-
----
+Chrome detector ยังคงเป็น fallback แต่จะใช้เฉพาะเมื่อ WebView cookies ไม่พอ
 
 ## Key Code Locations
 
-| Component | File | Function/Section |
-|-----------|------|-------------------|
-| WebView extractor | `src-tauri/src/lib.rs:225` | `fetch_avkuy_via_webview()` |
-| Packer unpacker | `src-tauri/src/lib.rs:134` | `unpack_packer_script()` |
-| Player HTML extractor | `src-tauri/src/lib.rs:164` | `extract_avkuy_stream_from_player_html()` |
-| HTTP player fetcher | `src-tauri/src/lib.rs:183` | `fetch_avkuy_stream_from_player_page()` |
-| Chrome fallback | `src-tauri/src/chrome_detector.rs:606` | avkuy section in `detect_video_url()` |
-| Main entry point | `src-tauri/src/lib.rs:921` | avkuy section in `get_series_info()` |
-| Auto-detect | `src-tauri/src/lib.rs:1107` | avkuy check in `auto_detect_video_url()` |
-| Download handler | `src-tauri/src/lib.rs:1128` | `start_download()` |
-| Domain config | `src-tauri/src/lib.rs:507` | `DomainSettings.avkuy_domain` |
-| TypeScript type | `src/types/index.ts:59` | `avkuyDomain?: string` |
+| Component | File | Function |
+|-----------|------|----------|
+| WebView extractor | `src-tauri/src/lib.rs` | `fetch_avkuy_via_webview()` |
+| Cookie parser | `src-tauri/src/lib.rs` | `parse_cookie_string()` |
+| Packer unpacker | `src-tauri/src/lib.rs` | `unpack_packer_script()` |
+| Player HTML extractor | `src-tauri/src/lib.rs` | `extract_avkuy_stream_from_player_html()` |
+| HTTP player fetcher | `src-tauri/src/lib.rs` | `fetch_avkuy_stream_from_player_page()` |
+| HLS detection | `src-tauri/src/downloader.rs` | content-based `#EXTM3U` probe |
+| PNG prefix strip | `src-tauri/src/downloader.rs` | `strip_png_prefix()` |
+| Chrome fallback | `src-tauri/src/chrome_detector.rs` | avkuy section (last resort) |
 
----
-
-## Error Scenarios
-
-| Scenario | Cause | Result |
-|----------|-------|--------|
-| Cloudflare timeout (50s) | ไม่ผ่าน challenge | WebView returns empty, fallback to Chrome |
-| iframe URL ไม่พบ | หน้าเว็บเปลี่ยนโครงสร้าง | WebView returns no iframe, Chrome tries harder |
-| Player page ไม่มี video | dead link / region blocked | Error: "Could not find video URL on avkuy page" |
-| Packer ถอดไม่ได้ | JS obfuscation เปลี่ยนรูปแบบ | Returns None, strategy 3 ข้าม |
-| Cloudflare redirect to homepage | Challenge ผ่านแต่ redirect ผิด | Chrome detector navigate back to original URL |
-
----
-
-## Debugging
-
-### WebView Debug Log
+## ตัวอย่าง Log (Flow ใหม่ ไม่มี Chrome)
 
 ```
-~/Library/Application Support/com.rongyok.downloader/webview_debug.log
+[INFO] Detected avkuy — using WebView extractor...
+[INFO] Waiting AVKuy Cloudflare... (1/20)
+...
+[INFO] AVKuy player scan 1/14...
+...
+[INFO] Trying AVKuy player HTML extraction (WebView cookies)...
+[INFO] Found AVKuy stream via player HTML: https://cache11224510.kuylive.com/hls/...
+[SUCCESS] Auto-loaded: [title] (1 episodes)
+[INFO] Starting download of 1 episodes...
+[SUCCESS] Episode 1 downloaded
+[SUCCESS] Merged to: /Volumes/Media/_VDO_download/avkuy/[title].mp4
 ```
 
-### Chrome Detector Stderr
+## จุดที่ต้องระวัง
 
-```
-[ChromeDetector] avkuy detected - resolving iframe player
-[ChromeDetector] avkuy: Found URL on main page: https://...
-```
-
-### Frontend Log Events
-
-```
-"Detected avkuy - using WebView extractor..."
-"Found AVKuy video via WebView: https://..."
-"WebView not enough, falling back to Chrome detector..."
-"Trying AVKuy player HTML extraction..."
-"Found AVKuy stream via player HTML: https://..."
-```
+- CDN segments มี PNG prefix ต้อง strip ก่อน concat
+- Stream URL ไม่มี `.m3u8` extension → ต้องใช้ content-based detection
+- Cookies จาก WebView อาจไม่ครบ → Chrome detector เป็น fallback
+- Stream token อาจหมดอายุ → ควร download ทันทีหลัง extract
