@@ -155,6 +155,10 @@ function App() {
     totalSelected: 0,
   });
 
+  // Ref to always have the latest currentEpisode for pause/cancel handlers
+  const currentEpisodeRef = useRef(downloadState.currentEpisode);
+  currentEpisodeRef.current = downloadState.currentEpisode;
+
   const [progress, setProgress] = useState<DownloadProgress>({
     episode: 0,
     downloaded: 0,
@@ -682,53 +686,51 @@ function App() {
   }, [batchQueue, isBatchProcessing, downloadState.isDownloading, isBatchItemRunning, runDownload]);
 
   const handlePause = useCallback(async () => {
-    if (downloadState.currentEpisode === 0) {
-      warning("No episode currently downloading");
-      return;
-    }
+    if (!downloadState.isDownloading) return;
     setDownloadState((prev) => ({ ...prev, isPaused: true }));
     try {
-      await invoke("pause_download", { episode: downloadState.currentEpisode });
+      const ep = currentEpisodeRef.current;
+      if (ep > 0) {
+        await invoke("pause_download", { episode: ep });
+      }
       log("Paused download");
     } catch (e) {
-      // Download may have completed, don't show error
       log("Pause completed (download may have finished)");
     }
-  }, [downloadState.currentEpisode, log, warning]);
+  }, [downloadState.isDownloading, log]);
 
   const handleResume = useCallback(async () => {
-    if (downloadState.currentEpisode === 0) {
-      warning("No episode currently downloading");
-      return;
-    }
+    if (!downloadState.isDownloading) return;
     setDownloadState((prev) => ({ ...prev, isPaused: false }));
     try {
-      await invoke("resume_download", {
-        episode: downloadState.currentEpisode,
-      });
+      const ep = currentEpisodeRef.current;
+      if (ep > 0) {
+        await invoke("resume_download", { episode: ep });
+      }
       log("Resumed download");
     } catch (e) {
-      // Download may have completed, don't show error
       log("Resume completed (download may have finished)");
     }
-  }, [downloadState.currentEpisode, log, warning]);
+  }, [downloadState.isDownloading, log]);
 
   const handleCancel = useCallback(async () => {
-    if (downloadState.currentEpisode === 0) return;
+    if (!downloadState.isDownloading) return;
     setDownloadState((prev) => ({
       ...prev,
       isDownloading: false,
       isPaused: false,
     }));
     try {
-      await invoke("cancel_download", {
-        episode: downloadState.currentEpisode,
-      });
+      const ep = currentEpisodeRef.current;
+      if (ep > 0) {
+        await invoke("cancel_download", { episode: ep });
+      }
       warning("Cancelled download");
+      setQueue([]);
     } catch (e) {
       error(`Failed to cancel: ${e}`);
     }
-  }, [downloadState.currentEpisode, warning, error]);
+  }, [downloadState.isDownloading, warning, error]);
 
   const handlePauseResume = useCallback(() => {
     if (downloadState.isPaused) {
