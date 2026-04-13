@@ -495,7 +495,7 @@ function App() {
       error("Please select at least one episode");
       return;
     }
-    isBatchItemRunningRef.current = false;
+    setIsBatchItemRunning(false);
     setIsBatchProcessing(false);
     setIsBatchMode(false);
     runDownload(series, selectedEpisodes);
@@ -605,9 +605,6 @@ function App() {
   }, [batchQueue, isFetching, log, error]);
 
   // Continuous Batch Processing
-  // State for batch processing
-  const [isBatchItemRunning, setIsBatchItemRunning] = useState(false);
-
   useEffect(() => {
     // Console log is safe (doesn't trigger re-render)
     // console.log(`Queue Check: Processing=${isBatchProcessing}, Downloading=${downloadState.isDownloading}`);
@@ -811,7 +808,7 @@ function App() {
     initialized.current = true;
 
     log("Application started");
-    checkFFmpeg();
+    checkFfmpeg();
     
     let cleanup: (() => void) | undefined;
     setupEventListeners().then(fn => {
@@ -1006,6 +1003,16 @@ function App() {
       warning("Could not check FFmpeg status");
     }
   };
+
+  const toggleBatchProcessing = useCallback(() => {
+    if (isBatchProcessing) {
+      setIsBatchProcessing(false);
+      log("Batch processing paused");
+    } else {
+      setIsBatchProcessing(true);
+      log("Batch processing started");
+    }
+  }, [isBatchProcessing, log]);
 
   const playNotificationSound = () => {
     if (settings.soundEnabled) {

@@ -167,6 +167,8 @@ pub struct VideoDownloader {
 impl VideoDownloader {
     pub fn with_config(output_dir: &str, config: DownloadConfig) -> Self {
         let client = Client::builder()
+            .pool_max_idle_per_host(10)
+            .pool_idle_timeout(Duration::from_secs(90))
             .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
             .build()
             .expect("Failed to create HTTP client");
@@ -231,6 +233,8 @@ impl VideoDownloader {
             // Pre-resolve master playlist if quality is specified
             let effective_url = if let Some(ref quality) = preferred_quality {
                 let pre_client = Client::builder()
+            .pool_max_idle_per_host(10)
+            .pool_idle_timeout(Duration::from_secs(90))
                     .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
                     .build().unwrap_or_else(|_| Client::new());
                 if let Ok(resp) = pre_client.get(video_url).send().await {
@@ -282,6 +286,8 @@ impl VideoDownloader {
         // serve HLS playlists without .m3u8 extension. Probe the URL to detect.
         // Only read first chunk to avoid downloading large files into memory.
         let probe_client = Client::builder()
+            .pool_max_idle_per_host(10)
+            .pool_idle_timeout(Duration::from_secs(90))
             .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
             .default_headers({
                 let mut h = reqwest::header::HeaderMap::new();
@@ -378,6 +384,8 @@ impl VideoDownloader {
 
         // Build reqwest client with Referer
         let client = Client::builder()
+            .pool_max_idle_per_host(10)
+            .pool_idle_timeout(Duration::from_secs(90))
             .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             .build()
             .unwrap_or_default();
@@ -918,10 +926,11 @@ impl VideoDownloader {
             .map(|s| s.to_string())
             .unwrap_or_else(|| Self::derive_referer_from_hls_url(master_url));
         let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-        let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
         // Build HTTP client for segment downloads
         let seg_client = Client::builder()
+            .pool_max_idle_per_host(10)
+            .pool_idle_timeout(Duration::from_secs(90))
             .user_agent(ua)
             .default_headers({
                 let mut headers = reqwest::header::HeaderMap::new();

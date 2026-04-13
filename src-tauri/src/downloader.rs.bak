@@ -427,7 +427,6 @@ impl VideoDownloader {
                 };
             }
         };
-                };
 
         // ── Fetch H.264 variant playlist ────────────────────────────────
         let v1_m3u8_url = format!("{}/v1/index.m3u8", key_info.hls_base_url);

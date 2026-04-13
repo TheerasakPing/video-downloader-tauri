@@ -240,15 +240,15 @@
   },
   "hotPaths": [
     {
-      "path": "src-tauri/src/downloader.rs",
-      "accessCount": 20,
-      "lastAccessed": 1776052082358,
+      "path": "src/App.tsx",
+      "accessCount": 24,
+      "lastAccessed": 1776054151082,
       "type": "file"
     },
     {
-      "path": "src/App.tsx",
-      "accessCount": 17,
-      "lastAccessed": 1776053554615,
+      "path": "src-tauri/src/downloader.rs",
+      "accessCount": 23,
+      "lastAccessed": 1776054185266,
       "type": "file"
     },
     {
@@ -310,6 +310,12 @@
       "accessCount": 1,
       "lastAccessed": 1776052291282,
       "type": "directory"
+    },
+    {
+      "path": "src-tauri/src/library.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776054101341,
+      "type": "file"
     }
   ],
   "userDirectives": []

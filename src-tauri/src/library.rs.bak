@@ -189,12 +189,6 @@ impl LibraryDb {
              );"
         ).map_err(|e| format!("Schema init failed: {}", e))?;
 
-        conn.execute_batch(
-            "CREATE INDEX IF NOT EXISTS idx_library_title ON library(title);
-             CREATE INDEX IF NOT EXISTS idx_library_date ON library(date_added);
-             CREATE INDEX IF NOT EXISTS idx_library_episodes ON library_episodes(library_id);"
-        ).map_err(|e| format!("Index creation failed: {}", e))?;
-
         conn.execute(
             "INSERT OR IGNORE INTO schema_version (version) VALUES (1)",
             [],
