@@ -1398,206 +1398,183 @@ function App() {
       {/* Main Content - Compact */}
       <main className="flex-1 overflow-hidden relative">
         {activeTab === "download" && (
-          <div className="h-full flex flex-col md:flex-row overflow-hidden">
-            <div className="flex-1 flex flex-col min-w-0 border-r border-slate-700/30 bg-slate-900/50 relative">
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-4">
-                {/* Input Area */}
-                <div className="sticky top-0 z-10 bg-slate-900/90 backdrop-blur pb-4 -mt-2 pt-2">
-                  <Input
-                    placeholder="https://rongyok.com/watch/?series_id=XXX"
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    leftIcon={<Link size={14} />}
-                    iconColor="cyan"
-                    rightElement={
-                      <div className="flex gap-0.5 items-center">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setUrl("");
-                            setSeries(null);
-                            setSelectedEpisodes(new Set());
-                          }}
-                          disabled={!url}
-                          className="px-1.5"
-                        >
-                          <X size={14} />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={handlePaste}
-                          className="px-1.5"
-                          title={t("app.paste")}
-                        >
-                          <Clipboard size={14} />
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={handleFetch}
-                          isLoading={isFetching}
-                          className="px-2"
-                        >
-                          <Search size={14} />
-                        </Button>
-                      </div>
-                    }
-                  />
+          <div className="h-full flex flex-col overflow-hidden">
+            {/* Main scrollable content */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar relative">
+              <div className="max-w-4xl mx-auto p-4 space-y-4">
 
-                  <Input
-                    placeholder="~/Downloads/rongyok"
-                    value={settings.outputDir}
-                    onChange={(e) => updateSetting("outputDir", e.target.value)}
-                    leftIcon={<FolderOpen size={14} />}
-                    iconColor="amber"
-                    rightElement={
-                      <div className="flex gap-0.5">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={handleSelectOutputFolder}
-                          className="px-1.5"
-                        >
-                          📂
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={handleOpenOutputFolder}
-                          className="px-1.5"
-                        >
-                          ↗
-                        </Button>
-                      </div>
-                    }
-                  />
+                {/* ===== HERO URL BAR ===== */}
+                <div className="relative">
+                  <div className="absolute inset-0 bg-gradient-to-b from-cyan-500/5 via-violet-500/5 to-transparent rounded-2xl pointer-events-none" />
+                  <div className="relative bg-slate-800/60 backdrop-blur-sm rounded-xl border border-slate-700/60 p-3 space-y-2.5">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.6)]" />
+                      <span className="text-[10px] font-bold tracking-widest text-slate-400 uppercase">Video URL</span>
+                    </div>
+                    <div className="relative">
+                      <Input
+                        placeholder="Paste video URL here..."
+                        value={url}
+                        onChange={(e) => setUrl(e.target.value)}
+                        leftIcon={<Link size={15} />}
+                        iconColor="cyan"
+                        className="text-sm py-2.5 bg-slate-900/60"
+                        rightElement={
+                          <div className="flex gap-1 items-center pr-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setUrl("");
+                                setSeries(null);
+                                setSelectedEpisodes(new Set());
+                              }}
+                              disabled={!url}
+                              className="h-7 w-7 p-0 text-slate-500 hover:text-slate-300"
+                            >
+                              <X size={14} />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={handlePaste}
+                              className="h-7 px-2 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
+                              title={t("app.paste")}
+                            >
+                              <Clipboard size={14} />
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={handleFetch}
+                              isLoading={isFetching}
+                              className="h-7 px-3 bg-cyan-500/20 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/30 hover:border-cyan-400/50 shadow-[0_0_12px_rgba(34,211,238,0.15)]"
+                            >
+                              <Search size={14} />
+                              <span className="text-[10px] font-bold">Fetch</span>
+                            </Button>
+                          </div>
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <FolderOpen size={12} className="text-amber-400/70" />
+                      <input
+                        type="text"
+                        placeholder="Save to..."
+                        value={settings.outputDir}
+                        onChange={(e) => updateSetting("outputDir", e.target.value)}
+                        className="flex-1 bg-transparent text-[11px] text-slate-400 placeholder-slate-600 border-none outline-none"
+                      />
+                      <button
+                        onClick={handleSelectOutputFolder}
+                        className="text-[10px] text-slate-500 hover:text-amber-400 transition-colors px-1"
+                      >
+                        Change
+                      </button>
+                      <button
+                        onClick={handleOpenOutputFolder}
+                        className="text-[10px] text-slate-500 hover:text-amber-400 transition-colors px-1"
+                      >
+                        Open
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Smart Queue Bar - Always Visible */}
-                <div
-                  className={`bg-slate-800/90 backdrop-blur rounded-lg border border-slate-700 p-2 flex items-center justify-between mb-2 shadow-lg shadow-black/20 sticky top-14 z-40 transform transition-all duration-300 ${batchQueue.length === 0 && !isAutoCapture ? "opacity-80 hover:opacity-100" : ""}`}
-                >
-                  <div className="flex items-center gap-3 pl-1">
-                    <div className="flex items-center gap-2">
-                      <ListOrdered
-                        size={16}
-                        className={`text-emerald-400 ${batchQueue.length > 0 ? "drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]" : "opacity-50"}`}
-                      />
-                      <span className="text-xs font-bold text-slate-200 tracking-wide flex items-center gap-2">
-                        {t("app.smartQueueLabel")}
-                        {batchQueue.length > 0 && (
-                          <span className="bg-slate-700 text-slate-300 px-1.5 rounded-full text-[10px]">
-                            {batchQueue.length}
-                          </span>
-                        )}
+                {/* ===== SMART QUEUE BAR ===== */}
+                <div className={`flex items-center justify-between px-3 py-2 rounded-lg border transition-all duration-200 ${
+                  batchQueue.length > 0
+                    ? "bg-emerald-500/5 border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.08)]"
+                    : "bg-slate-800/40 border-slate-700/40 opacity-70 hover:opacity-100"
+                }`}>
+                  <div className="flex items-center gap-2.5">
+                    <ListOrdered
+                      size={14}
+                      className={`transition-colors ${batchQueue.length > 0 ? "text-emerald-400 drop-shadow-[0_0_6px_rgba(52,211,153,0.5)]" : "text-slate-500"}`}
+                    />
+                    <span className="text-[11px] font-bold text-slate-300 tracking-wide">
+                      Smart Queue
+                    </span>
+                    {batchQueue.length > 0 && (
+                      <span className="bg-emerald-500/15 text-emerald-400 px-1.5 py-0.5 rounded-full text-[10px] font-bold border border-emerald-500/25">
+                        {batchQueue.length}
                       </span>
-                    </div>
+                    )}
                     {isBatchProcessing && (
-                      <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full flex items-center gap-1.5 animate-pulse border border-emerald-500/20 font-medium">
-                        <Loader2 size={10} className="animate-spin" /> {t("app.runningLabel")}
+                      <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse border border-emerald-500/20 font-medium">
+                        <Loader2 size={10} className="animate-spin" /> Running
                       </span>
                     )}
                   </div>
-
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1">
                     <Button
                       size="sm"
                       variant={isAutoCapture ? "cyan" : "ghost"}
                       onClick={() => setIsAutoCapture((p) => !p)}
-                      title="Clipboard Monitor (Auto Capture)"
-                      className={`h-7 text-xs px-2 ${isAutoCapture ? "ring-1 ring-cyan-500/50 shadow-[0_0_10px_rgba(34,211,238,0.3)]" : "text-slate-400 hover:text-cyan-300"}`}
+                      title="Auto Capture Clipboard"
+                      className={`h-6 text-[10px] px-1.5 ${isAutoCapture ? "ring-1 ring-cyan-500/40" : "text-slate-500 hover:text-cyan-400"}`}
                     >
-                      <Clipboard
-                        size={14}
-                        className={isAutoCapture ? "animate-pulse" : ""}
-                      />
-                      <span className="ml-1 hidden sm:inline text-[10px] font-bold">
-                        {isAutoCapture ? t("app.on") : t("app.auto")}
-                      </span>
+                      <Clipboard size={12} className={isAutoCapture ? "animate-pulse" : ""} />
                     </Button>
-
-                    <div className="w-px h-4 bg-slate-700 mx-1"></div>
-
+                    <div className="w-px h-3.5 bg-slate-700/50 mx-0.5" />
                     <Button
                       size="sm"
                       variant={isBatchProcessing ? "amber" : "success"}
                       onClick={toggleBatchProcessing}
-                      title={
-                        isBatchProcessing
-                          ? t("queue.pauseDownload")
-                          : t("app.startQueue")
-                      }
-                      className="h-7 w-7 p-0 shadow-sm"
+                      title={isBatchProcessing ? t("queue.pauseDownload") : t("app.startQueue")}
+                      className="h-6 w-6 p-0"
                     >
-                      {isBatchProcessing ? (
-                        <Pause size={14} />
-                      ) : (
-                        <Play size={14} />
-                      )}
+                      {isBatchProcessing ? <Pause size={11} /> : <Play size={11} />}
                     </Button>
-
                     <Button
                       size="sm"
                       variant={isBatchMode ? "primary" : "ghost"}
                       onClick={() => setIsBatchMode((p) => !p)}
-                      title={
-                        isBatchMode ? t("app.hideQueueList") : t("app.showQueueList")
-                      }
-                      className={`h-7 w-7 p-0 ${isBatchMode ? "shadow-md shadow-violet-500/20" : "text-slate-400 hover:text-white"}`}
+                      title={isBatchMode ? "Hide queue" : "Show queue list"}
+                      className={`h-6 w-6 p-0 ${isBatchMode ? "shadow-md shadow-violet-500/15" : "text-slate-500 hover:text-white"}`}
                     >
-                      {isBatchMode ? (
-                        <Minimize2 size={14} />
-                      ) : (
-                        <ListOrdered size={14} />
-                      )}
+                      {isBatchMode ? <Minimize2 size={11} /> : <ListOrdered size={11} />}
                     </Button>
-
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-7 w-7 p-0 text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                      className="h-6 w-6 p-0 text-slate-500 hover:text-red-400 hover:bg-red-500/10"
                       onClick={() => {
-                        if (
-                          batchQueue.length === 0 ||
-                          confirm("Clear entire queue?")
-                        ) {
+                        if (batchQueue.length === 0 || confirm("Clear entire queue?")) {
                           setBatchQueue([]);
                           setIsBatchMode(false);
                           setIsBatchProcessing(false);
                         }
                       }}
-                      title={t("app.removeFromBatch")}
-                      aria-label={t("app.removeFromBatch")}
                     >
-                      <X size={14} />
+                      <X size={11} />
                     </Button>
                   </div>
                 </div>
 
-                {/* Detection Progress */}
+                {/* ===== DETECTION PROGRESS ===== */}
                 {detectionState.isDetecting && (
-                  <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700 animate-pulse">
-                    <div className="flex justify-between text-xs text-slate-400 mb-1">
+                  <div className="bg-violet-500/5 rounded-lg p-3 border border-violet-500/20 animate-pulse">
+                    <div className="flex justify-between text-xs text-slate-400 mb-1.5">
                       <span className="flex items-center gap-2">
-                        <Search size={12} className="animate-spin" />
+                        <Search size={12} className="animate-spin text-violet-400" />
                         {detectionState.message}
                       </span>
-                      <span>{detectionState.progress}%</span>
+                      <span className="font-mono text-violet-300">{detectionState.progress}%</span>
                     </div>
-                    <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                    <div className="h-1 bg-slate-700/50 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-violet-500 transition-all duration-300"
+                        className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full transition-all duration-300"
                         style={{ width: `${detectionState.progress}%` }}
                       />
                     </div>
                   </div>
                 )}
 
-                {/* Series Info - Compact */}
+                {/* ===== SERIES INFO ===== */}
                 <SeriesCard series={series} isLoading={isFetching} />
 
-                {/* Episode Selector */}
+                {/* ===== EPISODE SELECTOR ===== */}
                 {series && (
                   <EpisodeSelector
                     totalEpisodes={series.totalEpisodes}
@@ -1609,7 +1586,7 @@ function App() {
                   />
                 )}
 
-                {/* Quality Selector */}
+                {/* ===== QUALITY SELECTOR ===== */}
                 {series && (
                   <QualitySelector
                     episodeUrl={Object.values(series.episodeUrls)[0]}
@@ -1618,273 +1595,280 @@ function App() {
                   />
                 )}
 
-                {/* Speed Graph & Progress - Compact */}
+                {/* ===== PROGRESS DASHBOARD ===== */}
                 {(downloadState.isDownloading || speedData.length > 0) && (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-                    <SpeedGraph
-                      data={speedData}
-                      currentSpeed={currentSpeed}
-                      avgSpeed={avgSpeed}
-                      peakSpeed={peakSpeed}
-                    />
-                    <div className="glass rounded-lg p-2 border border-slate-700/50 space-y-2">
-                      <ProgressBar
-                        percentage={progress.percentage}
-                        label={`EP ${progress.episode}`}
-                        sublabel={`${(progress.speed / 1024 / 1024).toFixed(1)} MB/s`}
-                        variant="cyan"
-                      />
-                      <ProgressBar
-                        percentage={overallProgress}
-                        label={t("app.overall")}
-                        sublabel={`${downloadState.completedEpisodes.length}/${downloadState.totalSelected}`}
-                        variant="success"
-                      />
-                      {mergeState.isMerging && (
-                        <div className="p-2 bg-fuchsia-500/20 rounded-md border border-fuchsia-500/30">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="text-fuchsia-300 flex items-center gap-1">
-                              <Merge
-                                size={12}
-                                className="animate-pulse drop-shadow-[0_0_4px_currentColor]"
-                              />{" "}
-                              {t("app.mergingVideos")}
-                            </span>
-                            <span className="text-fuchsia-400 font-mono">
-                              {mergeState.progress.toFixed(0)}%
-                            </span>
-                          </div>
-                          <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden mt-1">
-                            <div
-                              className="h-full bg-gradient-to-r from-fuchsia-500 to-violet-500 rounded-full"
-                              style={{ width: `${mergeState.progress}%` }}
-                            />
-                          </div>
+                  <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl border border-cyan-500/20 overflow-hidden">
+                    <div className="px-3 py-2 border-b border-slate-700/50 flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.6)] animate-pulse" />
+                      <span className="text-[10px] font-bold tracking-widest text-cyan-400 uppercase">Download Progress</span>
+                      <span className="ml-auto text-[10px] font-mono text-slate-500">
+                        {downloadState.completedEpisodes.length}/{downloadState.totalSelected} eps
+                      </span>
+                    </div>
+                    <div className="p-3 space-y-3">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                        <SpeedGraph
+                          data={speedData}
+                          currentSpeed={currentSpeed}
+                          avgSpeed={avgSpeed}
+                          peakSpeed={peakSpeed}
+                        />
+                        <div className="space-y-2.5">
+                          <ProgressBar
+                            percentage={progress.percentage}
+                            label={`EP ${progress.episode}`}
+                            sublabel={`${(progress.speed / 1024 / 1024).toFixed(1)} MB/s`}
+                            variant="cyan"
+                          />
+                          <ProgressBar
+                            percentage={overallProgress}
+                            label={t("app.overall")}
+                            sublabel={`${downloadState.completedEpisodes.length}/${downloadState.totalSelected}`}
+                            variant="success"
+                          />
+                          {mergeState.isMerging && (
+                            <div className="p-2 bg-fuchsia-500/10 rounded-lg border border-fuchsia-500/20">
+                              <div className="flex items-center justify-between text-xs mb-1">
+                                <span className="text-fuchsia-300 flex items-center gap-1.5">
+                                  <Merge size={12} className="animate-pulse drop-shadow-[0_0_4px_currentColor]" />
+                                  {t("app.mergingVideos")}
+                                </span>
+                                <span className="text-fuchsia-400 font-mono">{mergeState.progress.toFixed(0)}%</span>
+                              </div>
+                              <div className="h-1.5 bg-slate-700/50 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-gradient-to-r from-fuchsia-500 to-violet-500 rounded-full transition-all"
+                                  style={{ width: `${mergeState.progress}%` }}
+                                />
+                              </div>
+                            </div>
+                          )}
+                          {mergeState.mergedFile && !mergeState.isMerging && (
+                            <div className="p-2 bg-emerald-500/10 rounded-lg border border-emerald-500/20 text-xs text-emerald-300 flex items-center gap-1.5">
+                              <CheckCircle size={12} className="text-emerald-400" />
+                              {t("app.mergedLabel")} {mergeState.mergedFile.split("/").pop()}
+                            </div>
+                          )}
                         </div>
-                      )}
-                      {mergeState.mergedFile && !mergeState.isMerging && (
-                        <div className="p-2 bg-emerald-500/20 rounded-md border border-emerald-500/30 text-xs text-emerald-300 flex items-center gap-1">
-                          <span className="text-emerald-400">✅</span> {t("app.mergedLabel")}{" "}
-                          {mergeState.mergedFile.split("/").pop()}
-                        </div>
-                      )}
+                      </div>
                     </div>
                   </div>
                 )}
 
-                {/* Queue - Compact */}
+                {/* ===== DOWNLOAD QUEUE ===== */}
                 {queue.length > 0 && (
                   <ErrorBoundary>
                     <DownloadQueue
                       queue={queue}
                       onMoveUp={() => {}}
                       onMoveDown={() => {}}
-                      onRemove={(id) =>
-                        setQueue((prev) => prev.filter((q) => q.id !== id))
-                      }
+                      onRemove={(id) => setQueue((prev) => prev.filter((q) => q.id !== id))}
                       onPause={() => {}}
                     />
                   </ErrorBoundary>
                 )}
 
-                {/* Options & Actions - Compact inline */}
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-300">
-                    <input
-                      type="checkbox"
-                      checked={settings.autoMerge}
-                      onChange={(e) =>
-                        updateSetting("autoMerge", e.target.checked)
-                      }
-                      disabled={!ffmpegAvailable}
-                      className="w-3.5 h-3.5 rounded bg-slate-700 border-slate-600 text-violet-600"
-                    />
-                    <Merge
-                      size={12}
-                      className="text-fuchsia-400 drop-shadow-[0_0_4px_currentColor]"
-                    />{" "}
-                    {t("app.autoMerge")}
-                  </label>
+                {/* Spacer for sticky action bar */}
+                <div className="h-16" />
+              </div>
+            </div>
 
-                  <div className="flex gap-2">
-                    {!downloadState.isDownloading ? (
-                      <Button
-                        onClick={handleStartDownload}
-                        disabled={!series || selectedEpisodes.size === 0}
-                        leftIcon={<Download size={14} />}
-                        variant="success"
-                      >
-                        Download ({selectedEpisodes.size})
-                      </Button>
-                    ) : (
-                      <>
-                        {!downloadState.isPaused ? (
-                          <Button
-                            variant="amber"
-                            onClick={handlePause}
-                            leftIcon={<Pause size={14} />}
-                          >
-                            {t("app.pause")}
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="success"
-                            onClick={handleResume}
-                            leftIcon={<Play size={14} />}
-                          >
-                            {t("app.resume")}
-                          </Button>
-                        )}
+            {/* ===== STICKY ACTION BAR ===== */}
+            <div className="flex-shrink-0 border-t border-slate-700/50 bg-slate-900/95 backdrop-blur-md px-4 py-2.5">
+              <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-400 hover:text-slate-300 transition-colors select-none">
+                  <input
+                    type="checkbox"
+                    checked={settings.autoMerge}
+                    onChange={(e) => updateSetting("autoMerge", e.target.checked)}
+                    disabled={!ffmpegAvailable}
+                    className="w-3.5 h-3.5 rounded bg-slate-700 border-slate-600 text-fuchsia-600 focus:ring-fuchsia-500/30"
+                  />
+                  <Merge size={13} className="text-fuchsia-400/70" />
+                  <span>{t("app.autoMerge")}</span>
+                </label>
+
+                <div className="flex items-center gap-2">
+                  {!downloadState.isDownloading ? (
+                    <Button
+                      onClick={handleStartDownload}
+                      disabled={!series || selectedEpisodes.size === 0}
+                      leftIcon={<Download size={15} />}
+                      variant="success"
+                      size="md"
+                      className="px-5 py-2 shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:shadow-[0_0_30px_rgba(16,185,129,0.35)]"
+                    >
+                      Download{selectedEpisodes.size > 0 ? ` (${selectedEpisodes.size})` : ""}
+                    </Button>
+                  ) : (
+                    <>
+                      {!downloadState.isPaused ? (
                         <Button
-                          variant="danger"
-                          onClick={handleCancel}
-                          leftIcon={<X size={14} />}
+                          variant="amber"
+                          onClick={handlePause}
+                          leftIcon={<Pause size={14} />}
+                          size="md"
+                          className="px-4"
                         >
-                          {t("app.cancel")}
+                          {t("app.pause")}
                         </Button>
-                      </>
-                    )}
-                  </div>
+                      ) : (
+                        <Button
+                          variant="success"
+                          onClick={handleResume}
+                          leftIcon={<Play size={14} />}
+                          size="md"
+                          className="px-4 shadow-[0_0_15px_rgba(16,185,129,0.2)]"
+                        >
+                          {t("app.resume")}
+                        </Button>
+                      )}
+                      <Button
+                        variant="danger"
+                        onClick={handleCancel}
+                        leftIcon={<X size={14} />}
+                        size="md"
+                        className="px-4"
+                      >
+                        {t("app.cancel")}
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
 
-            {/* Right Panel: Smart Queue */}
-            <div className="hidden md:flex w-80 flex-col bg-slate-900/80 border-l border-slate-700/30">
-              <div className="bg-slate-800/90 backdrop-blur p-3 flex items-center justify-between border-b border-slate-700 sticky top-0 z-10">
-                <div className="flex items-center gap-2">
-                  <ListOrdered size={16} className="text-emerald-400" />
-                  <span className="text-xs font-bold text-slate-200 tracking-wide">
-                    {t("app.smartQueueLabel")}
-                  </span>
-                  <span className="bg-slate-700 text-slate-300 px-1.5 rounded-full text-[10px]">
-                    {batchQueue.length}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    size="sm"
-                    variant={isBatchProcessing ? "amber" : "success"}
-                    className="h-6 w-6 p-0"
-                    onClick={toggleBatchProcessing}
-                    title={isBatchProcessing ? t("queue.pauseDownload") : t("app.startQueue")}
-                  >
-                    {isBatchProcessing ? (
-                      <Pause size={12} />
-                    ) : (
-                      <Play size={12} />
-                    )}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 w-6 p-0"
-                    onClick={() => {
-                      setBatchQueue([]);
-                      setIsBatchProcessing(false);
-                    }}
-                    title={t("app.clear")}
-                  >
-                    <X size={14} />
-                  </Button>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2">
-                {batchQueue.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-40">
-                    <ListOrdered size={32} className="mb-2" />
-                    <p className="text-xs">{t("queue.empty")}</p>
+            {/* ===== BATCH QUEUE DRAWER ===== */}
+            {isBatchMode && (
+              <div className="fixed inset-y-0 right-0 w-80 bg-slate-900/98 backdrop-blur-xl border-l border-slate-700/50 shadow-2xl shadow-black/50 z-50 flex flex-col animate-slide-in-right">
+                <div className="px-3 py-2.5 border-b border-slate-700/50 flex items-center justify-between bg-slate-800/60">
+                  <div className="flex items-center gap-2">
+                    <ListOrdered size={14} className="text-emerald-400" />
+                    <span className="text-xs font-bold text-slate-200 tracking-wide">Queue</span>
+                    <span className="bg-slate-700/80 text-slate-300 px-1.5 py-0.5 rounded-full text-[10px]">
+                      {batchQueue.length}
+                    </span>
                   </div>
-                ) : (
-                  batchQueue.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className="p-2 rounded border border-slate-700/50 bg-slate-800/30 flex gap-2 text-xs relative group"
+                  <div className="flex items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant={isBatchProcessing ? "amber" : "success"}
+                      className="h-6 w-6 p-0"
+                      onClick={toggleBatchProcessing}
+                      title={isBatchProcessing ? t("queue.pauseDownload") : t("app.startQueue")}
                     >
-                      <div className="w-12 h-16 bg-slate-900 rounded overflow-hidden flex-shrink-0 relative">
-                        {item.info?.posterUrl ? (
-                          <img
-                            src={item.info.posterUrl}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <ImageIcon size={14} className="text-slate-600" />
-                          </div>
-                        )}
-                        {item.status === "downloading" && (
-                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                            <Loader2
-                              size={12}
-                              className="animate-spin text-white"
-                            />
-                          </div>
-                        )}
-                        {item.status === "completed" && (
-                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                            <CheckCircle
-                              size={12}
-                              className="text-emerald-400"
-                            />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0 flex flex-col gap-1">
-                        <div className="font-medium truncate text-slate-200">
-                          {item.info?.title || item.url}
-                        </div>
-                        <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                          {item.status === "pending" && t("queue.pending")}
-                          {item.status === "fetching" && t("app.fetchingInfo")}
-                          {item.status === "ready" &&
-                            `${t("app.ready")} (${item.info?.totalEpisodes})`}
+                      {isBatchProcessing ? <Pause size={11} /> : <Play size={11} />}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-slate-500 hover:text-red-400"
+                      onClick={() => {
+                        setBatchQueue([]);
+                        setIsBatchProcessing(false);
+                      }}
+                    >
+                      <X size={12} />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-slate-400 hover:text-white"
+                      onClick={() => setIsBatchMode(false)}
+                    >
+                      <X size={14} />
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1.5">
+                  {batchQueue.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-40">
+                      <ListOrdered size={28} className="mb-2" />
+                      <p className="text-[11px]">{t("queue.empty")}</p>
+                    </div>
+                  ) : (
+                    batchQueue.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className={`p-2 rounded-lg border flex gap-2.5 text-xs relative group transition-all ${
+                          item.status === "downloading"
+                            ? "bg-cyan-500/5 border-cyan-500/30 shadow-[0_0_12px_rgba(34,211,238,0.08)]"
+                            : item.status === "completed"
+                            ? "bg-emerald-500/5 border-emerald-500/20"
+                            : item.status === "error" || item.status === "failed"
+                            ? "bg-red-500/5 border-red-500/20"
+                            : "bg-slate-800/30 border-slate-700/40"
+                        }`}
+                      >
+                        <div className="w-11 h-14 bg-slate-900/80 rounded overflow-hidden flex-shrink-0 relative">
+                          {item.info?.posterUrl ? (
+                            <img src={item.info.posterUrl} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <ImageIcon size={14} className="text-slate-600" />
+                            </div>
+                          )}
                           {item.status === "downloading" && (
-                            <span className="text-cyan-400 flex items-center gap-1">
-                              {t("app.downloadingStatus")} {progress.percentage.toFixed(0)}%
-                            </span>
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                              <Loader2 size={12} className="animate-spin text-cyan-400" />
+                            </div>
                           )}
                           {item.status === "completed" && (
-                            <span className="text-emerald-400">{t("app.completed")}</span>
-                          )}
-                          {item.status === "error" && (
-                            <span className="text-red-400">{t("app.error")}</span>
+                            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                              <CheckCircle size={12} className="text-emerald-400" />
+                            </div>
                           )}
                         </div>
-                        {item.status === "downloading" && (
-                          <div className="h-1 bg-slate-700/50 rounded-full overflow-hidden mt-1 w-full">
-                            <div
-                              className="h-full bg-cyan-400/80 transition-all duration-300 shadow-[0_0_4px_currentColor]"
-                              style={{ width: `${progress.percentage}%` }}
-                            />
+                        <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                          <div className="font-medium truncate text-slate-200 text-[11px]">
+                            {item.info?.title || item.url}
                           </div>
-                        )}
+                          <div className="text-[10px] text-slate-400">
+                            {item.status === "pending" && t("queue.pending")}
+                            {item.status === "fetching" && t("app.fetchingInfo")}
+                            {item.status === "ready" && `${t("app.ready")} (${item.info?.totalEpisodes})`}
+                            {item.status === "downloading" && (
+                              <span className="text-cyan-400">{t("app.downloadingStatus")} {progress.percentage.toFixed(0)}%</span>
+                            )}
+                            {item.status === "completed" && (
+                              <span className="text-emerald-400">{t("app.completed")}</span>
+                            )}
+                            {item.status === "error" && (
+                              <span className="text-red-400">{t("app.error")}</span>
+                            )}
+                          </div>
+                          {item.status === "downloading" && (
+                            <div className="h-1 bg-slate-700/50 rounded-full overflow-hidden mt-0.5">
+                              <div
+                                className="h-full bg-cyan-400/80 transition-all duration-300 shadow-[0_0_4px_currentColor] rounded-full"
+                                style={{ width: `${progress.percentage}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setBatchQueue((prev) => prev.filter((_, i) => i !== idx));
+                          }}
+                          className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity text-slate-600"
+                          aria-label={t("app.removeFromBatch")}
+                        >
+                          <X size={11} />
+                        </button>
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setBatchQueue((prev) =>
-                            prev.filter((_, i) => i !== idx),
-                          );
-                        }}
-                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity"
-                        aria-label={t("app.removeFromBatch")}
-                      >
-                        <X size={12} />
-                      </button>
-                    </div>
-                  ))
-                )}
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === "library" && (
-          <div className="page-transition animate-fade-in h-full overflow-y-auto custom-scrollbar">
-            <ErrorBoundary>
-              <LibraryPanel />
-            </ErrorBoundary>
+            )}
+            {isBatchMode && (
+              <div
+                className="fixed inset-0 bg-black/30 z-40"
+                onClick={() => setIsBatchMode(false)}
+              />
+            )}
           </div>
         )}
         {activeTab === "browse" && (

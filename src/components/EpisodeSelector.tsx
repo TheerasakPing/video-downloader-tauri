@@ -21,19 +21,21 @@ export function EpisodeSelector({
   const episodes = Array.from({ length: totalEpisodes }, (_, i) => i + 1);
 
   return (
-    <div className="glass rounded-lg p-2 border border-slate-700/50">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <span className="text-xs text-slate-400">
-          <span className="px-1.5 py-0.5 bg-cyan-500/10 text-cyan-400 rounded border border-cyan-500/30 text-[10px] mr-1">
+    <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl border border-slate-700/40 overflow-hidden">
+      {/* Header */}
+      <div className="px-3 py-2 flex items-center justify-between gap-2 border-b border-slate-700/30">
+        <div className="flex items-center gap-2">
+          <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]" />
+          <span className="text-[10px] font-bold tracking-widest text-slate-400 uppercase">Episodes</span>
+          <span className="bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded-full text-[10px] font-bold border border-emerald-500/20">
             {selectedEpisodes.size}/{totalEpisodes}
           </span>
-          {t("episodes.title")}
-        </span>
+        </div>
         <div className="flex gap-1">
           <button
             onClick={onSelectAll}
             disabled={disabled}
-            className="px-2 py-1 text-[10px] font-medium text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 rounded transition-colors disabled:opacity-50 border border-emerald-500/40 shadow-[0_0_6px_rgba(16,185,129,0.2)]"
+            className="px-2.5 py-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-md transition-colors disabled:opacity-40 border border-emerald-500/25"
             aria-label={t("episodes.selectAllAria")}
           >
             {t("episodes.all")}
@@ -41,7 +43,7 @@ export function EpisodeSelector({
           <button
             onClick={onDeselectAll}
             disabled={disabled}
-            className="px-2 py-1 text-[10px] font-medium text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 rounded transition-colors disabled:opacity-50 border border-amber-500/40"
+            className="px-2.5 py-1 text-[10px] font-bold text-slate-400 bg-slate-700/30 hover:bg-slate-700/50 rounded-md transition-colors disabled:opacity-40 border border-slate-600/30"
             aria-label={t("episodes.deselectAllAria")}
           >
             {t("episodes.none")}
@@ -49,28 +51,35 @@ export function EpisodeSelector({
         </div>
       </div>
 
-      <div className="max-h-24 overflow-y-auto custom-scrollbar pr-1">
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(2rem,1fr))] gap-1">
-          {episodes.map((ep) => (
-            <button
-              key={ep}
-              onClick={() => onToggle(ep)}
-              disabled={disabled}
-              className={`
-                h-6 text-[10px] font-medium rounded transition-all border flex items-center justify-center
-                ${
-                  selectedEpisodes.has(ep)
-                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-[0_0_4px_rgba(16,185,129,0.2)]"
-                    : "bg-slate-700/30 text-slate-400 border-slate-600/30 hover:bg-slate-700/50 hover:text-white hover:border-slate-500/50"
-                }
-                disabled:opacity-50 disabled:cursor-not-allowed
-              `}
-              title={t("episodes.episodeTitle", { number: ep })}
-              aria-label={t("episodes.episodeTitle", { number: ep })}
-            >
-              {ep}
-            </button>
-          ))}
+      {/* Grid */}
+      <div className="p-3">
+        <div className="max-h-28 overflow-y-auto custom-scrollbar pr-1">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(2.25rem,1fr))] gap-1">
+            {episodes.map((ep) => {
+              const isSelected = selectedEpisodes.has(ep);
+              return (
+                <button
+                  key={ep}
+                  onClick={() => onToggle(ep)}
+                  disabled={disabled}
+                  className={`
+                    h-7 text-[10px] font-semibold rounded-md transition-all border flex items-center justify-center
+                    ${
+                      isSelected
+                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-[0_0_6px_rgba(16,185,129,0.15)]"
+                        : "bg-slate-800/40 text-slate-500 border-slate-700/40 hover:bg-slate-700/50 hover:text-slate-300 hover:border-slate-600/50"
+                    }
+                    disabled:opacity-30 disabled:cursor-not-allowed
+                    active:scale-95
+                  `}
+                  title={t("episodes.episodeTitle", { number: ep })}
+                  aria-label={t("episodes.episodeTitle", { number: ep })}
+                >
+                  {ep}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
