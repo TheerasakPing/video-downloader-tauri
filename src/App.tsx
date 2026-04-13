@@ -30,7 +30,6 @@ import {
   Button,
   Input,
   ProgressBar,
-  EpisodeSelector,
   SeriesCard,
   LogPanel,
   SettingsPanel,
@@ -1573,20 +1572,16 @@ function App() {
                   </div>
                 )}
 
-                {/* ===== SERIES INFO ===== */}
-                <SeriesCard series={series} isLoading={isFetching} />
-
-                {/* ===== EPISODE SELECTOR ===== */}
-                {series && (
-                  <EpisodeSelector
-                    totalEpisodes={series.totalEpisodes}
-                    selectedEpisodes={selectedEpisodes}
-                    onToggle={toggleEpisode}
-                    onSelectAll={selectAllEpisodes}
-                    onDeselectAll={deselectAllEpisodes}
-                    disabled={downloadState.isDownloading}
-                  />
-                )}
+                {/* ===== SERIES + EPISODES ===== */}
+                <SeriesCard
+                  series={series}
+                  isLoading={isFetching}
+                  selectedEpisodes={selectedEpisodes}
+                  onToggleEpisode={toggleEpisode}
+                  onSelectAll={selectAllEpisodes}
+                  onDeselectAll={deselectAllEpisodes}
+                  disabled={downloadState.isDownloading}
+                />
 
                 {/* ===== QUALITY SELECTOR ===== */}
                 {series && (
