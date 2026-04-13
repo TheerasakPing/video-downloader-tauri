@@ -1,5 +1,5 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
-import { useI18n } from '../hooks/useI18n';
+import { AlertCircle } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
@@ -11,45 +11,45 @@ interface State {
   error: Error | null;
 }
 
-function ErrorFallback({ error, onRetry }: { error: Error | null; onRetry: () => void }) {
-  const { t } = useI18n();
-  return (
-    <div className="p-6 text-center">
-      <h2 className="text-lg font-bold text-red-400 mb-2">{t("errorBoundary.title")}</h2>
-      <p className="text-sm text-[var(--text)] opacity-60 mb-4">
-        {error?.message || t("errorBoundary.message")}
-      </p>
-      <button
-        onClick={onRetry}
-        className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-sm hover:opacity-90"
-      >
-        {t("errorBoundary.tryAgain")}
-      </button>
-    </div>
-  );
-}
-
 export class ErrorBoundary extends Component<Props, State> {
-  public state: State = { hasError: false, error: null };
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
 
-  public static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught:', error, errorInfo);
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('ErrorBoundary caught an error:', error, errorInfo);
   }
 
-  public render() {
+  render() {
     if (this.state.hasError) {
-      if (this.props.fallback) return this.props.fallback;
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
+
       return (
-        <ErrorFallback
-          error={this.state.error}
-          onRetry={() => this.setState({ hasError: false, error: null })}
-        />
+        <div className="flex flex-col items-center justify-center p-8 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+          <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
+          <h2 className="text-xl font-semibold text-red-700 dark:text-red-400 mb-2">
+            Something went wrong
+          </h2>
+          <p className="text-sm text-red-600 dark:text-red-300 mb-4 text-center max-w-md">
+            {this.state.error?.message || 'An unexpected error occurred'}
+          </p>
+          <button
+            onClick={() => this.setState({ hasError: false, error: null })}
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
       );
     }
+
     return this.props.children;
   }
 }

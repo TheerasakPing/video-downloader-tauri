@@ -167,6 +167,8 @@ pub struct VideoDownloader {
 impl VideoDownloader {
     pub fn with_config(output_dir: &str, config: DownloadConfig) -> Self {
         let client = Client::builder()
+            .pool_max_idle_per_host(10)
+            .pool_idle_timeout(Duration::from_secs(90))
             .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
             .build()
             .expect("Failed to create HTTP client");
@@ -231,6 +233,8 @@ impl VideoDownloader {
             // Pre-resolve master playlist if quality is specified
             let effective_url = if let Some(ref quality) = preferred_quality {
                 let pre_client = Client::builder()
+            .pool_max_idle_per_host(10)
+            .pool_idle_timeout(Duration::from_secs(90))
                     .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
                     .build().unwrap_or_else(|_| Client::new());
                 if let Ok(resp) = pre_client.get(video_url).send().await {
@@ -280,17 +284,41 @@ impl VideoDownloader {
 
         // Content-based HLS detection: some providers (e.g., avkuy/kuylive)
         // serve HLS playlists without .m3u8 extension. Probe the URL to detect.
+        // Only read first chunk to avoid downloading large files into memory.
         let probe_client = Client::builder()
+            .pool_max_idle_per_host(10)
+            .pool_idle_timeout(Duration::from_secs(90))
             .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+            .default_headers({
+                let mut h = reqwest::header::HeaderMap::new();
+                if let Some(ref referer) = referer {
+                    if let Ok(val) = referer.parse() {
+                        h.insert("Referer", val);
+                    }
+                }
+                if !cookies.is_empty() {
+                    let cookie_header = cookies
+                        .iter()
+                        .map(|(k, v)| format!("{}={}", k, v))
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    if let Ok(val) = cookie_header.parse() {
+                        h.insert("Cookie", val);
+                    }
+                }
+                h
+            })
             .build()
             .unwrap_or_default();
-        let is_hls_playlist = if let Ok(resp) = probe_client.get(video_url)
+        let is_hls_playlist = if let Ok(mut resp) = probe_client.get(video_url)
             .timeout(std::time::Duration::from_secs(5))
             .send()
             .await
         {
-            if let Ok(text) = resp.text().await {
-                text.starts_with("#EXTM3U")
+            // Read only the first chunk to check for #EXTM3U prefix
+            if let Ok(Some(chunk)) = resp.chunk().await {
+                let prefix = &chunk[..chunk.len().min(7)];
+                std::str::from_utf8(prefix).map(|s| s.starts_with("#EXTM3U")).unwrap_or(false)
             } else {
                 false
             }
@@ -356,6 +384,8 @@ impl VideoDownloader {
 
         // Build reqwest client with Referer
         let client = Client::builder()
+            .pool_max_idle_per_host(10)
+            .pool_idle_timeout(Duration::from_secs(90))
             .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             .build()
             .unwrap_or_default();
@@ -383,8 +413,28 @@ impl VideoDownloader {
                 };
             }
         };
-        let key_arr: [u8; 16] = key_bytes.try_into().unwrap();
-        let iv_arr:  [u8; 16] = iv_bytes.try_into().unwrap();
+        let key_arr: [u8; 16] = match key_bytes.clone().try_into() {
+            Ok(arr) => arr,
+            Err(_) => {
+                return DownloadResult {
+                    episode,
+                    success: false,
+                    file_path: None,
+                    error: Some(format!("Failed to convert key bytes to [u8; 16]: got {} bytes", key_bytes.len())),
+                };
+            }
+        };
+        let iv_arr: [u8; 16] = match iv_bytes.clone().try_into() {
+            Ok(arr) => arr,
+            Err(_) => {
+                return DownloadResult {
+                    episode,
+                    success: false,
+                    file_path: None,
+                    error: Some(format!("Failed to convert IV bytes to [u8; 16]: got {} bytes", iv_bytes.len())),
+                };
+            }
+        };
 
         // ── Fetch H.264 variant playlist ────────────────────────────────
         let v1_m3u8_url = format!("{}/v1/index.m3u8", key_info.hls_base_url);
@@ -614,7 +664,7 @@ impl VideoDownloader {
                         // Skip any additional header bytes between PNG and MPEG-TS
                         let remaining = &data[end..];
                         // MPEG-TS sync byte is 0x47 — find it
-                        for j in 0..remaining.len().min(16) {
+                        for j in 0..remaining.len().min(64) {
                             if remaining[j] == 0x47 {
                                 return &remaining[j..];
                             }
@@ -725,7 +775,18 @@ impl VideoDownloader {
             },
         };
 
-        let stderr = child.stderr.take().unwrap();
+        let stderr = match child.stderr.take() {
+            Some(s) => s,
+            None => {
+                let _ = child.kill();
+                return DownloadResult {
+                    episode,
+                    success: false,
+                    file_path: None,
+                    error: Some("Failed to capture FFmpeg stderr output".to_string()),
+                };
+            }
+        };
         let reader = BufReader::new(stderr);
         let mut last_emit = std::time::Instant::now();
 
@@ -868,10 +929,17 @@ impl VideoDownloader {
 
         // Build HTTP client for segment downloads
         let seg_client = Client::builder()
+            .pool_max_idle_per_host(10)
+            .pool_idle_timeout(Duration::from_secs(90))
             .user_agent(ua)
             .default_headers({
                 let mut headers = reqwest::header::HeaderMap::new();
-                headers.insert("Referer", effective_referer.parse().unwrap());
+                // Handle referer parse error gracefully
+                if let Ok(referer_val) = effective_referer.parse() {
+                    headers.insert("Referer", referer_val);
+                } else {
+                    eprintln!("Warning: Invalid referer URL '{}', continuing without Referer header", effective_referer);
+                }
                 if !cookies.is_empty() {
                     let cookie_header = cookies
                         .iter()
@@ -1007,6 +1075,7 @@ impl VideoDownloader {
 
         let start_time = std::time::Instant::now();
         let mut total_bytes: u64 = 0;
+        let mut failed_segments: usize = 0;
 
         for (i, seg_url) in segment_urls.iter().enumerate() {
             // Check cancellation
@@ -1038,7 +1107,16 @@ impl VideoDownloader {
             let data = match segment_data {
                 Ok(data) => data,
                 Err(e) => {
-                    let _ = app_handle.emit("log-warning", format!("Segment {} failed after retries: {}", seg_url, e));
+                    failed_segments += 1;
+                    let _ = app_handle.emit("log-warning", format!("Segment {}/{} failed after retries: {}", i + 1, total_segments, e));
+                    // If more than 5% of segments failed, abort — video would be unplayable
+                    if failed_segments > total_segments / 20 {
+                        let _ = fs::remove_file(&ts_temp_path);
+                        return DownloadResult {
+                            episode, success: false, file_path: None,
+                            error: Some(format!("Too many segments failed ({}/{}), aborting", failed_segments, total_segments)),
+                        };
+                    }
                     continue;
                 }
             };
@@ -1852,4 +1930,3 @@ fn merge_videos_reencode(video_files: Vec<String>, output_path: &str, app_handle
     }
 }
 
-// Sanitize filename helper moved to utils.rs

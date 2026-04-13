@@ -1308,10 +1308,13 @@ async fn start_download(
         series_title: request.series_title.clone(),
     };
     let _downloader = VideoDownloader::with_config(&effective_output_dir, config.clone());
-    *state.downloader.safe_lock() = Some(VideoDownloader::with_config(&effective_output_dir, config));
+    *state.downloader.safe_lock() = Some(VideoDownloader::with_config(&effective_output_dir, config.clone()));
 
     let mut results = Vec::new();
     let mut successful_files = Vec::new();
+
+    // Shared downloader instance (avoid creating new HTTP client per episode)
+    let shared_dl = Arc::new(VideoDownloader::with_config(&effective_output_dir, config));
 
     // Concurrent downloads using chunks
     let concurrent = request.concurrent_downloads.max(1) as usize;
@@ -1326,24 +1329,11 @@ async fn start_download(
                 .ok_or(format!("No URL for episode {}", episode))?
                 .clone();
 
-            // Pass HLS key info if available (Titan encrypted streams)
             let hls_key_info = series.episode_keys.get(episode).cloned();
-
-            // Get source_url as referer for hotlink protection bypass
-            // Clone to extend lifetime for async block
             let referer = series.source_url.clone();
-
             let cookies = series.cookies.clone();
-
             let app = app_handle.clone();
-            let dl = VideoDownloader::with_config(
-                &effective_output_dir,
-                DownloadConfig {
-                    speed_limit_kbps: request.speed_limit,
-                    file_naming: request.file_naming.clone(),
-                    series_title: request.series_title.clone(),
-                }
-            );
+            let dl = Arc::clone(&shared_dl);
             let ep = *episode;
             let preferred_quality = request.preferred_quality.clone();
 
@@ -1359,7 +1349,6 @@ async fn start_download(
             });
             handles.push((ep, handle));
         }
-
         // Wait for all in this chunk to complete
         for (ep, handle) in handles {
             match handle.await {
@@ -1840,13 +1829,21 @@ async fn cmd_refetch_series(
 
 #[tauri::command]
 fn cmd_get_proxy_config(state: State<'_, AppState>) -> Result<proxy::ProxyConfig, String> {
-    let config = state.rongyok_parser.proxy_config.read().unwrap();
+    let config = state.rongyok_parser.proxy_config.read()
+        .unwrap_or_else(|e| {
+            eprintln!("Warning: RwLock poisoned, recovering...");
+            e.into_inner()
+        });
     Ok(config.clone())
 }
 
 #[tauri::command]
 fn cmd_save_proxy_config(state: State<'_, AppState>, config: proxy::ProxyConfig) -> Result<(), String> {
-    let mut pc = state.rongyok_parser.proxy_config.write().unwrap();
+    let mut pc = state.rongyok_parser.proxy_config.write()
+        .unwrap_or_else(|e| {
+            eprintln!("Warning: RwLock poisoned, recovering...");
+            e.into_inner()
+        });
     *pc = config;
     Ok(())
 }

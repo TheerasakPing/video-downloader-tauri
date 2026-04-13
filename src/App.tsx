@@ -122,7 +122,7 @@ function App() {
   const [batchQueue, setBatchQueue] = useState<BatchItem[]>([]);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [isAutoCapture, setIsAutoCapture] = useState(false);
-  const isBatchItemRunningRef = useRef(false);
+  const [isBatchItemRunning, setIsBatchItemRunning] = useState(false);
 
   const [mergeState, setMergeState] = useState<{
     isMerging: boolean;
@@ -495,7 +495,7 @@ function App() {
       error("Please select at least one episode");
       return;
     }
-    isBatchItemRunningRef.current = false;
+    setIsBatchItemRunning(false);
     setIsBatchProcessing(false);
     setIsBatchMode(false);
     runDownload(series, selectedEpisodes);
@@ -611,7 +611,7 @@ function App() {
 
     if (!isBatchProcessing) return;
     if (downloadState.isDownloading) return;
-    if (isBatchItemRunningRef.current) return;
+    if (isBatchItemRunning) return;
 
     // Disabled check to prevent stale status deadlock
     // const isAnyDownloading = batchQueue.some((i) => i.status === "downloading");
@@ -627,7 +627,7 @@ function App() {
       const processItem = async () => {
         // Use console.log to avoid infinite render loops
         console.log(`Processing batch item: ${item.info?.title}`);
-        isBatchItemRunningRef.current = true;
+        setIsBatchItemRunning(true);
 
         // Mark as downloading
         setBatchQueue((prev) =>
@@ -637,12 +637,17 @@ function App() {
         );
 
         try {
+          // Check if item.info exists before using it
+          if (!item.info) {
+            throw new Error("Series info missing for batch item");
+          }
+
           const allEpisodes = new Set(
-            Array.from({ length: item.info!.totalEpisodes }, (_, i) => i + 1),
+            Array.from({ length: item.info.totalEpisodes }, (_, i) => i + 1),
           );
 
           // runDownload now fetches series info internally to ensure consistency
-          const success = await runDownload(item.info!, allEpisodes);
+          const success = await runDownload(item.info, allEpisodes);
 
           console.log(`Batch item finished found success=${success}`);
 
@@ -664,17 +669,13 @@ function App() {
             ),
           );
         } finally {
-          isBatchItemRunningRef.current = false;
+          setIsBatchItemRunning(false);
         }
       };
 
       processItem();
     }
-  }, [batchQueue, isBatchProcessing, downloadState.isDownloading, runDownload]);
-
-  const toggleBatchProcessing = () => {
-    setIsBatchProcessing((prev) => !prev);
-  };
+  }, [batchQueue, isBatchProcessing, downloadState.isDownloading, isBatchItemRunning, runDownload]);
 
   const handlePause = useCallback(async () => {
     if (downloadState.currentEpisode === 0) {
@@ -807,11 +808,22 @@ function App() {
     initialized.current = true;
 
     log("Application started");
-    checkFFmpeg();
-    setupEventListeners();
+    checkFfmpeg();
+    
+    let cleanup: (() => void) | undefined;
+    setupEventListeners().then(fn => {
+      cleanup = fn;
+    }).catch(err => {
+      error(`Failed to setup event listeners: ${err}`);
+    });
 
     // Auto-paste from clipboard on startup
     autoFetchFromClipboard();
+    
+    // Return cleanup function
+    return () => {
+      cleanup?.();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domainsLoaded, autoFetchFromClipboard]);
 
@@ -859,7 +871,9 @@ function App() {
   }, [activeTab]);
 
   const setupEventListeners = async () => {
-    await listen<{ message: string; progress: number }>(
+    const unsubscribers: (() => void)[] = [];
+
+    unsubscribers.push(await listen<{ message: string; progress: number }>(
       "detection-progress",
       (event) => {
         setDetectionState({
@@ -874,18 +888,18 @@ function App() {
           }, 2000);
         }
       },
-    );
+    ));
 
-    await listen<DownloadProgress>("download-progress", (event) => {
+    unsubscribers.push(await listen<DownloadProgress>("download-progress", (event) => {
       setProgress(event.payload);
       addDataPoint(event.payload.speed);
       setDownloadState((prev) => ({
         ...prev,
         currentEpisode: event.payload.episode,
       }));
-    });
+    }));
 
-    await listen<DownloadResult>("download-result", (event) => {
+    unsubscribers.push(await listen<DownloadResult>("download-result", (event) => {
       const result = event.payload;
       if (result.success) {
         setDownloadState((prev) => ({
@@ -912,9 +926,9 @@ function App() {
             : q,
         ),
       );
-    });
+    }));
 
-    await listen("merge-started", () => {
+    unsubscribers.push(await listen("merge-started", () => {
       log("Merging videos...");
       setMergeState({
         isMerging: true,
@@ -924,9 +938,9 @@ function App() {
         currentTime: 0,
         totalDuration: 0,
       });
-    });
+    }));
 
-    await listen<{
+    unsubscribers.push(await listen<{
       percentage: number;
       currentTime: number;
       totalDuration: number;
@@ -937,9 +951,9 @@ function App() {
         currentTime: event.payload.currentTime,
         totalDuration: event.payload.totalDuration,
       }));
-    });
+    }));
 
-    await listen<string>("merge-complete", (event) => {
+    unsubscribers.push(await listen<string>("merge-complete", (event) => {
       success(`Merged to: ${event.payload}`);
       setMergeState({
         isMerging: false,
@@ -952,9 +966,9 @@ function App() {
       playNotificationSound();
       showNotification("Merge Complete", "Videos merged successfully!");
       refreshFiles();
-    });
+    }));
 
-    await listen<string>("merge-error", (event) => {
+    unsubscribers.push(await listen<string>("merge-error", (event) => {
       error(`Merge failed: ${event.payload}`);
       setMergeState({
         isMerging: false,
@@ -964,14 +978,19 @@ function App() {
         currentTime: 0,
         totalDuration: 0,
       });
-    });
+    }));
 
-    await listen<string>("log-info", (event) => {
+    unsubscribers.push(await listen<string>("log-info", (event) => {
       log(event.payload);
-    });
+    }));
+
+    // Return cleanup function to prevent memory leak
+    return () => {
+      unsubscribers.forEach(unsub => unsub());
+    };
   };
 
-  const checkFFmpeg = async () => {
+  const checkFfmpeg = async () => {
     try {
       const available = await invoke<boolean>("check_ffmpeg_available");
       setFfmpegAvailable(available);
@@ -984,6 +1003,16 @@ function App() {
       warning("Could not check FFmpeg status");
     }
   };
+
+  const toggleBatchProcessing = useCallback(() => {
+    if (isBatchProcessing) {
+      setIsBatchProcessing(false);
+      log("Batch processing paused");
+    } else {
+      setIsBatchProcessing(true);
+      log("Batch processing started");
+    }
+  }, [isBatchProcessing, log]);
 
   const playNotificationSound = () => {
     if (settings.soundEnabled) {
@@ -1864,67 +1893,77 @@ function App() {
 
         {activeTab === "files" && (
           <div className="page-transition animate-fade-in">
-            <FileBrowser
-              outputDir={settings.outputDir}
-              files={files}
-              onRefresh={refreshFiles}
-              onOpenFolder={handleOpenOutputFolder}
-              onDelete={handleDeleteFiles}
-              onPlay={handlePlayFile}
-            />
+            <ErrorBoundary>
+              <FileBrowser
+                outputDir={settings.outputDir}
+                files={files}
+                onRefresh={refreshFiles}
+                onOpenFolder={handleOpenOutputFolder}
+                onDelete={handleDeleteFiles}
+                onPlay={handlePlayFile}
+              />
+            </ErrorBoundary>
           </div>
         )}
 
         {activeTab === "history" && (
           <div className="page-transition animate-slide-in">
-            <HistoryPanel
-              history={history}
-              stats={getStats()}
-              onDelete={deleteRecord}
-              onClear={clearHistory}
-            />
+            <ErrorBoundary>
+              <HistoryPanel
+                history={history}
+                stats={getStats()}
+                onDelete={deleteRecord}
+                onClear={clearHistory}
+              />
+            </ErrorBoundary>
           </div>
         )}
 
         {activeTab === "settings" && (
           <div className="page-transition animate-fade-in space-y-6 container mx-auto max-w-4xl">
-            <SettingsPanel
-              settings={settings}
-              onUpdate={updateSetting}
-              onReset={resetSettings}
-              onOpenFolder={handleOpenOutputFolder}
-              onCheckUpdates={checkForUpdates}
-              isCheckingUpdates={isCheckingUpdates}
-              language={language}
-              onLanguageChange={setLanguage}
-              t={t}
-              themes={themes}
-              activeThemeId={activeThemeId}
-              onThemeSelect={setActiveTheme}
-              domainSettings={domainSettings}
-              onUpdateDomain={updateDomainSetting}
-              onResetDomains={resetDomainSettings}
-            />
-            <SchedulerPanel />
-            <BackupPanel />
+            <ErrorBoundary>
+              <SettingsPanel
+                settings={settings}
+                onUpdate={updateSetting}
+                onReset={resetSettings}
+                onOpenFolder={handleOpenOutputFolder}
+                onCheckUpdates={checkForUpdates}
+                isCheckingUpdates={isCheckingUpdates}
+                language={language}
+                onLanguageChange={setLanguage}
+                t={t}
+                themes={themes}
+                activeThemeId={activeThemeId}
+                onThemeSelect={setActiveTheme}
+                domainSettings={domainSettings}
+                onUpdateDomain={updateDomainSetting}
+                onResetDomains={resetDomainSettings}
+              />
+              <SchedulerPanel />
+              <BackupPanel />
+            </ErrorBoundary>
           </div>
         )}
 
+
         {activeTab === "logs" && (
           <div className="h-full overflow-hidden page-transition animate-fade-in flex flex-col">
-            <LogPanel logs={logs} onClear={clearLogs} />
+            <ErrorBoundary>
+              <LogPanel logs={logs} onClear={clearLogs} />
+            </ErrorBoundary>
           </div>
         )}
       </main>
 
       {/* Mini Mode Overlay */}
       <MiniMode
-        isOpen={showMiniMode && downloadState.isDownloading}
+        isOpen={showMiniMode}
         onClose={() => setShowMiniMode(false)}
         onExpand={() => setShowMiniMode(false)}
         progress={progress}
         overallProgress={overallProgress}
-        completedEpisodes={downloadState.completedEpisodes.length}
+        isDownloading={downloadState.isDownloading}
+        currentEpisode={downloadState.currentEpisode}
         totalEpisodes={downloadState.totalSelected}
         isPaused={downloadState.isPaused}
         onPause={handlePause}

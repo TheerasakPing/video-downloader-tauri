@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>AVKuy Download Workflow</title>
+            <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only],
+.vscode-high-contrast:not(.vscode-high-contrast-light) img[src$=\#gh-light-mode-only],
+.vscode-high-contrast-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+            
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 12px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+<style>
+:root {
+  --color-note: #0969da;
+  --color-tip: #1a7f37;
+  --color-warning: #9a6700;
+  --color-severe: #bc4c00;
+  --color-caution: #d1242f;
+  --color-important: #8250df;
+}
+
+</style>
+<style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-note: #2f81f7;
+    --color-tip: #3fb950;
+    --color-warning: #d29922;
+    --color-severe: #db6d28;
+    --color-caution: #f85149;
+    --color-important: #a371f7;
+  }
+}
+
+</style>
+<style>
+.markdown-alert {
+  padding: 0.5rem 1rem;
+  margin-bottom: 16px;
+  color: inherit;
+  border-left: .25em solid #888;
+}
+
+.markdown-alert>:first-child {
+  margin-top: 0
+}
+
+.markdown-alert>:last-child {
+  margin-bottom: 0
+}
+
+.markdown-alert .markdown-alert-title {
+  display: flex;
+  font-weight: 500;
+  align-items: center;
+  line-height: 1
+}
+
+.markdown-alert .markdown-alert-title .octicon {
+  margin-right: 0.5rem;
+  display: inline-block;
+  overflow: visible !important;
+  vertical-align: text-bottom;
+  fill: currentColor;
+}
+
+.markdown-alert.markdown-alert-note {
+  border-left-color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-important {
+  border-left-color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-warning {
+  border-left-color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-tip {
+  border-left-color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-caution {
+  border-left-color: var(--color-caution);
+}
+
+.markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: var(--color-caution);
+}
+
+</style>
+        
+        </head>
+        <body class="vscode-body vscode-light">
+            <h1 id="avkuy-download-workflow">AVKuy Download Workflow</h1>
+<p>เอกสารนี้สรุป workflow ที่ระบบใช้เพื่อดาวน์โหลดวิดีโอจาก <code>www2.avkuy.com</code> หลังจากรองรับเว็บนี้ได้แล้วจริงในแอป</p>
+<h2 id="เป้าหมาย">เป้าหมาย</h2>
+<ul>
+<li>รองรับ URL หน้าโพสต์ของ <code>www2.avkuy.com</code></li>
+<li>auto detect URL จาก clipboard/ช่องกรอก</li>
+<li>แสดง <code>title</code> และ <code>thumbnail</code></li>
+<li>แยกไฟล์ดาวน์โหลดลงโฟลเดอร์ <code>avkuy/</code></li>
+<li>ดึง stream จริงจาก player ที่มี Cloudflare/iframe protection</li>
+</ul>
+<h2 id="ตัวอย่าง-url-ที่ใช้ทดสอบ">ตัวอย่าง URL ที่ใช้ทดสอบ</h2>
+<ul>
+<li>หน้าโพสต์:
+<code>https://www2.avkuy.com/avsubthai-adn-750/</code></li>
+<li>iframe player:
+<code>https://av-kuy.com/v/LQ76ROcLox2aZSg?sid=17081&amp;t=hls</code></li>
+</ul>
+<h2 id="ภาพรวม-flow">ภาพรวม flow</h2>
+<ol>
+<li>ผู้ใช้วาง URL หน้าโพสต์ <code>www2.avkuy.com</code></li>
+<li>Frontend ตรวจว่า URL เป็นโดเมน <code>avkuy.com</code> หรือ <code>av-kuy.com</code></li>
+<li>Backend เปิดหน้าโพสต์และดึง metadata เบื้องต้น:
+<ul>
+<li>title</li>
+<li>thumbnail/poster</li>
+<li>iframe player URL</li>
+</ul>
+</li>
+<li>ระบบพยายามสแกน player ผ่าน WebView ก่อน</li>
+<li>ถ้ายังไม่เจอ stream URL โดยตรง จะ fallback ไปใช้ Chrome detector กับหน้า player</li>
+<li>Chrome detector เก็บ cookie ที่จำเป็น โดยเฉพาะ <code>cf_clearance</code></li>
+<li>Backend ใช้ cookie ชุดนั้น fetch HTML ของหน้า player อีกครั้ง</li>
+<li>ระบบ unpack packed JavaScript ใน player เพื่อหา config ของ JWPlayer</li>
+<li>ดึง stream URL จริงจาก <code>playlist/sources/file</code></li>
+<li>เริ่มดาวน์โหลดไฟล์ตอนต่าง ๆ</li>
+<li>ถ้ามีแค่ 1 ตอน ระบบ rename เป็นชื่อเรื่องปลายทาง</li>
+<li>บันทึกผลลัพธ์ลงโฟลเดอร์ดาวน์โหลดย่อย <code>avkuy/</code></li>
+</ol>
+<h2 id="รายละเอียด-extraction">รายละเอียด extraction</h2>
+<h3 id="1-parse-หน้าโพสต์">1. Parse หน้าโพสต์</h3>
+<p>หน้า <code>www2.avkuy.com</code> ไม่ได้เปิดเผยไฟล์วิดีโอตรง ๆ แต่จะฝัง player ผ่าน <code>iframe</code></p>
+<p>สิ่งที่ต้องดึงจากหน้าโพสต์:</p>
+<ul>
+<li>ชื่อเรื่อง</li>
+<li>thumbnail/poster</li>
+<li>URL ของ iframe player</li>
+</ul>
+<p>ตัวอย่าง iframe ที่พบ:</p>
+<pre><code class="language-text">https://av-kuy.com/v/LQ76ROcLox2aZSg?sid=17081&amp;t=hls
+</code></pre>
+<h3 id="2-webview-pass">2. WebView pass</h3>
+<p>ระบบเริ่มจาก WebView extraction ก่อน เพราะบางครั้งสามารถเห็น network/player state ได้เลยโดยไม่ต้องใช้ fallback</p>
+<p>ถ้า WebView scan ยังไม่พอ:</p>
+<ul>
+<li>log จะขึ้นลักษณะ <code>AVKuy player scan X/14...</code></li>
+<li>จากนั้นระบบจะ fallback ไป <code>Chrome detector</code></li>
+</ul>
+<h3 id="3-chrome-detector--cookie-harvesting">3. Chrome detector + cookie harvesting</h3>
+<p>หน้า <code>av-kuy.com/v/...</code> มีการป้องกันเพิ่มอีกชั้นหนึ่ง ถ้าเปิดตรง ๆ อาจเห็นเพียงภาพหรือหน้า challenge แทน player จริง</p>
+<p>จุดสำคัญคือ:</p>
+<ul>
+<li>ต้องเก็บ cookie จาก browser context</li>
+<li>โดยเฉพาะ <code>cf_clearance</code></li>
+<li>ใช้ <code>tab.get_cookies()</code> เพื่อให้เก็บ HttpOnly cookie ได้ด้วย</li>
+</ul>
+<h3 id="4-fetch-player-html-ด้วย-cookie">4. Fetch player HTML ด้วย cookie</h3>
+<p>เมื่อมี cookie แล้ว backend จะร้องขอหน้า player ซ้ำอีกครั้งแบบมี session/cookie เดิม ทำให้ได้ HTML ของ player จริงแทนหน้า block/challenge</p>
+<h3 id="5-unpack-packed-js">5. Unpack packed JS</h3>
+<p>ในหน้า player จริง config มักถูก pack/minify ไว้ จึงต้อง:</p>
+<ul>
+<li>หา script ที่มี player config</li>
+<li>unpack โค้ด</li>
+<li>อ่านค่าใน JWPlayer config</li>
+</ul>
+<p>ค่าที่เราต้องการหลัก ๆ คือ:</p>
+<ul>
+<li><code>sources[].file</code></li>
+<li><code>image</code></li>
+</ul>
+<p>ตัวอย่าง stream URL ที่แกะได้จากเคสทดสอบ:</p>
+<pre><code class="language-text">https://cache11224510.kuylive.com/hls/U0FFd2Njdy9yZ283M3JLYjFzS0h0dz09/xfgdYshjhYhj=!sdsHsyG
+</code></pre>
+<h2 id="ขั้นตอนการดาวน์โหลดในแอป">ขั้นตอนการดาวน์โหลดในแอป</h2>
+<ol>
+<li>Auto-detect หรือ paste URL หน้าโพสต์</li>
+<li>กด load/analyze</li>
+<li>ระบบดึง metadata และ stream URL</li>
+<li>แสดง title และ thumbnail ใน UI</li>
+<li>cache video URL ที่ตรวจพบ</li>
+<li>กด download</li>
+<li>ดาวน์โหลดเป็นไฟล์ชั่วคราว เช่น <code>ep_001.mp4</code></li>
+<li>ถ้าเปิด auto-merge:
+<ul>
+<li>ถ้ามีไฟล์เดียว จะ rename เป็นชื่อเรื่อง</li>
+<li>ถ้ามีหลายไฟล์ จะ merge ผ่าน <code>ffmpeg</code></li>
+</ul>
+</li>
+</ol>
+<h2 id="โฟลเดอร์ปลายทาง">โฟลเดอร์ปลายทาง</h2>
+<p>ระบบแยกไฟล์ AVKuy ลงโฟลเดอร์ย่อย:</p>
+<pre><code class="language-text">&lt;download_dir&gt;/avkuy/
+</code></pre>
+<p>จาก log ที่ทดสอบจริง:</p>
+<pre><code class="language-text">/Volumes/Media/_VDO_download/avkuy/
+</code></pre>
+<h2 id="ตัวอย่าง-log-ที่ถือว่า-flow-สำเร็จ">ตัวอย่าง log ที่ถือว่า flow สำเร็จ</h2>
+<p>ลำดับสำคัญที่ควรเห็น:</p>
+<pre><code class="language-text">AVKuy player scan 1/14...
+...
+WebView not enough, falling back to Chrome detector...
+Detecting video from: https://av-kuy.com/v/LQ76ROcLox2aZSg?sid=17081&amp;t=hls
+Chrome detector found no video on AVKuy player page
+Trying AVKuy player HTML extraction...
+Found AVKuy stream via player HTML: https://cache11224510.kuylive.com/...
+Auto-loaded: [title] (1 episodes)
+Cached 1 video URLs
+Starting download of 1 episodes...
+Episode 1 downloaded
+Merged to: /Volumes/Media/_VDO_download/avkuy/[title].mp4
+</code></pre>
+<h2 id="จุดที่ต้องระวัง">จุดที่ต้องระวัง</h2>
+<ul>
+<li>เปิด iframe URL ตรง ๆ อาจไม่ช่วย เพราะมักเจอแค่ภาพหรือหน้า block</li>
+<li>ตัวชี้ขาดคือ cookie/session จาก browser context</li>
+<li>ห้ามพึ่ง DOM extraction อย่างเดียวสำหรับ <code>av-kuy.com</code></li>
+<li>ถ้า player เปลี่ยนรูปแบบ packed script หรือ JWPlayer config อาจต้องปรับ parser</li>
+</ul>
+<h2 id="สรุปเชิงเทคนิค">สรุปเชิงเทคนิค</h2>
+<p>workflow ของ AVKuy ที่ใช้จริงคือ:</p>
+<p><code>post page -&gt; extract iframe/meta -&gt; WebView scan -&gt; Chrome cookie harvest -&gt; fetch player HTML -&gt; unpack JWPlayer config -&gt; resolve stream URL -&gt; download -&gt; merge/rename -&gt; save under avkuy/</code></p>
+
+            
+            
+        </body>
+        </html>
