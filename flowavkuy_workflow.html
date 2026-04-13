@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>AVKuy&period;com Download Workflow</title>
+            <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only],
+.vscode-high-contrast:not(.vscode-high-contrast-light) img[src$=\#gh-light-mode-only],
+.vscode-high-contrast-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+            
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 12px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+<style>
+:root {
+  --color-note: #0969da;
+  --color-tip: #1a7f37;
+  --color-warning: #9a6700;
+  --color-severe: #bc4c00;
+  --color-caution: #d1242f;
+  --color-important: #8250df;
+}
+
+</style>
+<style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-note: #2f81f7;
+    --color-tip: #3fb950;
+    --color-warning: #d29922;
+    --color-severe: #db6d28;
+    --color-caution: #f85149;
+    --color-important: #a371f7;
+  }
+}
+
+</style>
+<style>
+.markdown-alert {
+  padding: 0.5rem 1rem;
+  margin-bottom: 16px;
+  color: inherit;
+  border-left: .25em solid #888;
+}
+
+.markdown-alert>:first-child {
+  margin-top: 0
+}
+
+.markdown-alert>:last-child {
+  margin-bottom: 0
+}
+
+.markdown-alert .markdown-alert-title {
+  display: flex;
+  font-weight: 500;
+  align-items: center;
+  line-height: 1
+}
+
+.markdown-alert .markdown-alert-title .octicon {
+  margin-right: 0.5rem;
+  display: inline-block;
+  overflow: visible !important;
+  vertical-align: text-bottom;
+  fill: currentColor;
+}
+
+.markdown-alert.markdown-alert-note {
+  border-left-color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-important {
+  border-left-color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-warning {
+  border-left-color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-tip {
+  border-left-color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-caution {
+  border-left-color: var(--color-caution);
+}
+
+.markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: var(--color-caution);
+}
+
+</style>
+        
+        </head>
+        <body class="vscode-body vscode-light">
+            <h1 id="avkuycom-download-workflow"><a href="http://AVKuy.com">AVKuy.com</a> Download Workflow</h1>
+<h2 id="overview">Overview</h2>
+<p>AVKuy (<a href="http://www2.avkuy.com">www2.avkuy.com</a> / <a href="http://av-kuy.com">av-kuy.com</a>) เป็นเว็บที่มี Cloudflare protection และใช้ iframe player ฝังตัวจาก <a href="http://av-kuy.com">av-kuy.com</a> เพื่อเล่นวิดีโอ ระบบใช้กลยุทธ์ 3 ชั้นเพื่อดึง video URL ออกมา:</p>
+<ol>
+<li><strong>Tauri WebView</strong> (primary) - ใช้ WKWebView จริงข้าม Cloudflare ได้ดีกว่า</li>
+<li><strong>Chrome Detector</strong> (fallback) - ใช้ headless Chrome CDP</li>
+<li><strong>HTTP + Packer Unpack</strong> (last resort) - ใช้ reqwest ดึง HTML แล้ว unpack JavaScript packer</li>
+</ol>
+<hr>
+<h2 id="flow-diagram">Flow Diagram</h2>
+<pre><code>User paste URL (e.g. https://www2.avkuy.com/avsubthai-adn-750/)
+        |
+        v
+[URL Detection] -- avkuy.com / av-kuy.com ตรงกับไหม?
+        |
+        +-- NO --&gt; ไป parser อื่น (rongyok, hsck, njav, etc.)
+        |
+        +-- YES --&gt; [Strategy 1: Tauri WebView]
+                        |
+                        v
+                   [Phase A: Main Page Extraction]
+                        |
+                        v
+                   +---------------------------+
+                   | Create WebView Window     |
+                   | (off-screen, 1024x768)    |
+                   | Load avkuy.com URL        |
+                   +---------------------------+
+                        |
+                        v
+                   [Wait for Cloudflare]
+                   (ตรวจจับ &quot;Just a moment&quot; / challenge-running)
+                   (poll 20 รอบ, 2.5s/รอบ = ~50s max)
+                        |
+                        v
+                   [Extract Metadata via JS]
+                   - title: og:title / h1 / document.title
+                   - poster: og:image / twitter:image / video[poster]
+                   - iframe: iframe[src*='av-kuy.com/v/']
+                        |
+                        v
+                   +-----+------+
+                   | iframe URL |--- YES --&gt; [Phase B: Player Page]
+                   |  พบ?       |                |
+                   +-----+------+                v
+                         | NO               +---------------------------+
+                         |                  | Open iframe URL in new    |
+                         v                  | WebView window            |
+                   [Strategy 2: Chrome]     +---------------------------+
+                                              |
+                                              v
+                                         [Setup PerformanceObserver]
+                                         (monitor .m3u8 / .mp4 requests)
+                                              |
+                                              v
+                                         [Click + Poll Loop]
+                                         (click play buttons, video, poster)
+                                         (poll 14 รอบ, ~2.6s/รอบ)
+                                              |
+                                              v
+                                         +----------+
+                                         | Video URL |--- YES --&gt; return
+                                         | .m3u8/.mp4|              |
+                                         |  พบ?      |              v
+                                         +-----+-----+     [Build UnifiedSeriesInfo]
+                                               | NO         - title
+                                               v            - poster_url
+                                         [window close]     - episode_urls[1] = video_url
+                                                            - source: &quot;avkuy&quot;
+                                                            - cookies
+</code></pre>
+<hr>
+<h2 id="phase-a-main-page-via-webview">Phase A: Main Page via WebView</h2>
+<p><strong>File</strong>: <code>src-tauri/src/lib.rs</code> - <code>fetch_avkuy_via_webview()</code></p>
+<h3 id="step-1-create-hidden-webview-window">Step 1: Create Hidden WebView Window</h3>
+<pre><code class="language-rust"><span class="hljs-comment">// สร้าง window ที่มองไม่เห็น (position -32000,-32000)</span>
+<span class="hljs-keyword">let</span> <span class="hljs-variable">window</span> = WebviewWindowBuilder::<span class="hljs-title function_ invoke__">new</span>(app_handle, <span class="hljs-string">&quot;avkuy-helper&quot;</span>, WebviewUrl::<span class="hljs-title function_ invoke__">External</span>(url))
+    .<span class="hljs-title function_ invoke__">inner_size</span>(<span class="hljs-number">1024.0</span>, <span class="hljs-number">768.0</span>)
+    .<span class="hljs-title function_ invoke__">position</span>(-<span class="hljs-number">32000.0</span>, -<span class="hljs-number">32000.0</span>)
+    .<span class="hljs-title function_ invoke__">visible</span>(<span class="hljs-literal">true</span>)
+    .<span class="hljs-title function_ invoke__">decorations</span>(<span class="hljs-literal">false</span>)
+    .<span class="hljs-title function_ invoke__">build</span>();
+</code></pre>
+<h3 id="step-2-wait--poll-for-metadata">Step 2: Wait &amp; Poll for Metadata</h3>
+<p>JavaScript injection ทำงาน 2 อย่าง:</p>
+<ul>
+<li><strong>ตรวจ Cloudflare</strong>: ดู <code>document.title</code> มี &quot;just a moment&quot; หรือ <code>#challenge-running</code> อยู่</li>
+<li><strong>ดึง metadata</strong>: เมื่อ Cloudflare ผ่านแล้ว ดึง title, poster, iframe URL</li>
+</ul>
+<p>การสื่อสารระหว่าง WebView -&gt; Rust ใช้ <strong>location.hash side-channel</strong>:</p>
+<ul>
+<li><code>#ak_status=cf</code> = กำลังรอ Cloudflare</li>
+<li><code>#ak_meta={json}</code> = metadata พร้อมแล้ว</li>
+</ul>
+<pre><code class="language-javascript"><span class="hljs-comment">// ตัวอย่าง payload ที่ส่งผ่าน hash</span>
+{
+  <span class="hljs-string">&quot;title&quot;</span>: <span class="hljs-string">&quot;AVSUBTHAI ADN-750 ...&quot;</span>,
+  <span class="hljs-string">&quot;poster&quot;</span>: <span class="hljs-string">&quot;https://avkuy.com/wp-content/uploads/...&quot;</span>,
+  <span class="hljs-string">&quot;iframe&quot;</span>: <span class="hljs-string">&quot;https://av-kuy.com/v/xxxxx&quot;</span>
+}
+</code></pre>
+<h3 id="step-3-timeout">Step 3: Timeout</h3>
+<p>Poll สูงสุด 20 รอบ (รอบละ ~2.5 วินาที) = <strong>~50 วินาที</strong> สำหรับ Cloudflare</p>
+<hr>
+<h2 id="phase-b-player-page-via-webview">Phase B: Player Page via WebView</h2>
+<p><strong>File</strong>: <code>src-tauri/src/lib.rs</code> - <code>fetch_avkuy_via_webview()</code> (ต่อ)</p>
+<h3 id="step-1-close-main-window-open-player-window">Step 1: Close Main Window, Open Player Window</h3>
+<pre><code class="language-rust"><span class="hljs-keyword">let</span> <span class="hljs-variable">_</span> = window.<span class="hljs-title function_ invoke__">close</span>();  <span class="hljs-comment">// ปิด main page window</span>
+<span class="hljs-comment">// เปิดใหม่ด้วย iframe URL เช่น https://av-kuy.com/v/xxxxx</span>
+<span class="hljs-keyword">let</span> <span class="hljs-variable">window2</span> = WebviewWindowBuilder::<span class="hljs-title function_ invoke__">new</span>(app_handle, <span class="hljs-string">&quot;avkuy-helper&quot;</span>, WebviewUrl::<span class="hljs-title function_ invoke__">External</span>(iframe_url))
+    .<span class="hljs-title function_ invoke__">build</span>();
+</code></pre>
+<h3 id="step-2-monitor-network-requests">Step 2: Monitor Network Requests</h3>
+<p>ใช้ <code>PerformanceObserver</code> ติดตาม resource requests:</p>
+<pre><code class="language-javascript"><span class="hljs-comment">// ตั้ง observer จับ .m3u8 / .mp4 requests</span>
+<span class="hljs-keyword">const</span> o = <span class="hljs-keyword">new</span> <span class="hljs-title class_">PerformanceObserver</span>(<span class="hljs-function">(<span class="hljs-params">list</span>) =&gt;</span> {
+    list.<span class="hljs-title function_">getEntries</span>().<span class="hljs-title function_">forEach</span>(<span class="hljs-function"><span class="hljs-params">e</span> =&gt;</span> {
+        <span class="hljs-keyword">if</span> (e.<span class="hljs-property">name</span>.<span class="hljs-title function_">includes</span>(<span class="hljs-string">&#x27;.m3u8&#x27;</span>) || e.<span class="hljs-property">name</span>.<span class="hljs-title function_">includes</span>(<span class="hljs-string">&#x27;.mp4&#x27;</span>))
+            <span class="hljs-variable language_">window</span>.<span class="hljs-property">__FOUND_URLS</span>.<span class="hljs-title function_">push</span>(e.<span class="hljs-property">name</span>);
+    });
+});
+o.<span class="hljs-title function_">observe</span>({ <span class="hljs-attr">entryTypes</span>: [<span class="hljs-string">&#x27;resource&#x27;</span>] });
+</code></pre>
+<h3 id="step-3-click--poll">Step 3: Click + Poll</h3>
+<ul>
+<li><strong>Click JS</strong>: คลิกทุก element ที่เป็น <code>button, video, .jw-poster, .jw-display-icon-container</code></li>
+<li><strong>Check JS</strong>: อ่าน <code>window.__FOUND_URLS</code> หรือ regex หา <code>.m3u8</code> ใน HTML</li>
+<li><strong>Communication</strong>: <code>#ak_video={encoded_url}</code></li>
+<li><strong>Poll</strong>: 14 รอบ x ~2.6s = <strong>~36 วินาที</strong> max</li>
+</ul>
+<h3 id="step-4-return-result">Step 4: Return Result</h3>
+<pre><code class="language-rust">AvkuyWebviewResult {
+    title: <span class="hljs-title function_ invoke__">Some</span>(<span class="hljs-string">&quot;AVSUBTHAI ADN-750 ...&quot;</span>),
+    poster_url: <span class="hljs-title function_ invoke__">Some</span>(<span class="hljs-string">&quot;https://...&quot;</span>),
+    iframe_url: <span class="hljs-title function_ invoke__">Some</span>(<span class="hljs-string">&quot;https://av-kuy.com/v/xxxxx&quot;</span>),
+    video_url: <span class="hljs-title function_ invoke__">Some</span>(<span class="hljs-string">&quot;https://cdn.xxx/xxx.m3u8&quot;</span>),  <span class="hljs-comment">// &lt;&lt; สิ่งที่ต้องการ</span>
+}
+</code></pre>
+<hr>
+<h2 id="strategy-2-chrome-detector-fallback">Strategy 2: Chrome Detector Fallback</h2>
+<p><strong>File</strong>: <code>src-tauri/src/chrome_detector.rs</code> - <code>detect_video_url()</code></p>
+<p>ถ้า WebView หา video URL ไม่ได้ จะใช้ Chrome Detector:</p>
+<h3 id="flow">Flow</h3>
+<pre><code>Chrome Detector (headless Chrome CDP)
+        |
+        v
+[Navigate to URL / iframe URL]
+        |
+        v
+[Wait for Cloudflare] (wait_for_cloudflare, max 60s)
+        |
+        v
+[Cloudflare ผ่านแล้ว - ตรวจสอบว่าไม่หลุดไป homepage]
+        |
+        v
++-------+--------+
+| Video URL บน   |--- YES --&gt; return URL
+| main page?      |
++-------+--------+
+        | NO
+        v
+[Click + Poll 8 รอบ บน main page]
+        |
+        v
++-------+--------+
+| พบ?             |--- YES --&gt; return URL
++-------+--------+
+        | NO
+        v
+[Extract iframe URL จาก DOM]
+(ดู iframe[src*='av-kuy.com/v/'] หรือ regex ใน HTML)
+        |
+        v
++-------+--------+
+| iframe พบ?      |--- NO --&gt; general detection fallback
++-------+--------+
+        | YES
+        v
+[Navigate to iframe URL]
+        |
+        v
+[Handle Cloudflare on iframe page]
+(บางครั้ง iframe URL ก็มี Cloudflare ของตัวเอง)
+        |
+        v
+[Setup observer + Click + Poll 10 รอบ]
+        |
+        v
++-------+--------+
+| .m3u8 / .mp4?   |--- YES --&gt; return URL
++-------+--------+
+        | NO
+        v
+[General detection fallback]
+</code></pre>
+<hr>
+<h2 id="strategy-3-http--packer-unpack-last-resort">Strategy 3: HTTP + Packer Unpack (Last Resort)</h2>
+<p><strong>File</strong>: <code>src-tauri/src/lib.rs</code> - <code>fetch_avkuy_stream_from_player_page()</code></p>
+<p>ใช้เมื่อทั้ง WebView และ Chrome detector หา video URL ไม่ได้ แต่ iframe URL มีอยู่:</p>
+<h3 id="flow-1">Flow</h3>
+<pre><code>[มี iframe URL] เช่น https://av-kuy.com/v/xxxxx
+        |
+        v
+[reqwest GET iframe URL]
+- User-Agent: Chrome
+- Referer: avkuy.com post URL
+- Cookie: ใช้ cookie จาก Chrome detector
+        |
+        v
+[Unpack JavaScript Packer]
+- หา obfuscated packer pattern: function(p,a,c,k,e,d){...}
+- ถอดรหัส base-N encoded strings
+        |
+        v
+[Extract from unpacked JS]
+- file: &quot;https://cdn.xxx/stream.m3u8&quot;
+- image: &quot;https://cdn.xxx/poster.jpg&quot;
+        |
+        v
+return (stream_url, poster_url)
+</code></pre>
+<h3 id="packer-unpack-algorithm">Packer Unpack Algorithm</h3>
+<pre><code>Input:  obfuscated packer call with packed_string, radix, count, dictionary
+        |
+        v
+[Base-N decode] แปลง key เป็น keyword ด้วย radix-based encoding
+        |
+        v
+[Replace keywords] แทนที่ keys ด้วย decoded words
+        |
+        v
+Output: unpacked JavaScript containing 'file': 'https://....m3u8'
+</code></pre>
+<hr>
+<h2 id="download-phase">Download Phase</h2>
+<p><strong>File</strong>: <code>src-tauri/src/lib.rs</code> - <code>start_download()</code></p>
+<p>เมื่อได้ <code>UnifiedSeriesInfo</code> แล้ว:</p>
+<pre><code>[UnifiedSeriesInfo]
+  - title: &quot;AVSUBTHAI ADN-750 ...&quot;
+  - poster_url: &quot;https://...&quot;
+  - episode_urls: { 1: &quot;https://cdn.xxx/stream.m3u8&quot; }
+  - source: &quot;avkuy&quot;
+  - cookies: [(cf_clearance, xxx), ...]
+        |
+        v
+[User clicks Download]
+        |
+        v
+[Create output directory]
+  - group_by_source=true --&gt; {output_dir}/avkuy/
+  - group_by_source=false --&gt; {output_dir}/
+        |
+        v
+[HLS Download (.m3u8)]
+  - ใช้ cookies สำหรับ CDN authentication
+  - referer = source_url (avkuy post URL)
+  - Decrypt AES-128 segments (ถ้ามี HLS key)
+  - Merge TS segments into final .mp4
+        |
+        v
+[Progress events emitted to frontend]
+  - download-progress: { episode, percent, speed }
+  - download-complete: { episode, path }
+</code></pre>
+<hr>
+<h2 id="url-detection-logic">URL Detection Logic</h2>
+<pre><code class="language-rust"><span class="hljs-comment">// ใน get_series_info() และ auto_detect_video_url()</span>
+<span class="hljs-keyword">let</span> <span class="hljs-variable">is_avkuy</span> = settings.avkuy_domain.<span class="hljs-title function_ invoke__">split</span>(<span class="hljs-string">&#x27;,&#x27;</span>)
+    .<span class="hljs-title function_ invoke__">map</span>(|d| d.<span class="hljs-title function_ invoke__">trim</span>())
+    .<span class="hljs-title function_ invoke__">any</span>(|d| !d.<span class="hljs-title function_ invoke__">is_empty</span>() &amp;&amp; url.<span class="hljs-title function_ invoke__">contains</span>(d))
+    || url.<span class="hljs-title function_ invoke__">contains</span>(<span class="hljs-string">&quot;avkuy.com&quot;</span>)
+    || url.<span class="hljs-title function_ invoke__">contains</span>(<span class="hljs-string">&quot;av-kuy.com&quot;</span>);
+</code></pre>
+<p>Default domain: <code>www2.avkuy.com</code> (configurable ใน Settings)</p>
+<hr>
+<h2 id="key-code-locations">Key Code Locations</h2>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>File</th>
+<th>Function/Section</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>WebView extractor</td>
+<td><code>src-tauri/src/lib.rs:225</code></td>
+<td><code>fetch_avkuy_via_webview()</code></td>
+</tr>
+<tr>
+<td>Packer unpacker</td>
+<td><code>src-tauri/src/lib.rs:134</code></td>
+<td><code>unpack_packer_script()</code></td>
+</tr>
+<tr>
+<td>Player HTML extractor</td>
+<td><code>src-tauri/src/lib.rs:164</code></td>
+<td><code>extract_avkuy_stream_from_player_html()</code></td>
+</tr>
+<tr>
+<td>HTTP player fetcher</td>
+<td><code>src-tauri/src/lib.rs:183</code></td>
+<td><code>fetch_avkuy_stream_from_player_page()</code></td>
+</tr>
+<tr>
+<td>Chrome fallback</td>
+<td><code>src-tauri/src/chrome_detector.rs:606</code></td>
+<td>avkuy section in <code>detect_video_url()</code></td>
+</tr>
+<tr>
+<td>Main entry point</td>
+<td><code>src-tauri/src/lib.rs:921</code></td>
+<td>avkuy section in <code>get_series_info()</code></td>
+</tr>
+<tr>
+<td>Auto-detect</td>
+<td><code>src-tauri/src/lib.rs:1107</code></td>
+<td>avkuy check in <code>auto_detect_video_url()</code></td>
+</tr>
+<tr>
+<td>Download handler</td>
+<td><code>src-tauri/src/lib.rs:1128</code></td>
+<td><code>start_download()</code></td>
+</tr>
+<tr>
+<td>Domain config</td>
+<td><code>src-tauri/src/lib.rs:507</code></td>
+<td><code>DomainSettings.avkuy_domain</code></td>
+</tr>
+<tr>
+<td>TypeScript type</td>
+<td><code>src/types/index.ts:59</code></td>
+<td><code>avkuyDomain?: string</code></td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="error-scenarios">Error Scenarios</h2>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Cause</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cloudflare timeout (50s)</td>
+<td>ไม่ผ่าน challenge</td>
+<td>WebView returns empty, fallback to Chrome</td>
+</tr>
+<tr>
+<td>iframe URL ไม่พบ</td>
+<td>หน้าเว็บเปลี่ยนโครงสร้าง</td>
+<td>WebView returns no iframe, Chrome tries harder</td>
+</tr>
+<tr>
+<td>Player page ไม่มี video</td>
+<td>dead link / region blocked</td>
+<td>Error: &quot;Could not find video URL on avkuy page&quot;</td>
+</tr>
+<tr>
+<td>Packer ถอดไม่ได้</td>
+<td>JS obfuscation เปลี่ยนรูปแบบ</td>
+<td>Returns None, strategy 3 ข้าม</td>
+</tr>
+<tr>
+<td>Cloudflare redirect to homepage</td>
+<td>Challenge ผ่านแต่ redirect ผิด</td>
+<td>Chrome detector navigate back to original URL</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="debugging">Debugging</h2>
+<h3 id="webview-debug-log">WebView Debug Log</h3>
+<pre><code>~/Library/Application Support/com.rongyok.downloader/webview_debug.log
+</code></pre>
+<h3 id="chrome-detector-stderr">Chrome Detector Stderr</h3>
+<pre><code>[ChromeDetector] avkuy detected - resolving iframe player
+[ChromeDetector] avkuy: Found URL on main page: https://...
+</code></pre>
+<h3 id="frontend-log-events">Frontend Log Events</h3>
+<pre><code>&quot;Detected avkuy - using WebView extractor...&quot;
+&quot;Found AVKuy video via WebView: https://...&quot;
+&quot;WebView not enough, falling back to Chrome detector...&quot;
+&quot;Trying AVKuy player HTML extraction...&quot;
+&quot;Found AVKuy stream via player HTML: https://...&quot;
+</code></pre>
+
+            
+            
+        </body>
+        </html>

@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"rtk tsc --noEmit 2>&1\",\"timeout\":30000,\"description\":\"Verify TypeScript compiles cleanly\"}",
+  "error": "Exit code 2\nTypeScript: 9 errors in 1 files\n═══════════════════════════════════════\nTop codes: TS2451 (4x), TS2552 (4x), TS6133 (1x)\n\nsrc/App.tsx (9 errors)\n  L125: TS2451 Cannot redeclare block-scoped variable 'isBatchItemRunning'.\n  L125: TS2451 Cannot redeclare block-scoped variable 'setIsBatchItemRunning'.\n  L498: TS2552 Cannot find name 'isBatchItemRunningRef'. Did you mean 'isBatchItemRunning'?\n  L609: TS2451 Cannot redeclare block-scoped variable 'isBatchItemRunning'.\n  L609: TS2451 Canno...",
+  "timestamp": "2026-04-13T04:11:13.546Z",
+  "retry_count": 1
+}

@@ -679,6 +679,9 @@ function App() {
       processItem();
     }
   }, [batchQueue, isBatchProcessing, downloadState.isDownloading, isBatchItemRunning, runDownload]);
+
+  const handlePause = useCallback(async () => {
+    if (downloadState.currentEpisode === 0) {
       warning("No episode currently downloading");
       return;
     }
@@ -989,6 +992,9 @@ function App() {
       unsubscribers.forEach(unsub => unsub());
     };
   };
+
+  const checkFfmpeg = async () => {
+    try {
       const available = await invoke<boolean>("check_ffmpeg_available");
       setFfmpegAvailable(available);
       if (available) {
