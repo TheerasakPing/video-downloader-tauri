@@ -1840,13 +1840,21 @@ async fn cmd_refetch_series(
 
 #[tauri::command]
 fn cmd_get_proxy_config(state: State<'_, AppState>) -> Result<proxy::ProxyConfig, String> {
-    let config = state.rongyok_parser.proxy_config.read().unwrap();
+    let config = state.rongyok_parser.proxy_config.read()
+        .unwrap_or_else(|e| {
+            eprintln!("Warning: RwLock poisoned, recovering...");
+            e.into_inner()
+        });
     Ok(config.clone())
 }
 
 #[tauri::command]
 fn cmd_save_proxy_config(state: State<'_, AppState>, config: proxy::ProxyConfig) -> Result<(), String> {
-    let mut pc = state.rongyok_parser.proxy_config.write().unwrap();
+    let mut pc = state.rongyok_parser.proxy_config.write()
+        .unwrap_or_else(|e| {
+            eprintln!("Warning: RwLock poisoned, recovering...");
+            e.into_inner()
+        });
     *pc = config;
     Ok(())
 }

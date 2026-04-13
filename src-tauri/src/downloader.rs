@@ -405,8 +405,28 @@ impl VideoDownloader {
                 };
             }
         };
-        let key_arr: [u8; 16] = key_bytes.try_into().unwrap();
-        let iv_arr:  [u8; 16] = iv_bytes.try_into().unwrap();
+        let key_arr: [u8; 16] = match key_bytes.clone().try_into() {
+            Ok(arr) => arr,
+            Err(_) => {
+                return DownloadResult {
+                    episode,
+                    success: false,
+                    file_path: None,
+                    error: Some(format!("Failed to convert key bytes to [u8; 16]: got {} bytes", key_bytes.len())),
+                };
+            }
+        };
+        let iv_arr: [u8; 16] = match iv_bytes.clone().try_into() {
+            Ok(arr) => arr,
+            Err(_) => {
+                return DownloadResult {
+                    episode,
+                    success: false,
+                    file_path: None,
+                    error: Some(format!("Failed to convert IV bytes to [u8; 16]: got {} bytes", iv_bytes.len())),
+                };
+            }
+        };
 
         // ── Fetch H.264 variant playlist ────────────────────────────────
         let v1_m3u8_url = format!("{}/v1/index.m3u8", key_info.hls_base_url);
@@ -747,7 +767,18 @@ impl VideoDownloader {
             },
         };
 
-        let stderr = child.stderr.take().unwrap();
+        let stderr = match child.stderr.take() {
+            Some(s) => s,
+            None => {
+                let _ = child.kill();
+                return DownloadResult {
+                    episode,
+                    success: false,
+                    file_path: None,
+                    error: Some("Failed to capture FFmpeg stderr output".to_string()),
+                };
+            }
+        };
         let reader = BufReader::new(stderr);
         let mut last_emit = std::time::Instant::now();
 
@@ -887,13 +918,19 @@ impl VideoDownloader {
             .map(|s| s.to_string())
             .unwrap_or_else(|| Self::derive_referer_from_hls_url(master_url));
         let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+        let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
         // Build HTTP client for segment downloads
         let seg_client = Client::builder()
             .user_agent(ua)
             .default_headers({
                 let mut headers = reqwest::header::HeaderMap::new();
-                headers.insert("Referer", effective_referer.parse().unwrap());
+                // Handle referer parse error gracefully
+                if let Ok(referer_val) = effective_referer.parse() {
+                    headers.insert("Referer", referer_val);
+                } else {
+                    eprintln!("Warning: Invalid referer URL '{}', continuing without Referer header", effective_referer);
+                }
                 if !cookies.is_empty() {
                     let cookie_header = cookies
                         .iter()
@@ -1884,4 +1921,3 @@ fn merge_videos_reencode(video_files: Vec<String>, output_path: &str, app_handle
     }
 }
 
-// Sanitize filename helper moved to utils.rs

@@ -122,7 +122,7 @@ function App() {
   const [batchQueue, setBatchQueue] = useState<BatchItem[]>([]);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [isAutoCapture, setIsAutoCapture] = useState(false);
-  const isBatchItemRunningRef = useRef(false);
+  const [isBatchItemRunning, setIsBatchItemRunning] = useState(false);
 
   const [mergeState, setMergeState] = useState<{
     isMerging: boolean;
@@ -605,13 +605,16 @@ function App() {
   }, [batchQueue, isFetching, log, error]);
 
   // Continuous Batch Processing
+  // State for batch processing
+  const [isBatchItemRunning, setIsBatchItemRunning] = useState(false);
+
   useEffect(() => {
     // Console log is safe (doesn't trigger re-render)
     // console.log(`Queue Check: Processing=${isBatchProcessing}, Downloading=${downloadState.isDownloading}`);
 
     if (!isBatchProcessing) return;
     if (downloadState.isDownloading) return;
-    if (isBatchItemRunningRef.current) return;
+    if (isBatchItemRunning) return;
 
     // Disabled check to prevent stale status deadlock
     // const isAnyDownloading = batchQueue.some((i) => i.status === "downloading");
@@ -627,7 +630,7 @@ function App() {
       const processItem = async () => {
         // Use console.log to avoid infinite render loops
         console.log(`Processing batch item: ${item.info?.title}`);
-        isBatchItemRunningRef.current = true;
+        setIsBatchItemRunning(true);
 
         // Mark as downloading
         setBatchQueue((prev) =>
@@ -637,12 +640,17 @@ function App() {
         );
 
         try {
+          // Check if item.info exists before using it
+          if (!item.info) {
+            throw new Error("Series info missing for batch item");
+          }
+
           const allEpisodes = new Set(
-            Array.from({ length: item.info!.totalEpisodes }, (_, i) => i + 1),
+            Array.from({ length: item.info.totalEpisodes }, (_, i) => i + 1),
           );
 
           // runDownload now fetches series info internally to ensure consistency
-          const success = await runDownload(item.info!, allEpisodes);
+          const success = await runDownload(item.info, allEpisodes);
 
           console.log(`Batch item finished found success=${success}`);
 
@@ -664,20 +672,13 @@ function App() {
             ),
           );
         } finally {
-          isBatchItemRunningRef.current = false;
+          setIsBatchItemRunning(false);
         }
       };
 
       processItem();
     }
-  }, [batchQueue, isBatchProcessing, downloadState.isDownloading, runDownload]);
-
-  const toggleBatchProcessing = () => {
-    setIsBatchProcessing((prev) => !prev);
-  };
-
-  const handlePause = useCallback(async () => {
-    if (downloadState.currentEpisode === 0) {
+  }, [batchQueue, isBatchProcessing, downloadState.isDownloading, isBatchItemRunning, runDownload]);
       warning("No episode currently downloading");
       return;
     }
@@ -808,10 +809,21 @@ function App() {
 
     log("Application started");
     checkFFmpeg();
-    setupEventListeners();
+    
+    let cleanup: (() => void) | undefined;
+    setupEventListeners().then(fn => {
+      cleanup = fn;
+    }).catch(err => {
+      error(`Failed to setup event listeners: ${err}`);
+    });
 
     // Auto-paste from clipboard on startup
     autoFetchFromClipboard();
+    
+    // Return cleanup function
+    return () => {
+      cleanup?.();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domainsLoaded, autoFetchFromClipboard]);
 
@@ -859,7 +871,9 @@ function App() {
   }, [activeTab]);
 
   const setupEventListeners = async () => {
-    await listen<{ message: string; progress: number }>(
+    const unsubscribers: (() => void)[] = [];
+
+    unsubscribers.push(await listen<{ message: string; progress: number }>(
       "detection-progress",
       (event) => {
         setDetectionState({
@@ -874,18 +888,18 @@ function App() {
           }, 2000);
         }
       },
-    );
+    ));
 
-    await listen<DownloadProgress>("download-progress", (event) => {
+    unsubscribers.push(await listen<DownloadProgress>("download-progress", (event) => {
       setProgress(event.payload);
       addDataPoint(event.payload.speed);
       setDownloadState((prev) => ({
         ...prev,
         currentEpisode: event.payload.episode,
       }));
-    });
+    }));
 
-    await listen<DownloadResult>("download-result", (event) => {
+    unsubscribers.push(await listen<DownloadResult>("download-result", (event) => {
       const result = event.payload;
       if (result.success) {
         setDownloadState((prev) => ({
@@ -912,9 +926,9 @@ function App() {
             : q,
         ),
       );
-    });
+    }));
 
-    await listen("merge-started", () => {
+    unsubscribers.push(await listen("merge-started", () => {
       log("Merging videos...");
       setMergeState({
         isMerging: true,
@@ -924,9 +938,9 @@ function App() {
         currentTime: 0,
         totalDuration: 0,
       });
-    });
+    }));
 
-    await listen<{
+    unsubscribers.push(await listen<{
       percentage: number;
       currentTime: number;
       totalDuration: number;
@@ -937,9 +951,9 @@ function App() {
         currentTime: event.payload.currentTime,
         totalDuration: event.payload.totalDuration,
       }));
-    });
+    }));
 
-    await listen<string>("merge-complete", (event) => {
+    unsubscribers.push(await listen<string>("merge-complete", (event) => {
       success(`Merged to: ${event.payload}`);
       setMergeState({
         isMerging: false,
@@ -952,9 +966,9 @@ function App() {
       playNotificationSound();
       showNotification("Merge Complete", "Videos merged successfully!");
       refreshFiles();
-    });
+    }));
 
-    await listen<string>("merge-error", (event) => {
+    unsubscribers.push(await listen<string>("merge-error", (event) => {
       error(`Merge failed: ${event.payload}`);
       setMergeState({
         isMerging: false,
@@ -964,15 +978,17 @@ function App() {
         currentTime: 0,
         totalDuration: 0,
       });
-    });
+    }));
 
-    await listen<string>("log-info", (event) => {
+    unsubscribers.push(await listen<string>("log-info", (event) => {
       log(event.payload);
-    });
-  };
+    }));
 
-  const checkFFmpeg = async () => {
-    try {
+    // Return cleanup function to prevent memory leak
+    return () => {
+      unsubscribers.forEach(unsub => unsub());
+    };
+  };
       const available = await invoke<boolean>("check_ffmpeg_available");
       setFfmpegAvailable(available);
       if (available) {

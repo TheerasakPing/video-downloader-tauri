@@ -4368,7 +4368,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-app"
-version = "1.10.0"
+version = "1.11.0"
 dependencies = [
  "aes",
  "anyhow",
@@ -4379,6 +4379,7 @@ dependencies = [
  "futures-util",
  "headless_chrome",
  "hex",
+ "lazy_static",
  "regex",
  "reqwest",
  "rusqlite",

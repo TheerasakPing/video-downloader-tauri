@@ -5,6 +5,8 @@
 /// - หน้าวิดีโอ: `/view/?id=XXXXXXXX`
 /// - Video URL ฝังใน: `<img id="video_img" src="M3U8_URL" alt="POSTER_URL">`
 /// - Title อยู่ใน `<title>TITLE - 黄色仓库 - hsck123.com</title>`
+
+use lazy_static::lazy_static;
 use regex::Regex;
 use reqwest::Client;
 use scraper::{Html, Selector};
@@ -13,6 +15,23 @@ use std::sync::{Arc, RwLock};
 use crate::proxy;
 use crate::{SearchResult, SiteCategory};
 
+lazy_static! {
+    static ref IMG_SELECTOR: Selector = 
+        Selector::parse("img#video_img").expect("Invalid img selector");
+    static ref TITLE_SELECTOR: Selector = 
+        Selector::parse("title").expect("Invalid title selector");
+    static ref LINK_SELECTOR: Selector = 
+        Selector::parse(r#"a[href*="/view/?id="]"#).expect("Invalid link selector");
+    static ref IMG_SELECTOR_INNER: Selector = 
+        Selector::parse("img").expect("Invalid inner img selector");
+    
+    static ref M3U8_RE: Regex = 
+        Regex::new(r#"https?://[^\s"'<>]+\.m3u8[^\s"'<>]*"#)
+            .expect("Invalid M3U8 regex pattern");
+    static ref TITLE_CLEANUP_RE: Regex = 
+        Regex::new(r"\s*-\s*黄色仓库.*$")
+            .expect("Invalid title cleanup regex pattern");
+}
 #[derive(Debug, Clone)]
 pub struct HsckVideoInfo {
     #[allow(dead_code)]
@@ -100,8 +119,8 @@ impl HsckParser {
 
         // ดึง video URL และ poster จาก <img id="video_img" src="M3U8" alt="POSTER">
         // NOTE: เว็บนี้ใช้ src เป็น video URL และ alt เป็น poster URL (สลับกัน)
-        let img_selector = Selector::parse("img#video_img").unwrap();
-        let (video_url, poster_url) = if let Some(img) = document.select(&img_selector).next() {
+        // Using IMG_SELECTOR from lazy_static
+        let (video_url, poster_url) = if let Some(img) = document.select(&IMG_SELECTOR).next() {
             let src = img.value().attr("src").unwrap_or("").to_string();
             let alt = img.value().attr("alt").map(|s| s.to_string());
             (src, alt)
@@ -128,12 +147,12 @@ impl HsckParser {
 
     /// ดึง title จาก title tag โดยตัด suffix ที่ไม่ต้องการ
     fn extract_title(document: &Html, _html: &str) -> String {
-        let title_selector = Selector::parse("title").unwrap();
-        if let Some(title_el) = document.select(&title_selector).next() {
+        // Using TITLE_SELECTOR from lazy_static
+        if let Some(title_el) = document.select(&TITLE_SELECTOR).next() {
             let raw = title_el.text().collect::<String>();
             // ตัด suffix: " - 黄色仓库 - hsck123.com" หรือ pattern คล้ายกัน
-            let re = Regex::new(r"\s*-\s*黄色仓库.*$").unwrap();
-            let cleaned = re.replace(&raw, "").trim().to_string();
+            // Using TITLE_CLEANUP_RE from lazy_static
+            let cleaned = TITLE_CLEANUP_RE.replace(&raw, "").trim().to_string();
             if !cleaned.is_empty() {
                 return cleaned;
             }
@@ -180,13 +199,13 @@ impl HsckParser {
         let document = Html::parse_document(&html);
 
         // ดึงรายการจาก <a href="/view/?id=XXXXXXXX" title="TITLE">
-        let link_selector = Selector::parse(r#"a[href*="/view/?id="]"#).unwrap();
-        let img_selector_inner = Selector::parse("img").unwrap();
+        // Using LINK_SELECTOR from lazy_static
+        // Using IMG_SELECTOR_INNER from lazy_static
 
         let mut videos: Vec<(String, String, Option<String>)> = Vec::new();
         let mut seen_ids = std::collections::HashSet::new();
 
-        for link in document.select(&link_selector) {
+        for link in document.select(&LINK_SELECTOR) {
             let href = link.value().attr("href").unwrap_or("");
             let id = match Self::parse_video_id(href) {
                 Some(id) => id,
@@ -210,7 +229,7 @@ impl HsckParser {
             }
 
             // ดึง poster จาก img ลูก (data-original หรือ src)
-            let poster = link.select(&img_selector_inner).next().and_then(|img| {
+            let poster = link.select(&IMG_SELECTOR_INNER).next().and_then(|img| {
                 img.value()
                     .attr("data-original")
                     .or_else(|| img.value().attr("src"))
@@ -231,14 +250,14 @@ impl HsckParser {
         let document = Html::parse_document(&html_text);
 
         let mut results = Vec::new();
-        let link_selector = Selector::parse(r#"a[href*="/view/?id="]"#).unwrap();
+        // Using LINK_SELECTOR from lazy_static
 
-        for el in document.select(&link_selector) {
+        for el in document.select(&LINK_SELECTOR) {
             let href = el.value().attr("href").unwrap_or("").to_string();
             let title = el.value().attr("title").unwrap_or("").to_string();
             if title.is_empty() || href.is_empty() { continue; }
 
-            let poster = el.select(&Selector::parse("img").unwrap())
+            let poster = el.select(&IMG_SELECTOR_INNER)
                 .next()
                 .and_then(|img| img.value().attr("data-original").or_else(|| img.value().attr("src")).map(|s| s.to_string()));
 
