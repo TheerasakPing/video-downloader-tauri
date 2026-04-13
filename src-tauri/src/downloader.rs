@@ -280,17 +280,39 @@ impl VideoDownloader {
 
         // Content-based HLS detection: some providers (e.g., avkuy/kuylive)
         // serve HLS playlists without .m3u8 extension. Probe the URL to detect.
+        // Only read first chunk to avoid downloading large files into memory.
         let probe_client = Client::builder()
             .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+            .default_headers({
+                let mut h = reqwest::header::HeaderMap::new();
+                if let Some(ref referer) = referer {
+                    if let Ok(val) = referer.parse() {
+                        h.insert("Referer", val);
+                    }
+                }
+                if !cookies.is_empty() {
+                    let cookie_header = cookies
+                        .iter()
+                        .map(|(k, v)| format!("{}={}", k, v))
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    if let Ok(val) = cookie_header.parse() {
+                        h.insert("Cookie", val);
+                    }
+                }
+                h
+            })
             .build()
             .unwrap_or_default();
-        let is_hls_playlist = if let Ok(resp) = probe_client.get(video_url)
+        let is_hls_playlist = if let Ok(mut resp) = probe_client.get(video_url)
             .timeout(std::time::Duration::from_secs(5))
             .send()
             .await
         {
-            if let Ok(text) = resp.text().await {
-                text.starts_with("#EXTM3U")
+            // Read only the first chunk to check for #EXTM3U prefix
+            if let Ok(Some(chunk)) = resp.chunk().await {
+                let prefix = &chunk[..chunk.len().min(7)];
+                std::str::from_utf8(prefix).map(|s| s.starts_with("#EXTM3U")).unwrap_or(false)
             } else {
                 false
             }
@@ -614,7 +636,7 @@ impl VideoDownloader {
                         // Skip any additional header bytes between PNG and MPEG-TS
                         let remaining = &data[end..];
                         // MPEG-TS sync byte is 0x47 — find it
-                        for j in 0..remaining.len().min(16) {
+                        for j in 0..remaining.len().min(64) {
                             if remaining[j] == 0x47 {
                                 return &remaining[j..];
                             }
@@ -1007,6 +1029,7 @@ impl VideoDownloader {
 
         let start_time = std::time::Instant::now();
         let mut total_bytes: u64 = 0;
+        let mut failed_segments: usize = 0;
 
         for (i, seg_url) in segment_urls.iter().enumerate() {
             // Check cancellation
@@ -1038,7 +1061,16 @@ impl VideoDownloader {
             let data = match segment_data {
                 Ok(data) => data,
                 Err(e) => {
-                    let _ = app_handle.emit("log-warning", format!("Segment {} failed after retries: {}", seg_url, e));
+                    failed_segments += 1;
+                    let _ = app_handle.emit("log-warning", format!("Segment {}/{} failed after retries: {}", i + 1, total_segments, e));
+                    // If more than 5% of segments failed, abort — video would be unplayable
+                    if failed_segments > total_segments / 20 {
+                        let _ = fs::remove_file(&ts_temp_path);
+                        return DownloadResult {
+                            episode, success: false, file_path: None,
+                            error: Some(format!("Too many segments failed ({}/{}), aborting", failed_segments, total_segments)),
+                        };
+                    }
                     continue;
                 }
             };
