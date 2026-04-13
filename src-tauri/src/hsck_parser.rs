@@ -51,7 +51,10 @@ impl HsckParser {
     }
 
     fn client(&self) -> Client {
-        proxy::build_client(&self.proxy_config.read().unwrap())
+        proxy::build_client(&self.proxy_config.read().unwrap_or_else(|e| {
+            eprintln!("Warning: RwLock poisoned in hsck_parser, recovering...");
+            e.into_inner()
+        }))
     }
 
     /// ตรวจสอบว่า URL เป็น hsck123.com หรือ domain ที่กำหนด
@@ -126,7 +129,7 @@ impl HsckParser {
             (src, alt)
         } else {
             // Fallback: ค้นหา m3u8 URL จาก HTML ตรงๆ
-            let m3u8_re = Regex::new(r#"https?://[^\s"'<>]+\.m3u8[^\s"'<>]*"#).unwrap();
+            let m3u8_re = &*M3U8_RE;
             let video_url = m3u8_re
                 .find(html)
                 .map(|m| m.as_str().to_string())

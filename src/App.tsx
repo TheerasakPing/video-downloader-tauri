@@ -123,6 +123,7 @@ function App() {
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [isAutoCapture, setIsAutoCapture] = useState(false);
   const [isBatchItemRunning, setIsBatchItemRunning] = useState(false);
+  const isBatchItemRunningRef = useRef(false);
 
   const [mergeState, setMergeState] = useState<{
     isMerging: boolean;
@@ -495,6 +496,7 @@ function App() {
       error("Please select at least one episode");
       return;
     }
+          isBatchItemRunningRef.current = false;
     setIsBatchItemRunning(false);
     setIsBatchProcessing(false);
     setIsBatchMode(false);
@@ -611,7 +613,7 @@ function App() {
 
     if (!isBatchProcessing) return;
     if (downloadState.isDownloading) return;
-    if (isBatchItemRunning) return;
+    if (isBatchItemRunning || isBatchItemRunningRef.current) return;
 
     // Disabled check to prevent stale status deadlock
     // const isAnyDownloading = batchQueue.some((i) => i.status === "downloading");
@@ -625,6 +627,7 @@ function App() {
       const item = batchQueue[nextIdx];
 
       const processItem = async () => {
+        isBatchItemRunningRef.current = true;
         // Use console.log to avoid infinite render loops
         console.log(`Processing batch item: ${item.info?.title}`);
         setIsBatchItemRunning(true);
@@ -669,6 +672,7 @@ function App() {
             ),
           );
         } finally {
+          isBatchItemRunningRef.current = false;
           setIsBatchItemRunning(false);
         }
       };

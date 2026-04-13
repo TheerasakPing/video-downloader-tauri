@@ -103,7 +103,7 @@ impl TitanParser {
     }
 
     /// Extract series_id from URL path
-    /// Supports: /series/360, /archives/252482, or falls back to last path segment
+    /// Supports: /series/360, /archives/252482
     fn extract_series_id_from_url(url: &str) -> Option<i32> {
         // Try /series/{id} pattern first
         if let Ok(re) = Regex::new(r"/series/(\d+)") {
@@ -128,6 +128,14 @@ impl TitanParser {
         }
         
         None
+    }
+
+    /// Extract series_id from HTML content (looks for /series/{id} back-links)
+    fn extract_series_id_from_html(html: &str) -> Option<i32> {
+        let re = Regex::new(r#"href=["']*/series/(\d+)["']"#).ok()?;
+        let caps = re.captures(html)?;
+        let m = caps.get(1)?;
+        m.as_str().parse::<i32>().ok()
     }
     
     /// Check if this is an archive page (single video post)
@@ -192,6 +200,22 @@ impl TitanParser {
                 poster_url_raw = el.value().attr("content").map(|s| s.to_string());
             }
 
+            // Fallback: extract seriesCover from inline JS (watch pages lack og:image)
+            if poster_url_raw.is_none() {
+                let cover_re = Regex::new(r#"window\.seriesCover\s*=\s*['"]([^'"]+)"#).unwrap();
+                if let Some(caps) = cover_re.captures(&html) {
+                    if let Some(m) = caps.get(1) {
+                        let path = m.as_str();
+                        let full_url = if path.starts_with("http") || path.starts_with("//") {
+                            path.to_string()
+                        } else {
+                            format!("{}{}", base, path)
+                        };
+                        poster_url_raw = Some(full_url);
+                    }
+                }
+            }
+
             // ── Episode Links ────────────────────────────────────────
             // Matches: <a class="ep-card" href="/watch/26037">
             // Also matches the canonical "start watching" link
@@ -237,8 +261,9 @@ impl TitanParser {
             ep_links.sort_by_key(|(n, _)| *n);
 
             eprintln!("[Titan] Found {} episode links", ep_links.len());
-            let series_id_from_url = Self::extract_series_id_from_url(&final_url);
-            eprintln!("[Titan] Series ID from URL: {:?}", series_id_from_url);
+            let series_id_from_url = Self::extract_series_id_from_url(&final_url)
+                .or_else(|| Self::extract_series_id_from_html(&html));
+            eprintln!("[Titan] Series ID: {:?}", series_id_from_url);
 
             (title, poster_url_raw, ep_links, series_id_from_url)
         }; // document dropped here

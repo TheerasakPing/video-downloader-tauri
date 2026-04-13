@@ -369,7 +369,7 @@ impl VideoDownloader {
     async fn download_titan_hls(
         &self,
         episode: i32,
-        _stream_url: &str,
+        stream_url: &str,
         key_info: &crate::titan_parser::HlsKeyInfo,
         output_path: &str,
         app_handle: &AppHandle,
@@ -436,15 +436,52 @@ impl VideoDownloader {
             }
         };
 
-        // ── Fetch H.264 variant playlist ────────────────────────────────
-        let v1_m3u8_url = format!("{}/v1/index.m3u8", key_info.hls_base_url);
-        eprintln!("[Titan] Fetching variant playlist: {}", v1_m3u8_url);
+        // ── Resolve variant playlist from master.m3u8 ────────────────
+        // The stream_url points to master.m3u8 which lists variant playlists.
+        // Parse it dynamically instead of hardcoding v1/index.m3u8 (which may not exist).
+        eprintln!("[Titan] Fetching master playlist: {}", stream_url);
         let _ = app_handle.emit("log-info", format!("[EP {}] Fetching playlist...", episode));
 
-        let v1_content = match client.get(&v1_m3u8_url)
+        let master_content = match client.get(stream_url)
             .header("Referer", &referer)
             .send().await
-            .and_then(|r| Ok(r))
+        {
+            Ok(resp) => match resp.text().await {
+                Ok(t) => t,
+                Err(e) => return DownloadResult {
+                    episode, success: false, file_path: None,
+                    error: Some(format!("Failed to read master M3U8: {}", e)),
+                },
+            },
+            Err(e) => return DownloadResult {
+                episode, success: false, file_path: None,
+                error: Some(format!("Failed to fetch master M3U8: {}", e)),
+            },
+        };
+
+        // Parse variant URL from master playlist (first non-comment, non-empty line)
+        let master_base = stream_url.rsplit_once('/')
+            .map(|(base, _)| base.to_string())
+            .unwrap_or_else(|| stream_url.to_string());
+
+        let variant_url = master_content.lines()
+            .map(|l| l.trim())
+            .find(|l| !l.is_empty() && !l.starts_with('#'))
+            .map(|path| {
+                if path.starts_with("http") {
+                    path.to_string()
+                } else {
+                    format!("{}/{}", master_base, path)
+                }
+            })
+            .unwrap_or_else(|| format!("{}/v0/index.m3u8", key_info.hls_base_url));
+
+        eprintln!("[Titan] Resolved variant playlist: {}", variant_url);
+
+        // Fetch the variant playlist to get segment list
+        let variant_content = match client.get(&variant_url)
+            .header("Referer", &referer)
+            .send().await
         {
             Ok(resp) => match resp.text().await {
                 Ok(t) => t,
@@ -459,9 +496,13 @@ impl VideoDownloader {
             },
         };
 
+        // Segment base URL = variant URL minus the filename
+        let seg_base = variant_url.rsplit_once('/')
+            .map(|(base, _)| format!("{}/", base))
+            .unwrap_or_else(|| format!("{}/v0/", key_info.hls_base_url));
+
         // Extract segment names (skip # comment lines)
-        let seg_base = format!("{}/v1/", key_info.hls_base_url);
-        let segments: Vec<String> = v1_content.lines()
+        let segments: Vec<String> = variant_content.lines()
             .map(|l| l.trim())
             .filter(|l| !l.is_empty() && !l.starts_with('#'))
             .map(|seg| {
