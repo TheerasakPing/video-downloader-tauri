@@ -278,6 +278,54 @@ impl VideoDownloader {
             return result;
         }
 
+        // Content-based HLS detection: some providers (e.g., avkuy/kuylive)
+        // serve HLS playlists without .m3u8 extension. Probe the URL to detect.
+        let probe_client = Client::builder()
+            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+            .build()
+            .unwrap_or_default();
+        let is_hls_playlist = if let Ok(resp) = probe_client.get(video_url)
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await
+        {
+            if let Ok(text) = resp.text().await {
+                text.starts_with("#EXTM3U")
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if is_hls_playlist {
+            if !check_ffmpeg() {
+                return DownloadResult {
+                    episode,
+                    success: false,
+                    file_path: None,
+                    error: Some("FFmpeg is required for HLS downloads but was not found".to_string()),
+                };
+            }
+            let result = self.download_hls_stream(episode, video_url, &file_path_str, referer, cookies, app_handle, download_state.clone()).await;
+            if !result.success {
+                if let Some(ref err) = result.error {
+                    let err_lower = err.to_lowercase();
+                    if err_lower.contains("empty segment")
+                        || err_lower.contains("allowed_segment_extensions")
+                        || err_lower.contains("allowed_extensions")
+                        || err_lower.contains("mismatches")
+                        || err_lower.contains("invalid data found")
+                    {
+                        let _ = app_handle.emit("log-info", "FFmpeg HLS demuxer rejected segments — retrying with manual segment download...".to_string());
+                        eprintln!("[Downloader] Retrying with manual segment download for: {}", video_url);
+                        return self.download_hls_manual(episode, video_url, &file_path_str, referer, cookies, app_handle, download_state, preferred_quality).await;
+                    }
+                }
+            }
+            return result;
+        }
+
         // Direct file download (MP4, etc) using Reqwest
         self.download_direct_file(episode, video_url, &file_path, app_handle, download_state).await
     }
@@ -549,6 +597,37 @@ impl VideoDownloader {
     ///   `https://hls.357ms.com/series_360/ep_1/master.m3u8` → `https://www.357ms.com`
     ///   `https://cdn.rongyok.com/...`                        → `https://www.rongyok.com`
     ///   `https://stream.example.com/...`                     → `https://www.example.com`
+    /// Strip PNG prefix from segment data (anti-scraping protection).
+    /// Some CDNs (e.g., kuylive.com) prepend a 1x1 PNG image before the
+    /// actual MPEG-TS segment data. FFmpeg sees only the PNG and treats
+    /// the entire file as an image. This strips the PNG prefix by finding
+    /// the IEND marker and skipping past it (plus a small header after).
+    fn strip_png_prefix(data: &[u8]) -> &[u8] {
+        // PNG signature: 89 50 4E 47 0D 0A 1A 0A
+        if data.len() > 8 && data[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
+            // Find IEND marker (49 45 4E 44) followed by 4-byte CRC
+            for i in 8..data.len().saturating_sub(8) {
+                if data[i..i+4] == [0x49, 0x45, 0x4E, 0x44] {
+                    // IEND chunk: 4 bytes marker + 4 bytes CRC = 8 bytes from marker start
+                    let end = i + 8;
+                    if end < data.len() {
+                        // Skip any additional header bytes between PNG and MPEG-TS
+                        let remaining = &data[end..];
+                        // MPEG-TS sync byte is 0x47 — find it
+                        for j in 0..remaining.len().min(16) {
+                            if remaining[j] == 0x47 {
+                                return &remaining[j..];
+                            }
+                        }
+                        // Fallback: return data after PNG
+                        return remaining;
+                    }
+                }
+            }
+        }
+        data
+    }
+
     fn derive_referer_from_hls_url(hls_url: &str) -> String {
         // Extract host from URL
         let host = hls_url
@@ -963,6 +1042,10 @@ impl VideoDownloader {
                     continue;
                 }
             };
+
+            // Strip PNG prefix if present (anti-scraping: CDN prepends a 1x1 PNG
+            // header before the actual MPEG-TS segment data)
+            let data = Self::strip_png_prefix(&data);
 
             {
                 let seg_size = data.len() as u64;

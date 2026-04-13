@@ -1,0 +1,11 @@
+{"timestamp":"2026-04-12T15:15:24.625Z","type":"auto_nudge_skipped","reason":"unmanaged_session"}
+{"timestamp":"2026-04-12T15:16:22.746Z","type":"tmux_hook","mode":null,"reason":"mode_not_allowed","turn_id":"019d8243-48e6-7562-972e-85c6949ba712","thread_id":"019d8242-d883-74b3-8934-64562925fd0b","target":{"type":"pane","value":"%6"},"dry_run":false,"sent":false,"event":"injection_skipped"}
+{"timestamp":"2026-04-12T15:16:22.817Z","type":"auto_nudge_skipped","reason":"unmanaged_session"}
+{"timestamp":"2026-04-12T15:23:02.184Z","type":"tmux_hook","mode":null,"reason":"mode_not_allowed","turn_id":"019d8248-15ca-7063-85dd-4701b5064ad8","thread_id":"019d8242-d883-74b3-8934-64562925fd0b","target":{"type":"pane","value":"%6"},"dry_run":false,"sent":false,"event":"injection_skipped"}
+{"timestamp":"2026-04-12T15:23:02.369Z","type":"auto_nudge_skipped","reason":"unmanaged_session"}
+{"timestamp":"2026-04-12T15:35:13.964Z","type":"tmux_hook","mode":null,"reason":"mode_not_allowed","turn_id":"019d824d-e07e-7513-889a-f5eaba029f72","thread_id":"019d81ff-3d53-7311-91a2-4b95083d3735","target":{"type":"pane","value":"%6"},"dry_run":false,"sent":false,"event":"injection_skipped"}
+{"timestamp":"2026-04-12T15:35:13.996Z","type":"auto_nudge_skipped","reason":"unmanaged_session"}
+{"timestamp":"2026-04-12T15:52:13.708Z","type":"tmux_hook","mode":null,"reason":"mode_not_allowed","turn_id":"019d8257-0be5-7070-916c-1c9dc1b51bfb","thread_id":"019d81ff-3d53-7311-91a2-4b95083d3735","target":{"type":"pane","value":"%6"},"dry_run":false,"sent":false,"event":"injection_skipped"}
+{"timestamp":"2026-04-12T15:52:13.738Z","type":"auto_nudge_skipped","reason":"unmanaged_session"}
+{"timestamp":"2026-04-12T15:57:45.860Z","type":"tmux_hook","mode":null,"reason":"mode_not_allowed","turn_id":"019d8267-4089-79a1-b24e-9eb1b710f8f7","thread_id":"019d81ff-3d53-7311-91a2-4b95083d3735","target":{"type":"pane","value":"%6"},"dry_run":false,"sent":false,"event":"injection_skipped"}
+{"timestamp":"2026-04-12T15:57:45.886Z","type":"auto_nudge_skipped","reason":"unmanaged_session"}

@@ -43,9 +43,14 @@ import {
   MiniMode,
   ShortcutsHelp,
   BrowsePanel,
+  ToastContainer,
+  ErrorBoundary,
 } from "./components";
 import LibraryPanel from "./components/LibraryPanel";
 import QualitySelector from "./components/QualitySelector";
+import NotificationCenter from "./components/NotificationCenter";
+import { SchedulerPanel } from "./components/SchedulerPanel";
+import { BackupPanel } from "./components/BackupPanel";
 import { useLogger } from "./hooks/useLogger";
 import { useSettings } from "./hooks/useSettings";
 import { useHistory } from "./hooks/useHistory";
@@ -56,6 +61,7 @@ import { useDomainSettings } from "./hooks/useDomainSettings";
 
 import { useI18n } from "./hooks/useI18n";
 import { useCustomTheme } from "./hooks/useCustomTheme";
+import { useToast } from "./hooks/useToast";
 import { SeriesInfo, DownloadState, DownloadProgress } from "./types";
 import { QueueItem } from "./components/DownloadQueue";
 
@@ -116,6 +122,7 @@ function App() {
   const [batchQueue, setBatchQueue] = useState<BatchItem[]>([]);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [isAutoCapture, setIsAutoCapture] = useState(false);
+  const isBatchItemRunningRef = useRef(false);
 
   const [mergeState, setMergeState] = useState<{
     isMerging: boolean;
@@ -189,12 +196,17 @@ function App() {
         checkDomains(domainSettings.titanDomain) ||
         checkDomains(domainSettings.baanjeenDomain) ||
         checkDomains(domainSettings.njavtvDomain || "njavtv.com") ||
+        checkDomains(domainSettings.javwowDomain || "javwow.com") ||
+        checkDomains(domainSettings.avkuyDomain || "www2.avkuy.com") ||
         text.includes("rongyok.com") ||
         text.includes("thongyok.com") ||
         text.includes("51cg") ||
         text.includes("357ms") || // Titan wildcard fallback
         text.includes("xn--82c7abb4jua0l.com") ||
-        text.includes("njavtv.com")
+        text.includes("njavtv.com") ||
+        text.includes("javwow.com") ||
+        text.includes("avkuy.com") ||
+        text.includes("av-kuy.com")
       );
     },
     [domainSettings],
@@ -247,6 +259,7 @@ function App() {
   } = useUpdater();
   const { language, setLanguage, t } = useI18n();
   const { themes, activeThemeId, setActiveTheme } = useCustomTheme();
+  const { toasts, removeToast } = useToast();
 
   // Tab navigation
   const tabs: TabType[] = ["download", "library", "browse", "files", "history", "settings", "logs"];
@@ -482,6 +495,9 @@ function App() {
       error("Please select at least one episode");
       return;
     }
+    isBatchItemRunningRef.current = false;
+    setIsBatchProcessing(false);
+    setIsBatchMode(false);
     runDownload(series, selectedEpisodes);
   }, [series, selectedEpisodes, runDownload, error]);
 
@@ -595,6 +611,7 @@ function App() {
 
     if (!isBatchProcessing) return;
     if (downloadState.isDownloading) return;
+    if (isBatchItemRunningRef.current) return;
 
     // Disabled check to prevent stale status deadlock
     // const isAnyDownloading = batchQueue.some((i) => i.status === "downloading");
@@ -610,6 +627,7 @@ function App() {
       const processItem = async () => {
         // Use console.log to avoid infinite render loops
         console.log(`Processing batch item: ${item.info?.title}`);
+        isBatchItemRunningRef.current = true;
 
         // Mark as downloading
         setBatchQueue((prev) =>
@@ -645,6 +663,8 @@ function App() {
                 : it,
             ),
           );
+        } finally {
+          isBatchItemRunningRef.current = false;
         }
       };
 
@@ -725,6 +745,25 @@ function App() {
     isDownloading: downloadState.isDownloading,
     isPaused: downloadState.isPaused,
   });
+
+  // Global ESC key handler for modals
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        // Close modals/dropdowns when ESC is pressed
+        if (showShortcuts) {
+          setShowShortcuts(false);
+        }
+        if (showMiniMode) {
+          setShowMiniMode(false);
+        }
+        // Note: NotificationCenter dropdown is handled internally by its component
+      }
+    };
+
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [showShortcuts, showMiniMode]);
 
   // Auto-paste and auto-fetch from clipboard
   const autoFetchFromClipboard = useCallback(async () => {
@@ -1055,7 +1094,7 @@ function App() {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: "Select Output Folder",
+        title: t("app.selectOutputFolder"),
       });
       if (selected && typeof selected === "string") {
         updateSetting("outputDir", selected);
@@ -1090,12 +1129,7 @@ function App() {
     setIsDragging(false);
 
     const text = e.dataTransfer.getData("text/plain");
-    if (
-      text &&
-      (text.includes("rongyok.com") ||
-        text.includes("thongyok.com") ||
-        text.includes("51cg1.com"))
-    ) {
+    if (text && isValidSeriesUrl(text)) {
       setUrl(text);
       log(`Dropped URL: ${text}`);
       success("URL added from drop");
@@ -1138,7 +1172,7 @@ function App() {
   }[] = [
     {
       id: "download",
-      label: "Download",
+      label: t("tabs.download"),
       icon: (
         <Download
           size={16}
@@ -1151,7 +1185,7 @@ function App() {
     },
     {
       id: "library",
-      label: "Library",
+      label: t("tabs.library"),
       icon: (
         <BookOpen
           size={16}
@@ -1164,7 +1198,7 @@ function App() {
     },
     {
       id: "browse",
-      label: "Browse",
+      label: t("tabs.browse"),
       icon: (
         <Compass
           size={16}
@@ -1176,7 +1210,7 @@ function App() {
     },
     {
       id: "files",
-      label: "Files",
+      label: t("tabs.files"),
       icon: (
         <HardDrive
           size={16}
@@ -1188,7 +1222,7 @@ function App() {
     },
     {
       id: "history",
-      label: "History",
+      label: t("tabs.history"),
       icon: (
         <Clock
           size={16}
@@ -1200,7 +1234,7 @@ function App() {
     },
     {
       id: "settings",
-      label: "Settings",
+      label: t("tabs.settings"),
       icon: (
         <Settings
           size={16}
@@ -1212,7 +1246,7 @@ function App() {
     },
     {
       id: "logs",
-      label: `Logs (${logs.length})`,
+      label: t("app.logsCount", { count: logs.length }),
       icon: (
         <AlertCircle
           size={16}
@@ -1244,7 +1278,7 @@ function App() {
                 <Download size={48} />
               </span>
               <span className="text-xl font-medium text-violet-300">
-                Drop URL here
+                {t("app.dropUrl")}
               </span>
             </div>
           </div>
@@ -1280,7 +1314,8 @@ function App() {
                 <button
                   onClick={() => setShowMiniMode(true)}
                   className="p-1.5 hover:bg-slate-700/50 rounded-md"
-                  title="Mini Mode"
+                  title={t("app.openMiniMode")}
+                  aria-label={t("app.openMiniMode")}
                 >
                   <Minimize2
                     size={14}
@@ -1288,10 +1323,12 @@ function App() {
                   />
                 </button>
               )}
+              <NotificationCenter />
               <button
                 onClick={() => setShowShortcuts(true)}
                 className="p-1.5 hover:bg-slate-700/50 rounded-md"
-                title="Shortcuts"
+                title={t("app.openShortcuts")}
+                aria-label={t("app.openShortcuts")}
               >
                 <Keyboard
                   size={14}
@@ -1300,11 +1337,15 @@ function App() {
               </button>
 
               {/* Tabs */}
-              <div className="flex bg-slate-800/70 rounded-lg p-0.5 ml-1">
+              <div className="flex bg-slate-800/70 rounded-lg p-0.5 ml-1" role="tablist">
                 {tabsConfig.map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
+                    role="tab"
+                    aria-selected={activeTab === tab.id}
+                    aria-label={`${tab.label} tab`}
+                    tabIndex={activeTab === tab.id ? 0 : -1}
                     className={`px-2 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${
                       activeTab === tab.id
                         ? tab.activeClass
@@ -1355,7 +1396,7 @@ function App() {
                           variant="ghost"
                           onClick={handlePaste}
                           className="px-1.5"
-                          title="Paste"
+                          title={t("app.paste")}
                         >
                           <Clipboard size={14} />
                         </Button>
@@ -1411,7 +1452,7 @@ function App() {
                         className={`text-emerald-400 ${batchQueue.length > 0 ? "drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]" : "opacity-50"}`}
                       />
                       <span className="text-xs font-bold text-slate-200 tracking-wide flex items-center gap-2">
-                        SMART QUEUE
+                        {t("app.smartQueueLabel")}
                         {batchQueue.length > 0 && (
                           <span className="bg-slate-700 text-slate-300 px-1.5 rounded-full text-[10px]">
                             {batchQueue.length}
@@ -1421,7 +1462,7 @@ function App() {
                     </div>
                     {isBatchProcessing && (
                       <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full flex items-center gap-1.5 animate-pulse border border-emerald-500/20 font-medium">
-                        <Loader2 size={10} className="animate-spin" /> RUNNING
+                        <Loader2 size={10} className="animate-spin" /> {t("app.runningLabel")}
                       </span>
                     )}
                   </div>
@@ -1439,7 +1480,7 @@ function App() {
                         className={isAutoCapture ? "animate-pulse" : ""}
                       />
                       <span className="ml-1 hidden sm:inline text-[10px] font-bold">
-                        {isAutoCapture ? "ON" : "AUTO"}
+                        {isAutoCapture ? t("app.on") : t("app.auto")}
                       </span>
                     </Button>
 
@@ -1451,8 +1492,8 @@ function App() {
                       onClick={toggleBatchProcessing}
                       title={
                         isBatchProcessing
-                          ? "Pause Queue"
-                          : "Start Processing Queue (Sequential)"
+                          ? t("queue.pauseDownload")
+                          : t("app.startQueue")
                       }
                       className="h-7 w-7 p-0 shadow-sm"
                     >
@@ -1468,7 +1509,7 @@ function App() {
                       variant={isBatchMode ? "primary" : "ghost"}
                       onClick={() => setIsBatchMode((p) => !p)}
                       title={
-                        isBatchMode ? "Hide Queue List" : "Show Queue List"
+                        isBatchMode ? t("app.hideQueueList") : t("app.showQueueList")
                       }
                       className={`h-7 w-7 p-0 ${isBatchMode ? "shadow-md shadow-violet-500/20" : "text-slate-400 hover:text-white"}`}
                     >
@@ -1493,7 +1534,8 @@ function App() {
                           setIsBatchProcessing(false);
                         }
                       }}
-                      title="Clear Queue"
+                      title={t("app.removeFromBatch")}
+                      aria-label={t("app.removeFromBatch")}
                     >
                       <X size={14} />
                     </Button>
@@ -1561,7 +1603,7 @@ function App() {
                       />
                       <ProgressBar
                         percentage={overallProgress}
-                        label="Overall"
+                        label={t("app.overall")}
                         sublabel={`${downloadState.completedEpisodes.length}/${downloadState.totalSelected}`}
                         variant="success"
                       />
@@ -1573,7 +1615,7 @@ function App() {
                                 size={12}
                                 className="animate-pulse drop-shadow-[0_0_4px_currentColor]"
                               />{" "}
-                              Merging...
+                              {t("app.mergingVideos")}
                             </span>
                             <span className="text-fuchsia-400 font-mono">
                               {mergeState.progress.toFixed(0)}%
@@ -1589,7 +1631,7 @@ function App() {
                       )}
                       {mergeState.mergedFile && !mergeState.isMerging && (
                         <div className="p-2 bg-emerald-500/20 rounded-md border border-emerald-500/30 text-xs text-emerald-300 flex items-center gap-1">
-                          <span className="text-emerald-400">✅</span> Merged:{" "}
+                          <span className="text-emerald-400">✅</span> {t("app.mergedLabel")}{" "}
                           {mergeState.mergedFile.split("/").pop()}
                         </div>
                       )}
@@ -1599,15 +1641,17 @@ function App() {
 
                 {/* Queue - Compact */}
                 {queue.length > 0 && (
-                  <DownloadQueue
-                    queue={queue}
-                    onMoveUp={() => {}}
-                    onMoveDown={() => {}}
-                    onRemove={(id) =>
-                      setQueue((prev) => prev.filter((q) => q.id !== id))
-                    }
-                    onPause={() => {}}
-                  />
+                  <ErrorBoundary>
+                    <DownloadQueue
+                      queue={queue}
+                      onMoveUp={() => {}}
+                      onMoveDown={() => {}}
+                      onRemove={(id) =>
+                        setQueue((prev) => prev.filter((q) => q.id !== id))
+                      }
+                      onPause={() => {}}
+                    />
+                  </ErrorBoundary>
                 )}
 
                 {/* Options & Actions - Compact inline */}
@@ -1626,7 +1670,7 @@ function App() {
                       size={12}
                       className="text-fuchsia-400 drop-shadow-[0_0_4px_currentColor]"
                     />{" "}
-                    Auto merge
+                    {t("app.autoMerge")}
                   </label>
 
                   <div className="flex gap-2">
@@ -1647,7 +1691,7 @@ function App() {
                             onClick={handlePause}
                             leftIcon={<Pause size={14} />}
                           >
-                            Pause
+                            {t("app.pause")}
                           </Button>
                         ) : (
                           <Button
@@ -1655,7 +1699,7 @@ function App() {
                             onClick={handleResume}
                             leftIcon={<Play size={14} />}
                           >
-                            Resume
+                            {t("app.resume")}
                           </Button>
                         )}
                         <Button
@@ -1663,7 +1707,7 @@ function App() {
                           onClick={handleCancel}
                           leftIcon={<X size={14} />}
                         >
-                          Cancel
+                          {t("app.cancel")}
                         </Button>
                       </>
                     )}
@@ -1678,7 +1722,7 @@ function App() {
                 <div className="flex items-center gap-2">
                   <ListOrdered size={16} className="text-emerald-400" />
                   <span className="text-xs font-bold text-slate-200 tracking-wide">
-                    SMART QUEUE
+                    {t("app.smartQueueLabel")}
                   </span>
                   <span className="bg-slate-700 text-slate-300 px-1.5 rounded-full text-[10px]">
                     {batchQueue.length}
@@ -1690,7 +1734,7 @@ function App() {
                     variant={isBatchProcessing ? "amber" : "success"}
                     className="h-6 w-6 p-0"
                     onClick={toggleBatchProcessing}
-                    title={isBatchProcessing ? "Pause Queue" : "Start Queue"}
+                    title={isBatchProcessing ? t("queue.pauseDownload") : t("app.startQueue")}
                   >
                     {isBatchProcessing ? (
                       <Pause size={12} />
@@ -1706,7 +1750,7 @@ function App() {
                       setBatchQueue([]);
                       setIsBatchProcessing(false);
                     }}
-                    title="Clear"
+                    title={t("app.clear")}
                   >
                     <X size={14} />
                   </Button>
@@ -1717,7 +1761,7 @@ function App() {
                 {batchQueue.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-40">
                     <ListOrdered size={32} className="mb-2" />
-                    <p className="text-xs">Queue is empty</p>
+                    <p className="text-xs">{t("queue.empty")}</p>
                   </div>
                 ) : (
                   batchQueue.map((item, idx) => (
@@ -1758,20 +1802,20 @@ function App() {
                           {item.info?.title || item.url}
                         </div>
                         <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                          {item.status === "pending" && "Pending"}
-                          {item.status === "fetching" && "Fetching info..."}
+                          {item.status === "pending" && t("queue.pending")}
+                          {item.status === "fetching" && t("app.fetchingInfo")}
                           {item.status === "ready" &&
-                            `Ready (${item.info?.totalEpisodes})`}
+                            `${t("app.ready")} (${item.info?.totalEpisodes})`}
                           {item.status === "downloading" && (
                             <span className="text-cyan-400 flex items-center gap-1">
-                              Downloading {progress.percentage.toFixed(0)}%
+                              {t("app.downloadingStatus")} {progress.percentage.toFixed(0)}%
                             </span>
                           )}
                           {item.status === "completed" && (
-                            <span className="text-emerald-400">Completed</span>
+                            <span className="text-emerald-400">{t("app.completed")}</span>
                           )}
                           {item.status === "error" && (
-                            <span className="text-red-400">Error</span>
+                            <span className="text-red-400">{t("app.error")}</span>
                           )}
                         </div>
                         {item.status === "downloading" && (
@@ -1791,6 +1835,7 @@ function App() {
                           );
                         }}
                         className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity"
+                        aria-label={t("app.removeFromBatch")}
                       >
                         <X size={12} />
                       </button>
@@ -1804,12 +1849,16 @@ function App() {
 
         {activeTab === "library" && (
           <div className="page-transition animate-fade-in h-full overflow-y-auto custom-scrollbar">
-            <LibraryPanel />
+            <ErrorBoundary>
+              <LibraryPanel />
+            </ErrorBoundary>
           </div>
         )}
         {activeTab === "browse" && (
           <div className="page-transition animate-fade-in h-full overflow-hidden">
-            <BrowsePanel settings={settings} ffmpegAvailable={ffmpegAvailable} />
+            <ErrorBoundary>
+              <BrowsePanel settings={settings} ffmpegAvailable={ffmpegAvailable} />
+            </ErrorBoundary>
           </div>
         )}
 
@@ -1856,6 +1905,8 @@ function App() {
               onUpdateDomain={updateDomainSetting}
               onResetDomains={resetDomainSettings}
             />
+            <SchedulerPanel />
+            <BackupPanel />
           </div>
         )}
 
@@ -1897,6 +1948,9 @@ function App() {
         onDownload={downloadAndInstall}
         onDismiss={dismissUpdate}
       />
+
+      {/* Toast Notifications */}
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   );
 }

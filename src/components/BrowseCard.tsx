@@ -1,4 +1,4 @@
-import { Image as ImageIcon } from "lucide-react";
+import { Image as ImageIcon, Star, Clock } from "lucide-react";
 import type { SearchResult } from "../types";
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -14,6 +14,8 @@ interface BrowseCardProps {
 }
 
 export default function BrowseCard({ result, onClick }: BrowseCardProps) {
+  const genres = result.genre?.split(",").map(g => g.trim()).filter(Boolean) ?? [];
+
   return (
     <div
       className="group cursor-pointer rounded-lg border border-slate-700/50 bg-slate-800/30 overflow-hidden hover:border-slate-600 hover:bg-slate-800/60 transition-all"
@@ -38,16 +40,42 @@ export default function BrowseCard({ result, onClick }: BrowseCardProps) {
         >
           {result.source}
         </span>
-        {result.totalEpisodes && (
-          <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] bg-black/60 text-white">
-            EP {result.totalEpisodes}
+        <div className="absolute top-1.5 right-1.5 flex flex-col gap-0.5 items-end">
+          {result.totalEpisodes && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] bg-black/60 text-white">
+              EP {result.totalEpisodes}
+            </span>
+          )}
+          {result.rating != null && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/80 text-white flex items-center gap-0.5">
+              <Star size={8} className="fill-white" /> {result.rating}
+            </span>
+          )}
+          {result.year != null && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] bg-black/60 text-slate-200">
+              {result.year}
+            </span>
+          )}
+        </div>
+        {result.duration && (
+          <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] bg-black/60 text-slate-300 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Clock size={8} /> {result.duration}
           </span>
         )}
       </div>
-      <div className="p-2">
+      <div className="p-2 space-y-1">
         <p className="text-xs text-slate-200 line-clamp-2 leading-tight">
           {result.title}
         </p>
+        {genres.length > 0 && (
+          <div className="flex flex-wrap gap-0.5">
+            {genres.slice(0, 3).map(g => (
+              <span key={g} className="px-1 py-px rounded text-[9px] bg-slate-700/60 text-slate-400">
+                {g}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -15,6 +15,7 @@ use crate::{SearchResult, SiteCategory};
 
 #[derive(Debug, Clone)]
 pub struct HsckVideoInfo {
+    #[allow(dead_code)]
     pub id: String,
     pub title: String,
     pub video_url: String,
@@ -48,6 +49,7 @@ impl HsckParser {
     }
 
     /// สร้าง URL สำหรับหน้าวิดีโอจาก domain + id
+    #[allow(dead_code)]
     fn make_video_url(domain: &str, id: &str) -> String {
         format!("https://{}/view/?id={}", domain, id)
     }
@@ -252,6 +254,11 @@ impl HsckParser {
                 url: full_url,
                 source: "hsck".to_string(),
                 total_episodes: None,
+                description: None,
+                rating: None,
+                year: None,
+                genre: None,
+                duration: None,
             });
         }
 
@@ -281,6 +288,11 @@ impl HsckParser {
                 url: format!("https://{}/view/?id={}", domain, id),
                 source: "hsck".to_string(),
                 total_episodes: None,
+                description: None,
+                rating: None,
+                year: None,
+                genre: None,
+                duration: None,
             }
         }).collect())
     }

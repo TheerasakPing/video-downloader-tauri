@@ -490,7 +490,7 @@ impl TitanParser {
         self.parse_listing_html(&html_text, domain)
     }
 
-    fn parse_listing_html(&self, html_text: &str, domain: &str) -> Result<Vec<SearchResult>, String> {
+    fn parse_listing_html(&self, html_text: &str, _domain: &str) -> Result<Vec<SearchResult>, String> {
         let document = Html::parse_document(html_text);
         let mut results = Vec::new();
         let article_sel = Selector::parse("article, .post-item, .entry-item").unwrap();
@@ -512,6 +512,11 @@ impl TitanParser {
                     url,
                     source: "titan".to_string(),
                     total_episodes: None,
+                    description: None,
+                    rating: None,
+                    year: None,
+                    genre: None,
+                    duration: None,
                 });
             }
         }

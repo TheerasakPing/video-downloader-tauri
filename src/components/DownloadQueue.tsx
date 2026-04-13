@@ -9,6 +9,7 @@ import {
   XCircle,
   Loader2,
 } from "lucide-react";
+import { useI18n } from "../hooks/useI18n";
 
 export interface QueueItem {
   id: string;
@@ -36,6 +37,7 @@ export function DownloadQueue({
   onRemove,
   onPause,
 }: DownloadQueueProps) {
+  const { t } = useI18n();
   const pendingCount = queue.filter((q) => q.status === "pending").length;
   const downloadingCount = queue.filter((q) => q.status === "downloading").length;
   const completedCount = queue.filter((q) => q.status === "completed").length;
@@ -58,17 +60,17 @@ export function DownloadQueue({
       <div className="flex items-center justify-between px-4 py-3 bg-slate-800/30 border-b border-slate-700/50">
         <h3 className="text-sm font-medium text-slate-300 flex items-center gap-2">
           <ListOrdered size={16} className="text-amber-400 drop-shadow-[0_0_4px_currentColor]" />
-          Download Queue
+          {t("queue.title")}
         </h3>
         <div className="flex items-center gap-3 text-xs">
           <span className="text-slate-500">
-            Pending: <span className="text-white font-medium">{pendingCount}</span>
+            {t("queue.pending")}: <span className="text-white font-medium">{pendingCount}</span>
           </span>
           <span className="text-slate-500">
-            Active: <span className="text-violet-400 font-medium">{downloadingCount}</span>
+            {t("queue.active")}: <span className="text-violet-400 font-medium">{downloadingCount}</span>
           </span>
           <span className="text-slate-500">
-            Done: <span className="text-emerald-400 font-medium">{completedCount}</span>
+            {t("queue.done")}: <span className="text-emerald-400 font-medium">{completedCount}</span>
           </span>
         </div>
       </div>
@@ -77,7 +79,7 @@ export function DownloadQueue({
         {queue.length === 0 ? (
           <div className="p-8 text-center text-slate-500">
             <ListOrdered size={24} className="mx-auto mb-3 drop-shadow-[0_0_4px_currentColor]" />
-            Download queue is empty
+            {t("queue.empty")}
           </div>
         ) : (
           <div className="divide-y divide-slate-700/30">
@@ -94,7 +96,7 @@ export function DownloadQueue({
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <div className="text-sm text-white truncate">
-                    {item.seriesTitle} - Episode {item.episode}
+                    {item.seriesTitle} - {t("queue.episode")} {item.episode}
                   </div>
                   {item.status === "downloading" && (
                     <div className="mt-1">
@@ -116,6 +118,7 @@ export function DownloadQueue({
                         onClick={() => onMoveUp(item.id)}
                         disabled={index === 0}
                         className="p-1 text-slate-500 hover:text-white hover:bg-slate-700 rounded disabled:opacity-30"
+                        aria-label={t("queue.moveUp")}
                       >
                         <ArrowUp size={14} />
                       </button>
@@ -123,6 +126,7 @@ export function DownloadQueue({
                         onClick={() => onMoveDown(item.id)}
                         disabled={index === queue.length - 1}
                         className="p-1 text-slate-500 hover:text-white hover:bg-slate-700 rounded disabled:opacity-30"
+                        aria-label={t("queue.moveDown")}
                       >
                         <ArrowDown size={14} />
                       </button>
@@ -132,6 +136,7 @@ export function DownloadQueue({
                     <button
                       onClick={() => onPause(item.id)}
                       className="p-1 text-slate-500 hover:text-amber-400 hover:bg-amber-500/10 rounded"
+                      aria-label={t("queue.pauseDownload")}
                     >
                       <Pause size={14} />
                     </button>
@@ -140,6 +145,7 @@ export function DownloadQueue({
                     <button
                       onClick={() => onRemove(item.id)}
                       className="p-1 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded"
+                      aria-label={t("queue.removeFromQueue")}
                     >
                       <Trash2 size={14} />
                     </button>

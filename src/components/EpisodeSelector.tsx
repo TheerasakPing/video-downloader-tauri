@@ -1,3 +1,5 @@
+import { useI18n } from "../hooks/useI18n";
+
 interface EpisodeSelectorProps {
   totalEpisodes: number;
   selectedEpisodes: Set<number>;
@@ -15,6 +17,7 @@ export function EpisodeSelector({
   onDeselectAll,
   disabled,
 }: EpisodeSelectorProps) {
+  const { t } = useI18n();
   const episodes = Array.from({ length: totalEpisodes }, (_, i) => i + 1);
 
   return (
@@ -24,22 +27,24 @@ export function EpisodeSelector({
           <span className="px-1.5 py-0.5 bg-cyan-500/10 text-cyan-400 rounded border border-cyan-500/30 text-[10px] mr-1">
             {selectedEpisodes.size}/{totalEpisodes}
           </span>
-          Episodes
+          {t("episodes.title")}
         </span>
         <div className="flex gap-1">
           <button
             onClick={onSelectAll}
             disabled={disabled}
             className="px-2 py-1 text-[10px] font-medium text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 rounded transition-colors disabled:opacity-50 border border-emerald-500/40 shadow-[0_0_6px_rgba(16,185,129,0.2)]"
+            aria-label={t("episodes.selectAllAria")}
           >
-            All
+            {t("episodes.all")}
           </button>
           <button
             onClick={onDeselectAll}
             disabled={disabled}
             className="px-2 py-1 text-[10px] font-medium text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 rounded transition-colors disabled:opacity-50 border border-amber-500/40"
+            aria-label={t("episodes.deselectAllAria")}
           >
-            None
+            {t("episodes.none")}
           </button>
         </div>
       </div>
@@ -60,7 +65,8 @@ export function EpisodeSelector({
                 }
                 disabled:opacity-50 disabled:cursor-not-allowed
               `}
-              title={`Episode ${ep}`}
+              title={t("episodes.episodeTitle", { number: ep })}
+              aria-label={t("episodes.episodeTitle", { number: ep })}
             >
               {ep}
             </button>

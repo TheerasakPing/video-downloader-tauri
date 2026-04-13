@@ -20,6 +20,8 @@ import { CustomTheme } from "../hooks/useCustomTheme";
 import { Language } from "../hooks/useI18n";
 import { Button } from "./Button";
 import { ThemeSelector } from "./ThemeSelector";
+import { WebhookSettings } from "./WebhookSettings";
+import { useState } from "react";
 
 interface SettingsPanelProps {
   settings: SettingsType;
@@ -65,6 +67,8 @@ export function SettingsPanel({
   onUpdateDomain,
   onResetDomains,
 }: SettingsPanelProps) {
+  const [showWebhookSettings, setShowWebhookSettings] = useState(false);
+
   return (
     <div className="space-y-6">
       {/* Download Settings */}
@@ -73,16 +77,16 @@ export function SettingsPanel({
           <span className="icon-glow icon-glow-sm icon-glow-violet">
             <Download size={16} />
           </span>
-          Download Settings
+          {t("settings.downloadSettings")}
         </h3>
 
         <div className="space-y-4">
           {/* Concurrent Downloads */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">Concurrent Downloads</label>
+              <label className="text-sm text-white">{t("settings.concurrentDownloads")}</label>
               <p className="text-xs text-slate-500">
-                Number of episodes to download at once
+                {t("settings.concurrentDesc")}
               </p>
             </div>
             <select
@@ -107,9 +111,9 @@ export function SettingsPanel({
                 <span className="icon-glow icon-glow-sm icon-glow-cyan">
                   <Gauge size={14} />
                 </span>
-                Speed Limit
+                {t("settings.speedLimit")}
               </label>
-              <p className="text-xs text-slate-500">0 = Unlimited</p>
+              <p className="text-xs text-slate-500">{t("settings.speedLimitDesc")}</p>
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -122,15 +126,15 @@ export function SettingsPanel({
                 }
                 className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white w-24"
               />
-              <span className="text-xs text-slate-500">KB/s</span>
+              <span className="text-xs text-slate-500">{t("settings.kbs")}</span>
             </div>
           </div>
 
           {/* File Naming */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">File Naming</label>
-              <p className="text-xs text-slate-500">Format for episode files</p>
+              <label className="text-sm text-white">{t("settings.fileNaming")}</label>
+              <p className="text-xs text-slate-500">{t("settings.fileNamingDesc")}</p>
             </div>
             <select
               value={settings.fileNaming}
@@ -151,9 +155,9 @@ export function SettingsPanel({
           {/* Auto Merge */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">Auto Merge</label>
+              <label className="text-sm text-white">{t("settings.autoMerge")}</label>
               <p className="text-xs text-slate-500">
-                Merge videos after download
+                {t("settings.autoMergeDesc")}
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -174,10 +178,10 @@ export function SettingsPanel({
                 <span className="icon-glow icon-glow-sm icon-glow-emerald">
                   <FolderOpen size={14} />
                 </span>
-                Group by Website
+                {t("settings.groupBySource")}
               </label>
               <p className="text-xs text-slate-500">
-                Save to subfolder by source (rongyok/, titan/, baanjeen/, hsck/, njavtv/)
+                {t("settings.groupBySourceDesc")}
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -198,10 +202,10 @@ export function SettingsPanel({
                 <span className="icon-glow icon-glow-sm icon-glow-red">
                   <Trash2 size={14} />
                 </span>
-                Delete After Merge
+                {t("settings.deleteAfterMerge")}
               </label>
               <p className="text-xs text-slate-500">
-                Remove episode files after merging
+                {t("settings.deleteAfterMergeDesc")}
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -223,15 +227,15 @@ export function SettingsPanel({
           <span className="icon-glow icon-glow-sm icon-glow-blue">
             <Globe size={16} />
           </span>
-          Server Domains
+          {t("settings.serverDomains")}
         </h3>
 
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">Titan Server (51cg)</label>
+              <label className="text-sm text-white">{t("settings.titanServer")}</label>
               <p className="text-xs text-slate-500">
-                Domains (comma-separated for max 5, e.g. 51cg1.com, 51cm.com)
+                {t("settings.titanServerDesc")}
               </p>
             </div>
             <input
@@ -245,9 +249,9 @@ export function SettingsPanel({
 
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">BaanJeen Server</label>
+              <label className="text-sm text-white">{t("settings.baanjeenServer")}</label>
               <p className="text-xs text-slate-500">
-                Domain for BaanJeen videos (default punycode)
+                {t("settings.baanjeenServerDesc")}
               </p>
             </div>
             <input
@@ -261,9 +265,9 @@ export function SettingsPanel({
 
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">Rongyok Server</label>
+              <label className="text-sm text-white">{t("settings.rongyokServer")}</label>
               <p className="text-xs text-slate-500">
-                Domain for Rongyok videos
+                {t("settings.rongyokServerDesc")}
               </p>
             </div>
             <input
@@ -277,9 +281,9 @@ export function SettingsPanel({
 
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">HSCK Server</label>
+              <label className="text-sm text-white">{t("settings.hsckServer")}</label>
               <p className="text-xs text-slate-500">
-                Domain for HSCK videos (default: hsck123.com)
+                {t("settings.hsckServerDesc")}
               </p>
             </div>
             <input
@@ -293,9 +297,9 @@ export function SettingsPanel({
 
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">NjavTV Server</label>
+              <label className="text-sm text-white">{t("settings.njavtvServer")}</label>
               <p className="text-xs text-slate-500">
-                Domain for NjavTV videos (Cloudflare — uses Chrome)
+                {t("settings.njavtvServerDesc")}
               </p>
             </div>
             <input
@@ -304,6 +308,22 @@ export function SettingsPanel({
               onChange={(e) => onUpdateDomain("njavtvDomain", e.target.value)}
               className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white w-48 text-right"
               placeholder="njavtv.com"
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-white">{t("settings.avkuyServer")}</label>
+              <p className="text-xs text-slate-500">
+                {t("settings.avkuyServerDesc")}
+              </p>
+            </div>
+            <input
+              type="text"
+              value={domainSettings.avkuyDomain ?? "www2.avkuy.com"}
+              onChange={(e) => onUpdateDomain("avkuyDomain", e.target.value)}
+              className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white w-48 text-right"
+              placeholder="www2.avkuy.com"
             />
           </div>
         </div>
@@ -315,16 +335,16 @@ export function SettingsPanel({
           <span className="icon-glow icon-glow-sm icon-glow-amber">
             <Bell size={16} />
           </span>
-          Notifications
+          {t("settings.notifications")}
         </h3>
 
         <div className="space-y-4">
           {/* System Notifications */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">System Notifications</label>
+              <label className="text-sm text-white">{t("settings.systemNotifications")}</label>
               <p className="text-xs text-slate-500">
-                Show notification when download completes
+                {t("settings.systemNotificationsDesc")}
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -347,9 +367,9 @@ export function SettingsPanel({
                 <span className="icon-glow icon-glow-sm icon-glow-blue">
                   <Volume2 size={14} />
                 </span>
-                Sound Alert
+                {t("settings.soundAlert")}
               </label>
-              <p className="text-xs text-slate-500">Play sound when done</p>
+              <p className="text-xs text-slate-500">{t("settings.soundDesc")}</p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
@@ -370,7 +390,7 @@ export function SettingsPanel({
           <span className="icon-glow icon-glow-sm icon-glow-amber">
             <Sun size={16} />
           </span>
-          Appearance
+          {t("settings.appearance")}
         </h3>
 
         <div className="flex gap-2">
@@ -381,13 +401,14 @@ export function SettingsPanel({
                 ? "bg-violet-600 text-white tab-glow-active"
                 : "bg-slate-700 text-slate-400 hover:bg-slate-600"
             }`}
+            aria-label={t("settings.lightThemeAria")}
           >
             <span
               className={`icon-glow icon-glow-sm ${settings.theme === "light" ? "icon-glow-amber icon-glow-animated" : ""}`}
             >
               <Sun size={18} />
             </span>
-            Light
+            {t("settings.light")}
           </button>
           <button
             onClick={() => onUpdate("theme", "dark")}
@@ -396,13 +417,14 @@ export function SettingsPanel({
                 ? "bg-violet-600 text-white tab-glow-active"
                 : "bg-slate-700 text-slate-400 hover:bg-slate-600"
             }`}
+            aria-label={t("settings.darkThemeAria")}
           >
             <span
               className={`icon-glow icon-glow-sm ${settings.theme === "dark" ? "icon-glow-violet icon-glow-animated" : ""}`}
             >
               <Moon size={18} />
             </span>
-            Dark
+            {t("settings.dark")}
           </button>
           <button
             onClick={() => onUpdate("theme", "system")}
@@ -411,13 +433,14 @@ export function SettingsPanel({
                 ? "bg-violet-600 text-white tab-glow-active"
                 : "bg-slate-700 text-slate-400 hover:bg-slate-600"
             }`}
+            aria-label={t("settings.systemThemeAria")}
           >
             <span
               className={`icon-glow icon-glow-sm ${settings.theme === "system" ? "icon-glow-cyan icon-glow-animated" : ""}`}
             >
               <Monitor size={18} />
             </span>
-            System
+            {t("settings.system")}
           </button>
         </div>
       </section>
@@ -439,6 +462,7 @@ export function SettingsPanel({
                 ? "bg-violet-600 text-white tab-glow-active"
                 : "bg-slate-700 text-slate-400 hover:bg-slate-600"
             }`}
+            aria-label={t("settings.englishLangAria")}
           >
             <span className="text-lg">🇬🇧</span>
             English
@@ -450,6 +474,7 @@ export function SettingsPanel({
                 ? "bg-violet-600 text-white tab-glow-active"
                 : "bg-slate-700 text-slate-400 hover:bg-slate-600"
             }`}
+            aria-label={t("settings.thaiLangAria")}
           >
             <span className="text-lg">🇹🇭</span>
             ไทย
@@ -472,16 +497,16 @@ export function SettingsPanel({
           <span className="icon-glow icon-glow-sm icon-glow-cyan">
             <Gauge size={16} />
           </span>
-          Download Schedule
+          {t("settings.downloadSchedule")}
         </h3>
 
         <div className="space-y-4">
           {/* Enable Scheduling */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">Enable Scheduling</label>
+              <label className="text-sm text-white">{t("settings.enableScheduling")}</label>
               <p className="text-xs text-slate-500">
-                Limit downloads to specific time window
+                {t("settings.enableScheduleDesc")}
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -503,7 +528,7 @@ export function SettingsPanel({
           {settings.scheduleConfig.enabled && (
             <div className="grid grid-cols-2 gap-3 pl-2">
               <div>
-                <label className="text-xs text-slate-500">Active Start</label>
+                <label className="text-xs text-slate-500">{t("settings.activeStart")}</label>
                 <input
                   type="time"
                   value={settings.scheduleConfig.activeStart || ""}
@@ -517,7 +542,7 @@ export function SettingsPanel({
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-500">Active End</label>
+                <label className="text-xs text-slate-500">{t("settings.activeEnd")}</label>
                 <input
                   type="time"
                   value={settings.scheduleConfig.activeEnd || ""}
@@ -532,7 +557,7 @@ export function SettingsPanel({
               </div>
               <div>
                 <label className="text-xs text-slate-500">
-                  Speed During Active (KB/s)
+                  {t("settings.speedDuringActive")}
                 </label>
                 <input
                   type="number"
@@ -550,7 +575,7 @@ export function SettingsPanel({
               </div>
               <div>
                 <label className="text-xs text-slate-500">
-                  Speed Outside Active (KB/s)
+                  {t("settings.speedOutsideActive")}
                 </label>
                 <input
                   type="number"
@@ -574,8 +599,8 @@ export function SettingsPanel({
               {/* Auto Pause */}
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <label className="text-sm text-white">Auto Pause</label>
-                  <p className="text-xs text-slate-500">Pause outside window</p>
+                  <label className="text-sm text-white">{t("settings.autoPause")}</label>
+                  <p className="text-xs text-slate-500">{t("settings.autoPauseDesc")}</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -596,8 +621,8 @@ export function SettingsPanel({
               {/* Auto Resume */}
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <label className="text-sm text-white">Auto Resume</label>
-                  <p className="text-xs text-slate-500">Resume in window</p>
+                  <label className="text-sm text-white">{t("settings.autoResume")}</label>
+                  <p className="text-xs text-slate-500">{t("settings.autoResumeDesc")}</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -625,15 +650,15 @@ export function SettingsPanel({
           <span className="icon-glow icon-glow-sm icon-glow-blue">
             <Globe size={16} />
           </span>
-          Proxy Configuration
+          {t("settings.proxyConfiguration")}
         </h3>
 
         <div className="space-y-4">
           {/* Proxy Type */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">Proxy Type</label>
-              <p className="text-xs text-slate-500">Network proxy for downloads</p>
+              <label className="text-sm text-white">{t("settings.proxyType")}</label>
+              <p className="text-xs text-slate-500">{t("settings.proxyTypeDesc")}</p>
             </div>
             <select
               value={settings.proxyConfig.proxyType}
@@ -645,16 +670,16 @@ export function SettingsPanel({
               }
               className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white"
             >
-              <option value="Direct">No Proxy (Direct)</option>
-              <option value="Http">HTTP Proxy</option>
-              <option value="Socks5">SOCKS5 Proxy</option>
+              <option value="Direct">{t("settings.noProxy")}</option>
+              <option value="Http">{t("settings.httpProxy")}</option>
+              <option value="Socks5">{t("settings.socks5Proxy")}</option>
             </select>
           </div>
 
           {settings.proxyConfig.proxyType !== "Direct" && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-slate-500">Host</label>
+                <label className="text-xs text-slate-500">{t("settings.proxyHost")}</label>
                 <input
                   type="text"
                   value={settings.proxyConfig.host}
@@ -669,7 +694,7 @@ export function SettingsPanel({
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-500">Port</label>
+                <label className="text-xs text-slate-500">{t("settings.proxyPort")}</label>
                 <input
                   type="number"
                   min="0"
@@ -695,16 +720,16 @@ export function SettingsPanel({
           <span className="icon-glow icon-glow-sm icon-glow-amber">
             <RotateCcw size={16} />
           </span>
-          Retry &amp; Fallback
+          {t("settings.retryFallback")}
         </h3>
 
         <div className="space-y-4">
           {/* Max Retries */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">Max Retries</label>
+              <label className="text-sm text-white">{t("settings.maxRetries")}</label>
               <p className="text-xs text-slate-500">
-                Attempts before marking as failed (0-10)
+                {t("settings.maxRetriesDesc")}
               </p>
             </div>
             <input
@@ -725,9 +750,9 @@ export function SettingsPanel({
           {/* Retry Delay */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">Retry Delay</label>
+              <label className="text-sm text-white">{t("settings.retryDelay")}</label>
               <p className="text-xs text-slate-500">
-                Delay between retry attempts (ms)
+                {t("settings.retryDelayDesc")}
               </p>
             </div>
             <input
@@ -748,9 +773,9 @@ export function SettingsPanel({
           {/* Auto Retry */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">Auto-retry on failure</label>
+              <label className="text-sm text-white">{t("settings.autoRetry")}</label>
               <p className="text-xs text-slate-500">
-                Automatically retry failed downloads
+                {t("settings.autoRetryDesc")}
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -772,9 +797,9 @@ export function SettingsPanel({
           {/* Skip Failed Segments */}
           <div className="flex items-center justify-between">
             <div>
-              <label className="text-sm text-white">Skip failed segments</label>
+              <label className="text-sm text-white">{t("settings.skipFailed")}</label>
               <p className="text-xs text-slate-500">
-                Skip unrecoverable HLS segments
+                {t("settings.skipFailedDesc")}
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -801,13 +826,13 @@ export function SettingsPanel({
           <span className="icon-glow icon-glow-sm icon-glow-fuchsia icon-glow-animated">
             <Sparkles size={16} />
           </span>
-          Updates
+          {t("settings.updates")}
         </h3>
 
         <div className="flex items-center justify-between">
           <div>
-            <label className="text-sm text-white">Check for Updates</label>
-            <p className="text-xs text-slate-500">Current version: 1.3.0</p>
+            <label className="text-sm text-white">{t("settings.checkForUpdates")}</label>
+            <p className="text-xs text-slate-500">{t("settings.currentVersion")}</p>
           </div>
           {onCheckUpdates && (
             <Button
@@ -822,11 +847,50 @@ export function SettingsPanel({
               onClick={onCheckUpdates}
               disabled={isCheckingUpdates}
             >
-              {isCheckingUpdates ? "Checking..." : "Check Now"}
+              {isCheckingUpdates ? t("settings.checking") : t("settings.checkNow")}
             </Button>
           )}
         </div>
       </section>
+
+      {/* Webhook Settings */}
+      <section className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+        <h3 className="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
+          <span className="icon-glow icon-glow-sm icon-glow-violet">
+            <Bell size={16} />
+          </span>
+          {t("settings.webhookNotifications")}
+        </h3>
+
+        <div className="space-y-4">
+          <p className="text-sm text-slate-400">
+            {t("settings.webhooksDesc")}
+          </p>
+
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={
+              <span className="icon-glow icon-glow-sm icon-glow-blue">
+                <Bell size={14} />
+              </span>
+            }
+            onClick={() => setShowWebhookSettings(true)}
+            className="btn-glow-blue"
+          >
+            {t("settings.configureWebhooks")}
+          </Button>
+        </div>
+      </section>
+
+      {/* Webhook Settings Modal */}
+      {showWebhookSettings && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-slate-700">
+            <WebhookSettings onClose={() => setShowWebhookSettings(false)} />
+          </div>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex gap-3">
@@ -840,7 +904,7 @@ export function SettingsPanel({
           onClick={onOpenFolder}
           className="flex-1"
         >
-          Open Output Folder
+          {t("settings.openOutputFolder")}
         </Button>
         <Button
           variant="danger"
@@ -855,7 +919,7 @@ export function SettingsPanel({
           }}
           className="btn-glow-red"
         >
-          Reset Settings
+          {t("settings.resetSettings")}
         </Button>
       </div>
     </div>

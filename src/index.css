@@ -15,14 +15,14 @@
 
 :root.light {
   --bg-primary: #ffffff;
-  --bg-secondary: #f8fafc;
-  --bg-tertiary: #e2e8f0;
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
-  --border: #e2e8f0;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f0f0f0;
+  --text-primary: #000000;
+  --text-secondary: #333333;
+  --text-muted: #666666;
+  --border: #d4d4d4;
   --accent: #7c3aed;
-  --accent-glow: rgba(124, 58, 237, 0.2);
+  --accent-glow: rgba(124, 58, 237, 0.15);
 }
 
 /* Base responsive font */
@@ -53,6 +53,11 @@ html {
 
 @keyframes slideIn {
   from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(100%); }
   to { opacity: 1; transform: translateX(0); }
 }
 
@@ -210,6 +215,36 @@ html {
 .light .hover\:bg-slate-700:hover { background-color: #e2e8f0 !important; }
 .light .hover\:bg-slate-600:hover { background-color: #cbd5e1 !important; }
 .light .hover\:bg-slate-700\/30:hover { background-color: rgba(226, 232, 240, 0.3) !important; }
+
+/* Missing bg-slate-500 variants (progress bars, BrowseCard) */
+.light .bg-slate-500 { background-color: #cbd5e1 !important; }
+.light .bg-slate-500\/10 { background-color: rgba(203, 213, 225, 0.1) !important; }
+.light .bg-slate-500\/15 { background-color: rgba(203, 213, 225, 0.15) !important; }
+.light .bg-slate-500\/20 { background-color: rgba(203, 213, 225, 0.2) !important; }
+.light .bg-slate-500\/25 { background-color: rgba(203, 213, 225, 0.25) !important; }
+
+/* Missing bg-slate-600 (EpisodeSelector) */
+.light .bg-slate-600 { background-color: #e2e8f0 !important; }
+
+/* bg-black stays dark for video containers */
+.light .bg-black { background-color: #000000 !important; }
+
+/* Missing text-slate-200 (BrowseCard) */
+.light .text-slate-200 { color: var(--text-secondary) !important; }
+
+/* Missing border-slate-500 opacity variants */
+.light .border-slate-500\/20 { border-color: rgba(203, 213, 225, 0.2) !important; }
+.light .border-slate-500\/40 { border-color: rgba(203, 213, 225, 0.4) !important; }
+.light .border-slate-500\/50 { border-color: rgba(203, 213, 225, 0.5) !important; }
+
+/* Missing border-slate-600/30 (EpisodeSelector) */
+.light .border-slate-600\/30 { border-color: rgba(203, 213, 225, 0.3) !important; }
+
+/* Missing hover overrides (EpisodeSelector, Button) */
+.light .hover\:bg-slate-700\/50:hover { background-color: rgba(226, 232, 240, 0.5) !important; }
+.light .hover\:bg-slate-500\/25:hover { background-color: rgba(203, 213, 225, 0.25) !important; }
+.light .hover\:border-slate-500\/50:hover { border-color: rgba(203, 213, 225, 0.5) !important; }
+.light .hover\:border-slate-400\/60:hover { border-color: rgba(148, 163, 184, 0.6) !important; }
 
 .light input, .light select, .light textarea {
   background-color: var(--bg-secondary) !important;
@@ -946,4 +981,138 @@ html {
 .light .panel-glow {
   background: rgba(255, 255, 255, 0.8);
   border-color: rgba(100, 116, 139, 0.2);
+}
+
+/* ========================================
+   HIGH CONTRAST THEME
+   ======================================== */
+
+.high-contrast {
+  --bg-primary: #000000 !important;
+  --bg-secondary: #000000 !important;
+  --bg-tertiary: #000000 !important;
+  --text-primary: #ffffff !important;
+  --text-secondary: #ffffff !important;
+  --text-muted: #cccccc !important;
+  --border: #ffffff !important;
+  --accent: #ffff00 !important;
+  --accent-glow: rgba(255, 255, 0, 0.5) !important;
+  --card: #000000 !important;
+}
+
+.high-contrast {
+  background: #000000 !important;
+}
+
+.high-contrast .glass {
+  background: rgba(0, 0, 0, 0.9) !important;
+  border-color: #ffffff !important;
+  backdrop-filter: none !important;
+}
+
+.high-contrast * {
+  text-shadow: none !important;
+}
+
+.high-contrast button,
+.high-contrast .btn {
+  border: 2px solid currentColor !important;
+  font-weight: 600 !important;
+}
+
+.high-contrast input,
+.high-contrast select,
+.high-contrast textarea {
+  background: #000000 !important;
+  color: #ffffff !important;
+  border: 2px solid #ffffff !important;
+}
+
+.high-contrast .bg-slate-900,
+.high-contrast .bg-slate-800,
+.high-contrast .bg-slate-700 {
+  background-color: #000000 !important;
+}
+
+.high-contrast .text-white,
+.high-contrast .text-slate-300,
+.high-contrast .text-slate-400 {
+  color: #ffffff !important;
+}
+
+.high-contrast .border-slate-700,
+.high-contrast .border-slate-800 {
+  border-color: #ffffff !important;
+}
+
+.high-contrast .icon-glow-violet,
+.high-contrast .icon-glow-blue,
+.high-contrast .icon-glow-emerald,
+.high-contrast .icon-glow-amber,
+.high-contrast .icon-glow-red {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+  border: 2px solid #ffffff !important;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.5) !important;
+}
+
+.high-contrast .card-glow,
+.high-contrast .stats-card-glow,
+.high-contrast .panel-glow {
+  background: #000000 !important;
+  border: 2px solid #ffffff !important;
+  box-shadow: none !important;
+}
+
+.high-contrast .btn-glow-violet,
+.high-contrast .btn-glow-emerald,
+.high-contrast .btn-glow-red {
+  background: #000000 !important;
+  border: 2px solid #ffffff !important;
+  box-shadow: none !important;
+  color: #ffffff !important;
+}
+
+.high-contrast ::-webkit-scrollbar-thumb {
+  background: #ffffff !important;
+}
+
+.high-contrast ::-webkit-scrollbar-track {
+  background: #000000 !important;
+}
+
+/* Focus indicators for accessibility */
+*:focus-visible {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: 2px;
+}
+
+.high-contrast *:focus-visible {
+  outline: 3px solid #ffffff !important;
+  outline-offset: 2px;
+}
+
+/* Skip link for keyboard navigation */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--accent);
+  color: #000;
+  padding: 8px 16px;
+  z-index: 9999;
+  transition: top 0.3s;
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
+/* Reduced motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

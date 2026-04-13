@@ -5,6 +5,7 @@ import { Button } from "./";
 import BrowseCard from "./BrowseCard";
 import BrowseDetail from "./BrowseDetail";
 import type { SearchResult, SiteCategory, SearchResponse } from "../types";
+import { useI18n } from "../hooks/useI18n";
 
 const SOURCE_FILTERS = [
   { id: "", label: "All" },
@@ -27,6 +28,7 @@ interface BrowsePanelProps {
 }
 
 export default function BrowsePanel({ settings, ffmpegAvailable }: BrowsePanelProps) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResponse[]>([]);
   const [categories, setCategories] = useState<SiteCategory[]>([]);
@@ -112,7 +114,7 @@ export default function BrowsePanel({ settings, ffmpegAvailable }: BrowsePanelPr
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Search across all sites..."
+              placeholder={t("browse.searchPlaceholder")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && doSearch(query)}
@@ -135,6 +137,7 @@ export default function BrowsePanel({ settings, ffmpegAvailable }: BrowsePanelPr
                   ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
                   : "bg-slate-800 text-slate-400 border border-slate-700 hover:text-white"
               }`}
+              aria-label={`Filter by ${f.label}`}
             >
               {f.label}
             </button>
@@ -153,6 +156,7 @@ export default function BrowsePanel({ settings, ffmpegAvailable }: BrowsePanelPr
                     ? `bg-slate-700 text-white ${SOURCE_COLORS[cat.source] || "border-slate-600"}`
                     : "bg-slate-800/50 text-slate-400 border-slate-700 hover:text-white"
                 }`}
+                aria-label={`Filter by ${cat.label}`}
               >
                 <span className="opacity-60">{cat.source}:</span> {cat.label}
               </button>
@@ -166,7 +170,7 @@ export default function BrowsePanel({ settings, ffmpegAvailable }: BrowsePanelPr
         {allResults.length === 0 && !isLoading && (
           <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-40">
             <Compass size={40} className="mb-3" />
-            <p className="text-sm">Search or browse categories to discover content</p>
+            <p className="text-sm">{t("browse.search")}</p>
           </div>
         )}
 
@@ -191,7 +195,7 @@ export default function BrowsePanel({ settings, ffmpegAvailable }: BrowsePanelPr
                 doSearch(query, currentPage + 1);
               }
             }}>
-              Load more
+              {t("browse.loadMore")}
             </Button>
           </div>
         )}

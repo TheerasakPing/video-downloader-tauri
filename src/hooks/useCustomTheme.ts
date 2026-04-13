@@ -62,6 +62,16 @@ export const THEMES: CustomTheme[] = [
     },
     glowColor: "rgba(244, 63, 94, 0.3)",
   },
+  {
+    id: "high-contrast",
+    name: "High Contrast",
+    colors: {
+      primary: "#ffffff",
+      accent: "#ffff00",
+      background: "#000000",
+    },
+    glowColor: "rgba(255, 255, 255, 0.5)",
+  },
 ];
 
 export const useCustomTheme = () => {
@@ -81,6 +91,18 @@ export const useCustomTheme = () => {
     // Update CSS variables for accent color
     root.style.setProperty("--accent", theme.colors.primary);
     root.style.setProperty("--accent-glow", theme.glowColor);
+
+    // Apply high contrast theme specific styles
+    if (activeThemeId === "high-contrast") {
+      root.style.setProperty("--bg-primary", "#000000");
+      root.style.setProperty("--card", "#000000");
+      root.style.setProperty("--text", "#ffffff");
+      root.style.setProperty("--border", "#ffffff");
+      root.style.setProperty("--accent", "#ffff00");
+      root.classList.add("high-contrast");
+    } else {
+      root.classList.remove("high-contrast");
+    }
 
     // Update global glow classes logic if needed (handled by index.css usually via classes)
   }, [activeThemeId]);

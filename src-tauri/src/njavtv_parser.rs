@@ -19,10 +19,13 @@ pub struct NjavtvSeriesInfo {
     pub direct_page_url: Option<String>,
 }
 
+#[allow(dead_code)]
 pub struct NjavtvParser {
+    #[allow(dead_code)]
     proxy_config: Arc<RwLock<proxy::ProxyConfig>>,
 }
 
+#[allow(dead_code)]
 impl NjavtvParser {
     pub fn new(proxy_config: Arc<RwLock<proxy::ProxyConfig>>) -> Self {
         Self { proxy_config }

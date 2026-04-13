@@ -8,6 +8,10 @@ pub struct ChromeVideoDetector {
     browser: Option<Arc<Browser>>,
     /// Store cookies from last detection for authentication
     last_cookies: Vec<(String, String)>,
+    /// Last detected page title (best effort)
+    last_title: Option<String>,
+    /// Last detected poster/thumbnail URL (best effort)
+    last_poster_url: Option<String>,
 }
 
 impl ChromeVideoDetector {
@@ -15,33 +19,24 @@ impl ChromeVideoDetector {
         Ok(Self {
             browser: None,
             last_cookies: Vec::new(),
+            last_title: None,
+            last_poster_url: None,
         })
     }
 
     fn extract_cookies(&mut self, tab: &headless_chrome::Tab) {
-        let cookie_script = r#"
-            (function() {
-                return document.cookie.split(';').map(c => {
-                    const eq = c.indexOf('=');
-                    const name = c.substring(0, eq).trim();
-                    const value = c.substring(eq + 1).trim();
-                    return [name, value];
-                });
-            })()
-        "#;
-
-        if let Ok(result) = tab.evaluate(cookie_script, false) {
-            if let Some(value) = result.value {
-                if let Ok(cookies) = serde_json::from_value::<Vec<(String, String)>>(value) {
-                    if !cookies.is_empty() {
-                        eprintln!(
-                            "[ChromeDetector] Extracted {} cookies: {:?}",
-                            cookies.len(),
-                            cookies.iter().map(|(n, _)| n).collect::<Vec<_>>()
-                        );
-                        self.last_cookies = cookies;
-                    }
-                }
+        if let Ok(cookies) = tab.get_cookies() {
+            let pairs: Vec<(String, String)> = cookies
+                .into_iter()
+                .map(|c| (c.name, c.value))
+                .collect();
+            if !pairs.is_empty() {
+                eprintln!(
+                    "[ChromeDetector] Extracted {} cookies: {:?}",
+                    pairs.len(),
+                    pairs.iter().map(|(n, _)| n).collect::<Vec<_>>()
+                );
+                self.last_cookies = pairs;
             }
         }
     }
@@ -49,6 +44,66 @@ impl ChromeVideoDetector {
     /// Get cookies from last detection
     pub fn get_last_cookies(&self) -> &[(String, String)] {
         &self.last_cookies
+    }
+
+    /// Get last captured page title
+    pub fn get_last_title(&self) -> Option<&str> {
+        self.last_title.as_deref()
+    }
+
+    /// Get last captured poster/thumbnail URL
+    pub fn get_last_poster_url(&self) -> Option<&str> {
+        self.last_poster_url.as_deref()
+    }
+
+    /// Capture title/poster metadata from the currently loaded page.
+    /// This is best-effort and never fails the detection flow.
+    fn capture_page_metadata(&mut self, tab: &headless_chrome::Tab) {
+        let metadata_script = r#"
+            (function() {
+                const get = (sel, attr = "content") => {
+                    const el = document.querySelector(sel);
+                    if (!el) return "";
+                    if (attr === "text") return (el.textContent || "").trim();
+                    return (el.getAttribute(attr) || "").trim();
+                };
+
+                const title =
+                    get("meta[property='og:title']") ||
+                    get("meta[name='twitter:title']") ||
+                    get("h1", "text") ||
+                    (document.title || "").trim();
+
+                const poster =
+                    get("meta[property='og:image']") ||
+                    get("meta[name='twitter:image']") ||
+                    get("video", "poster") ||
+                    get("img[src*='cover']", "src") ||
+                    get("img[src*='poster']", "src") ||
+                    get("img", "src");
+
+                return { title, poster };
+            })()
+        "#;
+
+        if let Ok(result) = tab.evaluate(metadata_script, false) {
+            if let Some(value) = result.value {
+                if let Ok(meta) = serde_json::from_value::<serde_json::Value>(value) {
+                    if let Some(title) = meta.get("title").and_then(|v| v.as_str()) {
+                        let clean = title.trim();
+                        if !clean.is_empty() {
+                            self.last_title = Some(clean.to_string());
+                        }
+                    }
+                    if let Some(poster) = meta.get("poster").and_then(|v| v.as_str()) {
+                        let clean = poster.trim();
+                        if !clean.is_empty() {
+                            self.last_poster_url = Some(clean.to_string());
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Initialize headless Chrome browser
@@ -66,14 +121,22 @@ impl ChromeVideoDetector {
         args.push(std::ffi::OsStr::new("--disable-software-rasterizer"));
         args.push(std::ffi::OsStr::new("--disable-extensions"));
         args.push(std::ffi::OsStr::new("--window-size=1920,1080"));
+        // Position window off-screen to hide from user while keeping full browser capabilities
+        args.push(std::ffi::OsStr::new("--window-position=-32000,-32000"));
         args.push(std::ffi::OsStr::new(
             "--autoplay-policy=no-user-gesture-required",
         ));
+        // Anti-bot-detection: hide automation indicators from Cloudflare
+        args.push(std::ffi::OsStr::new(
+            "--disable-blink-features=AutomationControlled",
+        ));
+        args.push(std::ffi::OsStr::new("--disable-infobars"));
+        args.push(std::ffi::OsStr::new("--excludeSwitches=enable-automation"));
         // Match Python script's User-Agent exactly to ensure same behavior
         args.push(std::ffi::OsStr::new("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"));
 
         let options = LaunchOptions {
-            headless: true,
+            headless: false,
             sandbox: false,
             args: args,
             ..Default::default()
@@ -109,6 +172,10 @@ impl ChromeVideoDetector {
         url: &str,
         app_handle: Option<&AppHandle>,
     ) -> Result<Option<String>, String> {
+        // Reset metadata cache for this detection run
+        self.last_title = None;
+        self.last_poster_url = None;
+
         // Javascript to click play buttons, iframes, and center screen
         let click_script = r#"
             (function() {
@@ -287,6 +354,8 @@ impl ChromeVideoDetector {
         self.emit_progress(app_handle, "Waiting for page to load...", 40);
         tab.wait_until_navigated()
             .map_err(|e| format!("Navigation failed: {}", e))?;
+        self.extract_cookies(&tab);
+        self.capture_page_metadata(&tab);
 
         // NjavTV special handling: Poll for HLS.js instance with m3u8 URL
         // Key insight: NjavTV sets window.hls.url during page init (no clicking needed).
@@ -418,6 +487,7 @@ impl ChromeVideoDetector {
                 // Step 2: Navigate to iframe URL (missav.guide → redirects to javxx.com)
                 if let Ok(_) = tab.navigate_to(src) {
                     let _ = tab.wait_until_navigated();
+                    self.capture_page_metadata(&tab);
                     eprintln!("[ChromeDetector] njav.org: Navigated to iframe page");
 
                     // Wait for javxx.com SPA to render (Cloudflare + React)
@@ -471,6 +541,7 @@ impl ChromeVideoDetector {
                         // Navigate directly to surrit.store
                         if let Ok(_) = tab.navigate_to(surrit) {
                             let _ = tab.wait_until_navigated();
+                            self.capture_page_metadata(&tab);
 
                             // Inject observer on surrit.store
                             let _ = tab.evaluate(observer_script, false);
@@ -530,6 +601,338 @@ impl ChromeVideoDetector {
 
             // If njav-specific methods failed, fall through to generic detection
             eprintln!("[ChromeDetector] njav.org specific methods failed, trying general detection...");
+        }
+
+        // avkuy.com special handling: Cloudflare + embedded av-kuy player iframe
+        let is_avkuy = url.contains("avkuy.com") || url.contains("av-kuy.com");
+        if is_avkuy {
+            eprintln!("[ChromeDetector] avkuy detected - resolving iframe player");
+            self.emit_progress(
+                app_handle,
+                "avkuy detected - bypassing Cloudflare...",
+                45,
+            );
+
+            let cloudflare_resolved = if self.is_cloudflare_page(&tab) {
+                self.wait_for_cloudflare(&tab, app_handle, 60)
+            } else {
+                true
+            };
+
+            if cloudflare_resolved {
+                // Cloudflare flow can occasionally land on homepage/search.
+                // Navigate back to the requested URL before extracting iframe/player.
+                let current_url = tab.get_url();
+                let requested_tail = url
+                    .split('/')
+                    .filter(|s| !s.is_empty())
+                    .next_back()
+                    .unwrap_or("");
+                let lost_target_page = !requested_tail.is_empty() && !current_url.contains(requested_tail);
+                if lost_target_page && tab.navigate_to(url).is_ok() {
+                    let _ = tab.wait_until_navigated();
+                    std::thread::sleep(Duration::from_secs(2));
+                }
+
+                // Capture title/poster from the main page first
+                self.capture_page_metadata(&tab);
+                let _ = tab.evaluate(observer_script, false);
+                std::thread::sleep(Duration::from_secs(2));
+
+                if let Some(found_url) = self.check_for_video_url(&tab) {
+                    eprintln!("[ChromeDetector] avkuy: Found URL on main page: {}", found_url);
+                    self.extract_cookies(&tab);
+                    self.emit_progress(app_handle, "Found video URL!", 100);
+                    return Ok(Some(found_url));
+                }
+
+                // Try interacting on the main post page first.
+                // The embedded iframe sometimes loads stream requests that are visible
+                // from the top-level page without direct iframe navigation.
+                for attempt in 1..=8 {
+                    self.emit_progress(
+                        app_handle,
+                        &format!("Trying avkuy main player... ({}/8)", attempt),
+                        52 + (attempt * 2) as u32,
+                    );
+                    let _ = tab.evaluate(click_script, false);
+                    std::thread::sleep(Duration::from_secs(3));
+
+                    if let Some(found_url) = self.check_for_video_url(&tab) {
+                        eprintln!(
+                            "[ChromeDetector] avkuy: Found URL on main page (attempt {}): {}",
+                            attempt, found_url
+                        );
+                        self.extract_cookies(&tab);
+                        self.emit_progress(app_handle, "Found video URL!", 100);
+                        return Ok(Some(found_url));
+                    }
+                }
+
+                let iframe_extract = r#"
+                    (function() {
+                        const normalize = (src) => {
+                            if (!src) return '';
+                            if (src.startsWith('//')) return 'https:' + src;
+                            if (src.startsWith('http')) return src;
+                            return '';
+                        };
+
+                        const iframes = document.querySelectorAll('iframe');
+                        for (const frame of iframes) {
+                            const src =
+                                frame.src ||
+                                frame.getAttribute('data-src') ||
+                                frame.getAttribute('data-lazy-src') ||
+                                '';
+                            const u = normalize(src);
+                            if (!u) continue;
+                            if (u.includes('av-kuy.com/v/') || u.includes('/v/')) {
+                                return u;
+                            }
+                        }
+                        // Fallback: some themes keep player URL inside script/html
+                        const html = document.documentElement.outerHTML;
+                        const m = html.match(/(https?:\/\/[^"'\s<>]*av-kuy\.com\/v\/[^"'\s<>]*)/i);
+                        if (m) return m[1];
+                        return null;
+                    })()
+                "#;
+
+                // Player iframe can be injected late by theme scripts/ads.
+                let mut iframe_url: Option<String> = None;
+                for attempt in 1..=10 {
+                    if let Ok(result) = tab.evaluate(iframe_extract, false) {
+                        if let Some(value) = result.value {
+                            if value.is_string() {
+                                if let Ok(found) = serde_json::from_value::<String>(value) {
+                                    if !found.is_empty() {
+                                        iframe_url = Some(found);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    self.emit_progress(
+                        app_handle,
+                        &format!("Waiting for avkuy player iframe... ({}/10)", attempt),
+                        58 + (attempt * 2) as u32,
+                    );
+                    std::thread::sleep(Duration::from_secs(2));
+                }
+
+                if let Some(ref iframe_src) = iframe_url {
+                    eprintln!("[ChromeDetector] avkuy: Found iframe URL: {}", iframe_src);
+                    self.emit_progress(app_handle, "Loading embedded player...", 60);
+
+                    if tab.navigate_to(iframe_src).is_ok() {
+                        let _ = tab.wait_until_navigated();
+                        self.extract_cookies(&tab);
+                        if self.is_cloudflare_page(&tab) {
+                            self.emit_progress(
+                                app_handle,
+                                "Solving player Cloudflare challenge...",
+                                62,
+                            );
+                            let solved = self.wait_for_cloudflare(&tab, app_handle, 45);
+                            if solved {
+                                // Re-open iframe URL after challenge resolution to ensure player scripts run
+                                let _ = tab.navigate_to(iframe_src);
+                                let _ = tab.wait_until_navigated();
+                            }
+                        }
+                        self.capture_page_metadata(&tab);
+                        let _ = tab.evaluate(observer_script, false);
+                        std::thread::sleep(Duration::from_secs(2));
+
+                        if let Some(found_url) = self.check_for_video_url(&tab) {
+                            eprintln!("[ChromeDetector] avkuy: Found URL in iframe: {}", found_url);
+                            self.extract_cookies(&tab);
+                            self.emit_progress(app_handle, "Found video URL!", 100);
+                            return Ok(Some(found_url));
+                        }
+
+                        for attempt in 1..=10 {
+                            self.emit_progress(
+                                app_handle,
+                                &format!("Waiting for avkuy video... ({}/10)", attempt),
+                                60 + (attempt * 3) as u32,
+                            );
+                            let _ = tab.evaluate(click_script, false);
+                            std::thread::sleep(Duration::from_secs(3));
+
+                            if let Some(found_url) = self.check_for_video_url(&tab) {
+                                eprintln!(
+                                    "[ChromeDetector] avkuy: Found URL in iframe (attempt {}): {}",
+                                    attempt, found_url
+                                );
+                                self.extract_cookies(&tab);
+                                self.emit_progress(app_handle, "Found video URL!", 100);
+                                return Ok(Some(found_url));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Reset to original page before generic fallback, so we don't stay on
+            // the iframe challenge page.
+            let _ = tab.navigate_to(url);
+            let _ = tab.wait_until_navigated();
+            let _ = tab.evaluate(observer_script, false);
+            eprintln!("[ChromeDetector] avkuy specific methods failed, trying general detection...");
+        }
+
+        // javwow.com special handling: Resolve onlysubthai.com iframe for HLS stream
+        // javwow.com → Cloudflare challenge → page with iframe → onlysubthai.com → HLS .m3u8
+        let is_javwow = url.contains("javwow.com");
+        if is_javwow {
+            eprintln!("[ChromeDetector] javwow.com detected - resolving video page");
+            self.emit_progress(
+                app_handle,
+                "javwow.com detected - bypassing Cloudflare...",
+                45,
+            );
+
+            // Phase 1: Handle Cloudflare challenge (wait up to 30s for auto-resolution)
+            let cloudflare_resolved = if self.is_cloudflare_page(&tab) {
+                eprintln!("[ChromeDetector] javwow.com: Cloudflare challenge detected");
+                self.wait_for_cloudflare(&tab, app_handle, 30)
+            } else {
+                eprintln!("[ChromeDetector] javwow.com: No Cloudflare challenge, page loaded directly");
+                true
+            };
+
+            // Inject comprehensive stealth scripts (helps with post-challenge checks)
+            let stealth_script = r#"
+                (function() {
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                    Object.defineProperty(navigator, 'languages', { get: () => ['th', 'en-US', 'en'] });
+                    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                    // Override permissions to avoid detection
+                    if (navigator.permissions) {
+                        const origQuery = navigator.permissions.query;
+                        navigator.permissions.query = (params) => (
+                            params.name === 'notifications' ?
+                                Promise.resolve({ state: Notification.permission }) :
+                                origQuery(params)
+                        );
+                    }
+                    return true;
+                })()
+            "#;
+            let _ = tab.evaluate(stealth_script, false);
+            let _ = tab.evaluate(observer_script, false);
+
+            // Phase 2: If Cloudflare was resolved, extract iframe and find video
+            if cloudflare_resolved {
+                // Small wait for page DOM to settle after Cloudflare redirect
+                std::thread::sleep(Duration::from_secs(2));
+
+                // Check if page already has m3u8
+                if let Some(found_url) = self.check_for_video_url(&tab) {
+                    eprintln!("[ChromeDetector] javwow.com: Found video URL on main page: {}", found_url);
+                    self.extract_cookies(&tab);
+                    self.emit_progress(app_handle, "Found video URL!", 100);
+                    return Ok(Some(found_url));
+                }
+
+                // Extract onlysubthai.com embed URL from iframe, og:video, or regex
+                let embed_extract = r#"
+                    (function() {
+                        // Method 1: iframe with onlysubthai
+                        const iframes = document.querySelectorAll('iframe');
+                        for (let i of iframes) {
+                            const src = i.src || i.dataset.src || i.dataset.lazySrc || '';
+                            if (src.includes('onlysubthai') || src.includes('subthai')) {
+                                if (src.startsWith('//')) return 'https:' + src;
+                                return src;
+                            }
+                        }
+                        // Method 2: og:video meta tag
+                        const ogVideo = document.querySelector('meta[property="og:video"]');
+                        if (ogVideo && ogVideo.content) return ogVideo.content;
+                        const ogVideoUrl = document.querySelector('meta[property="og:video:url"]');
+                        if (ogVideoUrl && ogVideoUrl.content) return ogVideoUrl.content;
+                        // Method 3: Regex in raw HTML
+                        const html = document.documentElement.outerHTML;
+                        const match = html.match(/(https?:\/\/[^"'\s<>]*onlysubthai[^"'\s<>]*)/);
+                        if (match) return match[1];
+                        // Method 4: Look for embedURL in JSON-LD or application/ld+json
+                        const ldScripts = document.querySelectorAll('script[type="application/ld+json"]');
+                        for (let s of ldScripts) {
+                            try {
+                                const data = JSON.parse(s.textContent);
+                                if (data.embedUrl) return data.embedUrl;
+                                if (data.contentUrl) return data.contentUrl;
+                            } catch(e) {}
+                        }
+                        return null;
+                    })()
+                "#;
+
+                let embed_url = if let Ok(result) = tab.evaluate(embed_extract, false) {
+                    if let Some(value) = result.value {
+                        if value.is_string() {
+                            serde_json::from_value::<String>(value).ok()
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                if let Some(ref src) = embed_url {
+                    eprintln!("[ChromeDetector] javwow.com: Found embed URL: {}", src);
+                    self.emit_progress(app_handle, "Loading video player...", 60);
+
+                    if let Ok(_) = tab.navigate_to(src) {
+                        let _ = tab.wait_until_navigated();
+                        self.capture_page_metadata(&tab);
+                        std::thread::sleep(Duration::from_secs(3));
+                        let _ = tab.evaluate(observer_script, false);
+
+                        // Quick check
+                        if let Some(found_url) = self.check_for_video_url(&tab) {
+                            eprintln!("[ChromeDetector] javwow.com: Found m3u8 on onlysubthai: {}", found_url);
+                            self.extract_cookies(&tab);
+                            self.emit_progress(app_handle, "Found video URL!", 100);
+                            return Ok(Some(found_url));
+                        }
+
+                        // Click + poll for m3u8 on onlysubthai.com (no Cloudflare there)
+                        for attempt in 1..=8 {
+                            eprintln!("[ChromeDetector] javwow.com: Polling onlysubthai attempt {}", attempt);
+                            self.emit_progress(
+                                app_handle,
+                                &format!("Waiting for video... ({}/8)", attempt),
+                                60 + (attempt * 4) as u32,
+                            );
+                            let _ = tab.evaluate(click_script, false);
+                            std::thread::sleep(Duration::from_secs(3));
+
+                            if let Some(found_url) = self.check_for_video_url(&tab) {
+                                eprintln!("[ChromeDetector] javwow.com: Found m3u8 (attempt {}): {}", attempt, found_url);
+                                self.extract_cookies(&tab);
+                                self.emit_progress(app_handle, "Found video URL!", 100);
+                                return Ok(Some(found_url));
+                            }
+                        }
+                    }
+                } else {
+                    eprintln!("[ChromeDetector] javwow.com: No embed URL found on page");
+                }
+            } else {
+                eprintln!("[ChromeDetector] javwow.com: Could not bypass Cloudflare after 30s");
+            }
+
+            // Fall through to generic detection as last resort
+            eprintln!("[ChromeDetector] javwow.com specific methods failed, trying general detection...");
         }
 
         // Inject PerformanceObserver immediately after load
@@ -685,6 +1088,7 @@ impl ChromeVideoDetector {
             }
         }
 
+        self.extract_cookies(&tab);
         self.emit_progress(app_handle, "No video URL found after all attempts", 100);
         Ok(None)
     }
@@ -881,6 +1285,7 @@ impl ChromeVideoDetector {
 
     /// Extract video ID from NjavTV URL
     /// e.g., https://njavtv.com/dm13/th/cus-1267 -> cus-1267
+    #[allow(dead_code)]
     fn extract_njavtv_video_id(url: &str) -> Option<String> {
         // Handle URLs like /dm13/th/cus-1267 or /cus-1267
         if let Some(pos) = url.rfind('/') {
@@ -911,6 +1316,7 @@ impl ChromeVideoDetector {
     }
 
     /// Extract m3u8 URL from playlist API response
+    #[allow(dead_code)]
     fn extract_m3u8_from_playlist(response: &serde_json::Value) -> Option<String> {
         // Try different response structures
 
@@ -968,6 +1374,112 @@ impl ChromeVideoDetector {
         None
     }
 
+    /// Check if current page is a Cloudflare challenge page
+    fn is_cloudflare_page(&self, tab: &headless_chrome::Tab) -> bool {
+        let check_script = r#"
+            (function() {
+                const title = (document.title || '').toLowerCase();
+                const bodyText = document.body ? (document.body.innerText || '').toLowerCase() : '';
+                const hasCfErrorImage = document.querySelector('img[alt="error"]') !== null;
+                const hasInlineCfScript = Array.from(document.querySelectorAll('script'))
+                    .some(s => (s.textContent || '').includes('__CF$cv$params'));
+                return title.includes('just a moment') ||
+                       title.includes('attention required') ||
+                       title.includes('checking your browser') ||
+                       (hasCfErrorImage && hasInlineCfScript) ||
+                       bodyText.includes('verify you are human') ||
+                       bodyText.includes('checking your browser before accessing') ||
+                       document.getElementById('challenge-running') !== null ||
+                       document.getElementById('challenge-form') !== null ||
+                       document.querySelector('form#challenge-form') !== null ||
+                       document.querySelector('.cf-turnstile') !== null ||
+                       document.querySelector('iframe[src*="challenges.cloudflare.com"]') !== null;
+            })()
+        "#;
+
+        if let Ok(result) = tab.evaluate(check_script, false) {
+            if let Some(value) = result.value {
+                if let Ok(is_cf) = serde_json::from_value::<bool>(value) {
+                    return is_cf;
+                }
+            }
+        }
+        false
+    }
+
+    /// Wait for Cloudflare challenge to auto-resolve, returns true if resolved
+    fn wait_for_cloudflare(
+        &self,
+        tab: &headless_chrome::Tab,
+        app_handle: Option<&AppHandle>,
+        max_wait_secs: u64,
+    ) -> bool {
+        let start = std::time::Instant::now();
+        let mut waited = 0u64;
+
+        // First, try clicking any Turnstile checkbox
+        let click_turnstile = r#"
+            (function() {
+                // Click Turnstile iframe
+                document.querySelectorAll('iframe[src*="challenges.cloudflare.com"]').forEach(f => {
+                    try { f.click(); } catch(e) {}
+                });
+                // Click visible checkboxes
+                document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                    try { if (cb.offsetParent !== null) cb.click(); } catch(e) {}
+                });
+                // Click challenge-local buttons only (avoid unrelated site buttons/forms)
+                const scopes = [
+                    document.getElementById('challenge-form'),
+                    document.querySelector('[id*=\"challenge\"]'),
+                    document.querySelector('.cf-challenge'),
+                    document.querySelector('.cf-turnstile')
+                ].filter(Boolean);
+                scopes.forEach(scope => {
+                    scope.querySelectorAll('button, input[type=\"submit\"]').forEach(btn => {
+                        try { if (btn.offsetParent !== null) btn.click(); } catch(e) {}
+                    });
+                });
+                // Fallback center click (often where Cloudflare checkbox sits)
+                try {
+                    const el = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+                    if (el) el.click();
+                } catch(e) {}
+                return true;
+            })()
+        "#;
+        let _ = tab.evaluate(click_turnstile, false);
+
+        while start.elapsed().as_secs() < max_wait_secs {
+            if !self.is_cloudflare_page(tab) {
+                eprintln!(
+                    "[ChromeDetector] Cloudflare resolved after {}s",
+                    start.elapsed().as_secs()
+                );
+                // Small extra wait for page to fully load after challenge
+                std::thread::sleep(Duration::from_millis(500));
+                return true;
+            }
+
+            waited += 2;
+            self.emit_progress(
+                app_handle,
+                &format!("Solving Cloudflare challenge... ({}s)", waited),
+                47,
+            );
+            std::thread::sleep(Duration::from_secs(2));
+
+            // Re-try clicking on each iteration
+            let _ = tab.evaluate(click_turnstile, false);
+        }
+
+        eprintln!(
+            "[ChromeDetector] Cloudflare NOT resolved after {}s",
+            max_wait_secs
+        );
+        false
+    }
+
     /// Cleanup browser instance
     pub fn cleanup(&mut self) {
         if self.browser.is_some() {
@@ -980,5 +1492,29 @@ impl ChromeVideoDetector {
 impl Drop for ChromeVideoDetector {
     fn drop(&mut self) {
         self.cleanup();
+    }
+}
+
+#[cfg(test)]
+mod live_tests {
+    use super::ChromeVideoDetector;
+
+    #[test]
+    #[ignore = "Live network/browser test for avkuy Cloudflare flow"]
+    fn live_detect_avkuy_url() {
+        let mut detector = ChromeVideoDetector::new().expect("detector init failed");
+        let url = "https://www2.avkuy.com/avsubthai-adn-750/";
+        let detected = detector
+            .detect_video_url(url, None)
+            .expect("detection should not error");
+
+        assert!(
+            detected
+                .as_deref()
+                .map(|u| u.contains(".m3u8") || u.contains(".mp4"))
+                .unwrap_or(false),
+            "Expected m3u8/mp4 URL, got: {:?}",
+            detected
+        );
     }
 }

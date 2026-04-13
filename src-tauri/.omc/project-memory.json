@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1775407590353,
-  "projectRoot": "/Volumes/Data/_workspace/_git/video-downloader-tauri/src-tauri",
+  "lastScanned": 1776003792198,
+  "projectRoot": "/Volumes/Data/workspace/git/video-downloader-tauri/src-tauri",
   "techStack": {
     "languages": [
       {
@@ -28,14 +28,16 @@
     "namingStyle": null,
     "importStyle": null,
     "testPattern": null,
-    "fileOrganization": null
+    "fileOrganization": "type-based"
   },
   "structure": {
     "isMonorepo": false,
     "workspaces": [],
     "mainDirectories": [
+      "docs",
       "scripts",
-      "src"
+      "src",
+      "tests"
     ],
     "gitBranches": {
       "defaultBranch": "master",
@@ -44,11 +46,20 @@
   },
   "customNotes": [],
   "directoryMap": {
+    "**": {
+      "path": "**",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1776003792192,
+      "keyFiles": [
+        "CLAUDE.md"
+      ]
+    },
     "binaries": {
       "path": "binaries",
       "purpose": null,
       "fileCount": 2,
-      "lastAccessed": 1775407590195,
+      "lastAccessed": 1776003792192,
       "keyFiles": [
         "CLAUDE.md",
         "ffmpeg"
@@ -58,23 +69,39 @@
       "path": "capabilities",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1775407590195,
+      "lastAccessed": 1776003792192,
       "keyFiles": [
         "default.json"
       ]
+    },
+    "dist": {
+      "path": "dist",
+      "purpose": "Distribution/build output",
+      "fileCount": 1,
+      "lastAccessed": 1776003792194,
+      "keyFiles": [
+        "CLAUDE.md"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 0,
+      "lastAccessed": 1776003792194,
+      "keyFiles": []
     },
     "gen": {
       "path": "gen",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1775407590200,
+      "lastAccessed": 1776003792194,
       "keyFiles": []
     },
     "icons": {
       "path": "icons",
       "purpose": null,
       "fileCount": 18,
-      "lastAccessed": 1775407590201,
+      "lastAccessed": 1776003792195,
       "keyFiles": [
         "128x128.png",
         "128x128@2x.png",
@@ -87,7 +114,7 @@
       "path": "resources",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1775407590201,
+      "lastAccessed": 1776003792195,
       "keyFiles": [
         "CLAUDE.md"
       ]
@@ -96,7 +123,7 @@
       "path": "scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 2,
-      "lastAccessed": 1775407590202,
+      "lastAccessed": 1776003792195,
       "keyFiles": [
         "CLAUDE.md",
         "download-ffmpeg.cjs"
@@ -105,21 +132,21 @@
     "src": {
       "path": "src",
       "purpose": "Source code",
-      "fileCount": 11,
-      "lastAccessed": 1775407590203,
+      "fileCount": 20,
+      "lastAccessed": 1776003792195,
       "keyFiles": [
         "CLAUDE.md",
         "baanjeen_parser.rs",
+        "backup.rs",
         "chrome_detector.rs",
-        "downloader.rs",
-        "hsck_parser.rs"
+        "downloader.rs"
       ]
     },
     "src-tauri": {
       "path": "src-tauri",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1775407590203,
+      "lastAccessed": 1776003792195,
       "keyFiles": [
         "CLAUDE.md"
       ]
@@ -128,16 +155,34 @@
       "path": "target",
       "purpose": null,
       "fileCount": 2,
-      "lastAccessed": 1775407590204,
+      "lastAccessed": 1776003792195,
       "keyFiles": [
         "CACHEDIR.TAG"
+      ]
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 1,
+      "lastAccessed": 1776003792195,
+      "keyFiles": [
+        "test_njavtv.rs"
+      ]
+    },
+    "dist/assets": {
+      "path": "dist/assets",
+      "purpose": "Static assets",
+      "fileCount": 1,
+      "lastAccessed": 1776003792196,
+      "keyFiles": [
+        "CLAUDE.md"
       ]
     },
     "gen/schemas": {
       "path": "gen/schemas",
       "purpose": "Schema definitions",
       "fileCount": 4,
-      "lastAccessed": 1775407590208,
+      "lastAccessed": 1776003792196,
       "keyFiles": [
         "acl-manifests.json",
         "capabilities.json",
@@ -148,18 +193,29 @@
       "path": "resources/bin",
       "purpose": "Executable scripts",
       "fileCount": 6,
-      "lastAccessed": 1775407590208,
+      "lastAccessed": 1776003792196,
       "keyFiles": [
         "ffmpeg-aarch64-apple-darwin",
         "ffmpeg-x86_64-pc-windows-msvc.exe",
         "ffmpeg-x86_64-unknown-linux-gnu"
       ]
     },
+    "src/components": {
+      "path": "src/components",
+      "purpose": "UI components",
+      "fileCount": 4,
+      "lastAccessed": 1776003792197,
+      "keyFiles": [
+        "CLAUDE.md",
+        "LibraryCard.tsx",
+        "LibraryPanel.tsx"
+      ]
+    },
     "src-tauri/src": {
       "path": "src-tauri/src",
       "purpose": "Source code",
       "fileCount": 2,
-      "lastAccessed": 1775407590209,
+      "lastAccessed": 1776003792197,
       "keyFiles": [
         "CLAUDE.md",
         "chrome_detector.rs"
@@ -169,20 +225,14 @@
   "hotPaths": [
     {
       "path": "src/lib.rs",
-      "accessCount": 20,
-      "lastAccessed": 1775410236601,
-      "type": "file"
+      "accessCount": 12,
+      "lastAccessed": 1776009894215,
+      "type": "directory"
     },
     {
-      "path": "src/downloader.rs",
-      "accessCount": 19,
-      "lastAccessed": 1775410803710,
-      "type": "file"
-    },
-    {
-      "path": "src/chrome_detector.rs",
-      "accessCount": 1,
-      "lastAccessed": 1775407791825,
+      "path": "Cargo.toml",
+      "accessCount": 2,
+      "lastAccessed": 1776009904206,
       "type": "file"
     }
   ],
