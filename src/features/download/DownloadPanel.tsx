@@ -1,10 +1,9 @@
 import React, { useCallback } from 'react';
 import { Download, Pause, Play, X } from 'lucide-react';
-import { AppState, AppAction } from '../../hooks/useAppState';
+import { AppState } from '../../hooks/useAppState';
 
 interface DownloadPanelProps {
   state: AppState;
-  dispatch: React.Dispatch<AppAction>;
   onStartDownload: () => Promise<void>;
   onPause: () => Promise<void>;
   onResume: () => Promise<void>;
@@ -13,7 +12,7 @@ interface DownloadPanelProps {
 
 export const DownloadPanel: React.FC<DownloadPanelProps> = ({
   state,
-  dispatch,
+  
   onStartDownload,
   onPause,
   onResume,

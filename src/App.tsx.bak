@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useAppState } from "./hooks/useAppState";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -105,6 +106,13 @@ function App() {
   } = useDomainSettings();
 
   // State
+
+  // === Phase 2: State Management with useReducer ===
+  // Batch state now managed via useAppState reducer
+  const { state: appState, dispatch } = useAppState();
+  const { batch: batchState, download: dlState, ui: uiState } = appState;
+
+  // Legacy state (will be migrated incrementally)
   const [url, setUrl] = useState("");
   const [series, setSeries] = useState<SeriesInfo | null>(null);
   const [selectedEpisodes, setSelectedEpisodes] = useState<Set<number>>(
@@ -117,14 +125,30 @@ function App() {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [selectedQuality, setSelectedQuality] = useState<string | null>(null);
 
-  // Batch Mode State
-  const [isBatchMode, setIsBatchMode] = useState(false);
+  // Batch mode - use reducer state
+  const isBatchMode = batchState.isBatchMode;
+  const isBatchProcessing = batchState.isBatchProcessing;
+  const isAutoCapture = batchState.isAutoCapture;
+  // Batch mode - use reducer state
+  const isBatchMode = batchState.isBatchMode;
+  const isBatchProcessing = batchState.isBatchProcessing;
+  const isAutoCapture = batchState.isAutoCapture;
+  const isBatchItemRunning = batchState.isBatchItemRunning;
   const [batchQueue, setBatchQueue] = useState<BatchItem[]>([]);
-  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
-  const [isAutoCapture, setIsAutoCapture] = useState(false);
-  const [isBatchItemRunning, setIsBatchItemRunning] = useState(false);
 
-  const [mergeState, setMergeState] = useState<{
+  // Setter aliases using dispatch (backward compatible)
+  const setIsBatchMode = useCallback((val: boolean) => {
+    dispatch(val ? { type: 'ENABLE_BATCH_MODE' } : { type: 'DISABLE_BATCH_MODE' });
+  }, [dispatch]);
+  const setIsBatchProcessing = useCallback((val: boolean) => {
+    dispatch(val ? { type: 'START_BATCH_PROCESSING' } : { type: 'STOP_BATCH_PROCESSING' });
+  }, [dispatch]);
+  const setIsAutoCapture = useCallback(() => {
+    dispatch({ type: 'TOGGLE_AUTO_CAPTURE' });
+  }, [dispatch]);
+  const setIsBatchItemRunning = useCallback((val: boolean) => {
+    dispatch({ type: 'SET_BATCH_ITEM_RUNNING', payload: val });
+  }, [dispatch]);
     isMerging: boolean;
     mergedFile: string | null;
     mergeError: string | null;
@@ -1893,77 +1917,67 @@ function App() {
 
         {activeTab === "files" && (
           <div className="page-transition animate-fade-in">
-            <ErrorBoundary>
-              <FileBrowser
-                outputDir={settings.outputDir}
-                files={files}
-                onRefresh={refreshFiles}
-                onOpenFolder={handleOpenOutputFolder}
-                onDelete={handleDeleteFiles}
-                onPlay={handlePlayFile}
-              />
-            </ErrorBoundary>
+            <FileBrowser
+              outputDir={settings.outputDir}
+              files={files}
+              onRefresh={refreshFiles}
+              onOpenFolder={handleOpenOutputFolder}
+              onDelete={handleDeleteFiles}
+              onPlay={handlePlayFile}
+            />
           </div>
         )}
 
         {activeTab === "history" && (
           <div className="page-transition animate-slide-in">
-            <ErrorBoundary>
-              <HistoryPanel
-                history={history}
-                stats={getStats()}
-                onDelete={deleteRecord}
-                onClear={clearHistory}
-              />
-            </ErrorBoundary>
+            <HistoryPanel
+              history={history}
+              stats={getStats()}
+              onDelete={deleteRecord}
+              onClear={clearHistory}
+            />
           </div>
         )}
 
         {activeTab === "settings" && (
           <div className="page-transition animate-fade-in space-y-6 container mx-auto max-w-4xl">
-            <ErrorBoundary>
-              <SettingsPanel
-                settings={settings}
-                onUpdate={updateSetting}
-                onReset={resetSettings}
-                onOpenFolder={handleOpenOutputFolder}
-                onCheckUpdates={checkForUpdates}
-                isCheckingUpdates={isCheckingUpdates}
-                language={language}
-                onLanguageChange={setLanguage}
-                t={t}
-                themes={themes}
-                activeThemeId={activeThemeId}
-                onThemeSelect={setActiveTheme}
-                domainSettings={domainSettings}
-                onUpdateDomain={updateDomainSetting}
-                onResetDomains={resetDomainSettings}
-              />
-              <SchedulerPanel />
-              <BackupPanel />
-            </ErrorBoundary>
+            <SettingsPanel
+              settings={settings}
+              onUpdate={updateSetting}
+              onReset={resetSettings}
+              onOpenFolder={handleOpenOutputFolder}
+              onCheckUpdates={checkForUpdates}
+              isCheckingUpdates={isCheckingUpdates}
+              language={language}
+              onLanguageChange={setLanguage}
+              t={t}
+              themes={themes}
+              activeThemeId={activeThemeId}
+              onThemeSelect={setActiveTheme}
+              domainSettings={domainSettings}
+              onUpdateDomain={updateDomainSetting}
+              onResetDomains={resetDomainSettings}
+            />
+            <SchedulerPanel />
+            <BackupPanel />
           </div>
         )}
 
-
         {activeTab === "logs" && (
           <div className="h-full overflow-hidden page-transition animate-fade-in flex flex-col">
-            <ErrorBoundary>
-              <LogPanel logs={logs} onClear={clearLogs} />
-            </ErrorBoundary>
+            <LogPanel logs={logs} onClear={clearLogs} />
           </div>
         )}
       </main>
 
       {/* Mini Mode Overlay */}
       <MiniMode
-        isOpen={showMiniMode}
+        isOpen={showMiniMode && downloadState.isDownloading}
         onClose={() => setShowMiniMode(false)}
         onExpand={() => setShowMiniMode(false)}
         progress={progress}
         overallProgress={overallProgress}
-        isDownloading={downloadState.isDownloading}
-        currentEpisode={downloadState.currentEpisode}
+        completedEpisodes={downloadState.completedEpisodes.length}
         totalEpisodes={downloadState.totalSelected}
         isPaused={downloadState.isPaused}
         onPause={handlePause}
