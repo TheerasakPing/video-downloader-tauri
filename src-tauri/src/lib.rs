@@ -19,7 +19,7 @@ mod utils;
 
 use baanjeen_parser::BaanJeenParser;
 use chrome_detector::ChromeVideoDetector;
-use downloader::{check_ffmpeg, merge_videos_with_progress, DownloadConfig, DownloadResult, DownloadState, VideoDownloader};
+use downloader::{check_ffmpeg, DownloadConfig, DownloadResult, DownloadState, VideoDownloader};
 use hsck_parser::HsckParser;
 use javwow_parser::JavwowParser;
 use njav_parser::NjavParser;
@@ -1282,6 +1282,7 @@ async fn start_download(
         .unwrap()
         .clone()
         .ok_or("No series loaded")?;
+    let _ = app_handle.emit("log-info", format!("start_download called: {} episodes for {}", request.episodes.len(), series.title));
 
     // คำนวณ output dir จริง (เพิ่ม subfolder ตาม source ถ้า group_by_source=true)
     let effective_output_dir = if request.group_by_source {
@@ -1414,91 +1415,72 @@ async fn start_download(
         }
     }
 
-    // Debug: emit info about what we're about to do
+    // Return download results immediately so the next batch item can start.
+    // Merge runs as a background task so downloads are not blocked.
     let files_count = successful_files.len();
-    let ffmpeg_available = check_ffmpeg();
-    let merge_info = format!(
-        "Merge check: auto_merge={}, files={}, ffmpeg={}",
-        request.auto_merge,
-        files_count,
-        ffmpeg_available
-    );
-    let _ = app_handle.emit("log-info", merge_info);
-
-    // Debug: log the files list
-    if !successful_files.is_empty() {
-        let _ = app_handle.emit("log-info", format!("Files to merge: {:?}", &successful_files[..successful_files.len().min(5)]));
-    }
-
-    // Merge if requested
-    let should_merge = request.auto_merge && files_count > 0 && ffmpeg_available;
-    let _ = app_handle.emit("log-info", format!("Should merge: {}", should_merge));
+    let should_merge = request.auto_merge && files_count > 0 && check_ffmpeg();
 
     if should_merge {
-        let _ = app_handle.emit("log-info", format!("Series title: {}", series.title));
-        let output_filename = sanitize_filename(&series.title);
-        let _ = app_handle.emit("log-info", format!("Output filename: {}", output_filename));
-        let expanded_output_dir = expand_path(&effective_output_dir);
-        let _ = app_handle.emit("log-info", format!("Expanded dir: {:?}", expanded_output_dir));
-        let output_path = expanded_output_dir.join(format!("{}.mp4", output_filename));
-        let output_path_str = output_path.to_string_lossy().to_string();
+        let files_to_merge = successful_files.clone();
+        let series_title = series.title.clone();
+        let merge_app_handle = app_handle.clone();
+        let output_dir = effective_output_dir.clone();
 
-        let _ = app_handle.emit("log-info", format!("Starting merge to: {}", output_path_str));
-        let _ = app_handle.emit("merge-started", ());
+        // Emit merge-started right away so the UI shows the merge section
+        let _ = merge_app_handle.emit("merge-started", ());
 
-        if successful_files.len() == 1 {
-            // Just rename/copy the single file
-            let _ = app_handle.emit("log-info", "Single file - renaming...".to_string());
+        tokio::spawn(async move {
+            let output_filename = sanitize_filename(&series_title);
+            let expanded_output_dir = expand_path(&output_dir);
+            let output_path = expanded_output_dir.join(format!("{}.mp4", output_filename));
+            let output_path_str = output_path.to_string_lossy().to_string();
 
-            // Check if source file exists
-            let source = std::fs::canonicalize(&successful_files[0])
-                .map_err(|e| format!("Cannot find source file: {}", e))
-                .unwrap_or(std::path::PathBuf::from(&successful_files[0]));
+            let _ = merge_app_handle.emit("log-info", format!("Background merge: {} files -> {}", files_to_merge.len(), output_path_str));
 
-            match std::fs::rename(&source, &output_path) {
-                Ok(_) => {
-                    let _ = app_handle.emit("merge-complete", output_path_str);
-                }
-                Err(e) => {
-                    let _ = app_handle.emit("log-info", format!("Rename failed: {}, trying copy...", e));
-                    // Try copy if rename fails (cross-device)
-                    match std::fs::copy(&source, &output_path) {
-                        Ok(_) => {
-                            std::fs::remove_file(&source).ok();
-                            let _ = app_handle.emit("merge-complete", output_path_str.clone());
-                        }
-                        Err(e) => {
-                            let _ = app_handle.emit("merge-error", format!("Failed to rename: {}", e));
+            if files_to_merge.len() == 1 {
+                let source = std::path::PathBuf::from(&files_to_merge[0]);
+                match std::fs::rename(&source, &output_path) {
+                    Ok(_) => {
+                        let _ = merge_app_handle.emit("merge-complete", output_path_str);
+                    }
+                    Err(e) => {
+                        match std::fs::copy(&source, &output_path) {
+                            Ok(_) => {
+                                std::fs::remove_file(&source).ok();
+                                let _ = merge_app_handle.emit("merge-complete", output_path_str);
+                            }
+                            Err(e2) => {
+                                let _ = merge_app_handle.emit("merge-error", format!("Failed rename/copy: {} / {}", e, e2));
+                            }
                         }
                     }
                 }
-            }
-        } else {
-            // Merge multiple files
-            let _ = app_handle.emit("log-info", format!("Merging {} files with FFmpeg...", successful_files.len()));
-
-            // Sort files by episode number before merging
-            let mut sorted_files = successful_files.clone();
-            sorted_files.sort();
-
-            match merge_videos_with_progress(sorted_files.clone(), &output_path_str, Some(&app_handle)) {
-                Ok(_) => {
-                    let _ = app_handle.emit("log-info", "Merge complete, deleting individual files...".to_string());
-                    // Delete individual files after successful merge
-                    for file in &sorted_files {
-                        std::fs::remove_file(file).ok();
+            } else {
+                let mut sorted_files = files_to_merge.clone();
+                sorted_files.sort();
+                let files_for_cleanup = sorted_files.clone();
+                let path_for_emit = output_path_str.clone();
+                let handle_for_emit = merge_app_handle.clone();
+                // merge_videos_with_progress is sync/CPU-bound; run on blocking thread
+                let merge_result = tokio::task::spawn_blocking(move || {
+                    downloader::merge_videos_with_progress(sorted_files, &output_path_str, Some(&merge_app_handle))
+                }).await;
+                match merge_result {
+                    Ok(Ok(_)) => {
+                        for file in &files_for_cleanup {
+                            std::fs::remove_file(file).ok();
+                        }
+                        let _ = handle_for_emit.emit("merge-complete", path_for_emit);
                     }
-                    let _ = app_handle.emit("merge-complete", output_path_str);
-                }
-                Err(e) => {
-                    let _ = app_handle.emit("merge-error", e);
+                    Ok(Err(e)) => {
+                        let _ = handle_for_emit.emit("merge-error", e);
+                    }
+                    Err(e) => {
+                        let _ = handle_for_emit.emit("merge-error", format!("Merge task panicked: {}", e));
+                    }
                 }
             }
-        }
-    } else if request.auto_merge && !ffmpeg_available {
-        let _ = app_handle.emit("merge-error", "FFmpeg not found - cannot merge videos".to_string());
-    } else {
-        let _ = app_handle.emit("log-info", format!("Merge skipped: auto_merge={}, files={}", request.auto_merge, files_count));
+        });
     }
 
     Ok(results)
