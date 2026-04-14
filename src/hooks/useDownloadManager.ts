@@ -117,6 +117,8 @@ export function useDownloadManager(deps: UseDownloadManagerDeps) {
 
         const successCount = results.filter((r) => r.success).length;
         const failCount = results.filter((r) => !r.success).length;
+        // TODO: Backend doesn't return file sizes yet — using 100MB/episode estimate.
+        // Replace with actual sizes once DownloadResult includes fileSize field.
         const totalSize = 100 * 1024 * 1024 * successCount;
 
         updateRecord(recordId, {

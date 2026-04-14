@@ -8,17 +8,17 @@ export interface BatchItem {
   error?: string;
 }
 
+type RunDownloadFn = (series: SeriesInfo, episodes: Set<number>) => Promise<boolean>;
+
 interface UseBatchProcessorDeps {
   isFetching: boolean;
   setIsFetching: (v: boolean) => void;
-  isDownloading: boolean;
-  runDownload: (series: SeriesInfo, episodes: Set<number>) => Promise<boolean>;
   log: (msg: string) => void;
   error: (msg: string) => void;
 }
 
 export function useBatchProcessor(deps: UseBatchProcessorDeps) {
-  const { isFetching, setIsFetching, isDownloading, runDownload, log, error } = deps;
+  const { isFetching, setIsFetching, log, error } = deps;
 
   const [isBatchMode, setIsBatchMode] = useState(false);
   const [batchQueue, setBatchQueue] = useState<BatchItem[]>([]);
@@ -27,6 +27,20 @@ export function useBatchProcessor(deps: UseBatchProcessorDeps) {
   const [isBatchItemRunning, setIsBatchItemRunning] = useState(false);
   const [currentBatchItem, setCurrentBatchItem] = useState<BatchItem | null>(null);
   const isBatchItemRunningRef = useRef(false);
+
+  // Refs for late-bound values that have circular dependency with this hook
+  const runDownloadRef = useRef<RunDownloadFn>(async () => false);
+  const isDownloadingRef = useRef(false);
+
+  /** Call after useDownloadManager is initialized to wire up runDownload */
+  const setRunDownload = useCallback((fn: RunDownloadFn) => {
+    runDownloadRef.current = fn;
+  }, []);
+
+  /** Call to keep isDownloading in sync without adding it to effect deps */
+  const setIsDownloading = useCallback((v: boolean) => {
+    isDownloadingRef.current = v;
+  }, []);
 
   const toggleBatchProcessing = useCallback(() => {
     setIsBatchProcessing((p) => !p);
@@ -65,9 +79,11 @@ export function useBatchProcessor(deps: UseBatchProcessorDeps) {
     fetchItem();
   }, [batchQueue, isFetching, log, error, setIsFetching]);
 
-  // Continuous batch processing
+  // Continuous batch processing — uses refs for runDownload and isDownloading
+  // so this effect doesn't re-run on every download state change
   useEffect(() => {
-    if (!isBatchProcessing || isDownloading) return;
+    if (!isBatchProcessing) return;
+    if (isDownloadingRef.current) return;
     if (isBatchItemRunning || isBatchItemRunningRef.current) return;
 
     const nextIdx = batchQueue.findIndex((i) => i.status === "ready" && i.info);
@@ -91,7 +107,7 @@ export function useBatchProcessor(deps: UseBatchProcessorDeps) {
           Array.from({ length: item.info.totalEpisodes }, (_, i) => i + 1),
         );
 
-        const dlSuccess = await runDownload(item.info, allEpisodes);
+        const dlSuccess = await runDownloadRef.current(item.info, allEpisodes);
 
         setBatchQueue((prev) =>
           prev.map((it, idx) =>
@@ -110,7 +126,7 @@ export function useBatchProcessor(deps: UseBatchProcessorDeps) {
     };
 
     processItem();
-  }, [batchQueue, isBatchProcessing, isDownloading, isBatchItemRunning, runDownload]);
+  }, [batchQueue, isBatchProcessing, isBatchItemRunning]);
 
   const resetBatchFlags = useCallback(() => {
     isBatchItemRunningRef.current = false;
@@ -133,5 +149,7 @@ export function useBatchProcessor(deps: UseBatchProcessorDeps) {
     currentBatchItem,
     toggleBatchProcessing,
     resetBatchFlags,
+    setRunDownload,
+    setIsDownloading,
   };
 }

@@ -28,3 +28,4 @@ export { VideoPlayerModal } from "./VideoPlayerModal";
 export { default as ImportExport } from "./ImportExport";
 export { WebhookSettings } from "./WebhookSettings";
 export { default as ErrorBoundary } from "./ErrorBoundary";
+export { BatchQueueDrawer } from "./BatchQueueDrawer";
