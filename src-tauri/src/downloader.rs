@@ -1118,8 +1118,13 @@ impl VideoDownloader {
         let mut total_bytes: u64 = 0;
         let mut failed_segments: usize = 0;
 
-        for (i, seg_url) in segment_urls.iter().enumerate() {
-            // Check cancellation
+        // Concurrent segment download: fetch CHUNK_SIZE segments in parallel,
+        // write them to disk in order, then proceed to next chunk.
+        let chunk_size = 8usize; // parallel connections per chunk
+        let mut seg_idx: usize = 0;
+
+        for chunk in segment_urls.chunks(chunk_size) {
+            // Check cancellation before each chunk
             if let Some(ref state) = download_state {
                 if state.is_cancelled.load(Ordering::SeqCst) {
                     let _ = fs::remove_file(&ts_temp_path);
@@ -1130,71 +1135,71 @@ impl VideoDownloader {
                 }
             }
 
-            // Download segment with retry
-            let seg_url_clone = seg_url.clone();
-            let segment_data = retry_request(3, 2000, || {
+            // Download all segments in this chunk concurrently
+            let mut chunk_futures = Vec::new();
+            for seg_url in chunk {
+                let seg_url_clone = seg_url.clone();
                 let client = seg_client.clone();
-                let url = seg_url_clone.clone();
-                async move {
-                    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
-                    if resp.status().is_success() {
-                        resp.bytes().await.map_err(|e| e.to_string()).map(|b| b.to_vec())
-                    } else {
-                        Err(format!("HTTP {}", resp.status()))
-                    }
-                }
-            }).await;
-
-            let data = match segment_data {
-                Ok(data) => data,
-                Err(e) => {
-                    failed_segments += 1;
-                    let _ = app_handle.emit("log-warning", format!("Segment {}/{} failed after retries: {}", i + 1, total_segments, e));
-                    // If more than 5% of segments failed, abort — video would be unplayable
-                    if failed_segments > total_segments / 20 {
-                        let _ = fs::remove_file(&ts_temp_path);
-                        return DownloadResult {
-                            episode, success: false, file_path: None,
-                            error: Some(format!("Too many segments failed ({}/{}), aborting", failed_segments, total_segments)),
-                        };
-                    }
-                    continue;
-                }
-            };
-
-            // Strip PNG prefix if present (anti-scraping: CDN prepends a 1x1 PNG
-            // header before the actual MPEG-TS segment data)
-            let data = Self::strip_png_prefix(&data);
-
-            {
-                let seg_size = data.len() as u64;
-                total_bytes += seg_size;
-                if let Err(e) = ts_file.write_all(&data) {
-                    let _ = fs::remove_file(&ts_temp_path);
-                    return DownloadResult {
-                        episode, success: false, file_path: None,
-                        error: Some(format!("Failed to write segment: {}", e)),
-                    };
-                }
+                chunk_futures.push(async move {
+                    retry_request(3, 1000, || {
+                        let c = client.clone();
+                        let u = seg_url_clone.clone();
+                        async move {
+                            let resp = c.get(&u).send().await.map_err(|e| e.to_string())?;
+                            if resp.status().is_success() {
+                                resp.bytes().await.map_err(|e| e.to_string()).map(|b| b.to_vec())
+                            } else {
+                                Err(format!("HTTP {}", resp.status()))
+                            }
+                        }
+                    }).await
+                });
             }
 
-            // Emit progress with speed
-            let elapsed = start_time.elapsed().as_secs_f64();
-            let speed = if elapsed > 0.0 {
-                total_bytes as f64 / elapsed
-            } else {
-                0.0
-            };
-            let percentage = ((i + 1) as f64 / total_segments as f64) * 90.0; // Reserve last 10% for FFmpeg
-            if let Some(ref _state) = download_state {
-                let progress = DownloadProgress {
-                    episode,
-                    downloaded: (i + 1) as u64,
-                    total: total_segments as u64,
-                    speed,
-                    percentage,
-                };
-                let _ = app_handle.emit("download-progress", progress);
+            let chunk_results = futures_util::future::join_all(chunk_futures).await;
+
+            // Write results in order
+            for result in chunk_results {
+                seg_idx += 1;
+                match result {
+                    Ok(data) => {
+                        let data = Self::strip_png_prefix(&data);
+                        total_bytes += data.len() as u64;
+                        if let Err(e) = ts_file.write_all(&data) {
+                            let _ = fs::remove_file(&ts_temp_path);
+                            return DownloadResult {
+                                episode, success: false, file_path: None,
+                                error: Some(format!("Failed to write segment: {}", e)),
+                            };
+                        }
+                    }
+                    Err(e) => {
+                        failed_segments += 1;
+                        let _ = app_handle.emit("log-warning", format!("Segment {}/{} failed: {}", seg_idx, total_segments, e));
+                        if failed_segments > total_segments / 20 {
+                            let _ = fs::remove_file(&ts_temp_path);
+                            return DownloadResult {
+                                episode, success: false, file_path: None,
+                                error: Some(format!("Too many segments failed ({}/{}), aborting", failed_segments, total_segments)),
+                            };
+                        }
+                    }
+                }
+
+                // Emit progress
+                let elapsed = start_time.elapsed().as_secs_f64();
+                let speed = if elapsed > 0.0 { total_bytes as f64 / elapsed } else { 0.0 };
+                let percentage = (seg_idx as f64 / total_segments as f64) * 90.0;
+                if let Some(ref _state) = download_state {
+                    let progress = DownloadProgress {
+                        episode,
+                        downloaded: seg_idx as u64,
+                        total: total_segments as u64,
+                        speed,
+                        percentage,
+                    };
+                    let _ = app_handle.emit("download-progress", progress);
+                }
             }
         }
 

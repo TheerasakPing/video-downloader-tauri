@@ -1113,32 +1113,8 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             }
         }
 
-        // Chrome detector as last resort
-        if episode_urls.is_empty() {
-            let _ = app_handle.emit("log-info", "Falling back to Chrome detector for 18jav...".to_string());
-            {
-                let mut detector = state.chrome_detector.safe_lock();
-                match detector.detect_video_url(&url, Some(&app_handle)) {
-                    Ok(Some(video_url)) => {
-                        let _ = app_handle.emit("log-info", format!("Found video URL: {}", video_url));
-                        episode_urls.insert(1, video_url);
-                    }
-                    Ok(None) => {
-                        let _ = app_handle.emit("log-info", "Chrome detector found no video on 18jav page".to_string());
-                    }
-                    Err(e) => {
-                        return Err(format!("Chrome detection failed: {}", e));
-                    }
-                }
-                if detected_title.is_none() {
-                    detected_title = detector.get_last_title().map(|s| s.to_string());
-                }
-                if detected_poster.is_none() {
-                    detected_poster = detector.get_last_poster_url().map(|s| s.to_string());
-                }
-                cookies = detector.get_last_cookies().to_vec();
-            }
-        }
+        // No Chrome detector -- uses only lightweight WebView (not Chrome)
+        // to avoid heavy resource usage
 
         if episode_urls.is_empty() {
             return Err("Could not find video URL on 18jav.tv page. The video may be region-blocked or require login.".to_string());

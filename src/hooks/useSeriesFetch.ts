@@ -40,6 +40,8 @@ export function useSeriesFetch(deps: UseSeriesFetchDeps) {
         checkDomains(domainSettings.javwowDomain || "javwow.com") ||
         checkDomains(domainSettings.avkuyDomain || "www2.avkuy.com") ||
         checkDomains(domainSettings.jav18tvDomain || "18jav.tv") ||
+        checkDomains(domainSettings.hsckDomain || "hsck123.com") ||
+        checkDomains(domainSettings.njavDomain || "njav.org") ||
         text.includes("rongyok.com") ||
         text.includes("thongyok.com") ||
         text.includes("51cg") ||
@@ -49,7 +51,9 @@ export function useSeriesFetch(deps: UseSeriesFetchDeps) {
         text.includes("javwow.com") ||
         text.includes("avkuy.com") ||
         text.includes("av-kuy.com") ||
-        text.includes("18jav.tv")
+        text.includes("18jav.tv") ||
+        text.includes("hsck") ||
+        text.includes("njav.org")
       );
     },
     [domainSettings],
