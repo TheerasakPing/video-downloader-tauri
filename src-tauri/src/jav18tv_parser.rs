@@ -64,7 +64,7 @@ impl Jav18tvParser {
             .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .header("Accept-Language", "en-US,en;q=0.9,th;q=0.8")
-            .header("Accept-Encoding", "gzip, deflate, br")
+            // Don't set Accept-Encoding; let reqwest handle compression via its built-in gzip/deflate support
             .header("Connection", "keep-alive")
             .header("Upgrade-Insecure-Requests", "1")
             .header("Cache-Control", "max-age=0")
@@ -109,7 +109,6 @@ impl Jav18tvParser {
         let poster_url = self.extract_poster(&document);
         let embed_url = self.extract_embed_url(&document, html);
         let direct_video_url = self.extract_direct_video_url(html);
-
         Ok(Jav18tvSeriesInfo {
             url: url.to_string(),
             title,
@@ -261,7 +260,19 @@ impl Jav18tvParser {
 
     /// Try to extract a direct video URL from the page source
     fn extract_direct_video_url(&self, html: &str) -> Option<String> {
-        // m3u8 URLs
+        // Pattern 1: var hlsUrl = "..." (18jav.tv specific)
+        if let Ok(re) = Regex::new(r#"var\s+hlsUrl\s*=\s*["']([^"']+)["']"#) {
+            if let Some(caps) = re.captures(html) {
+                if let Some(m) = caps.get(1) {
+                    let url = m.as_str().to_string();
+                    if url.starts_with("http") {
+                        return Some(url);
+                    }
+                }
+            }
+        }
+
+        // Pattern 2: generic m3u8 URLs
         if let Ok(re) = Regex::new(r#"(https?://[^"'\s<>]+\.m3u8[^"'\s<>]*)"#) {
             if let Some(caps) = re.captures(html) {
                 if let Some(m) = caps.get(1) {
@@ -273,12 +284,21 @@ impl Jav18tvParser {
             }
         }
 
-        // mp4 URLs
+        // Pattern 3: og:video meta tag (mp4)
+        if let Ok(re) = Regex::new(r#"<meta\s+property=["']og:video["'][^>]+content=["']([^"']+)["']"#) {
+            if let Some(caps) = re.captures(html) {
+                if let Some(m) = caps.get(1) {
+                    return Some(m.as_str().to_string());
+                }
+            }
+        }
+
+        // Pattern 4: mp4 URLs (skip preview/thumbnails)
         if let Ok(re) = Regex::new(r#"(https?://[^"'\s<>]+\.mp4[^"'\s<>]*)"#) {
             if let Some(caps) = re.captures(html) {
                 if let Some(m) = caps.get(1) {
                     let url = m.as_str().to_string();
-                    if !url.contains(".css") && !url.contains(".js") {
+                    if !url.contains("preview") && !url.contains(".css") && !url.contains(".js") {
                         return Some(url);
                     }
                 }
