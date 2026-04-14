@@ -11,6 +11,7 @@ const DEFAULT_DOMAINS: DomainSettings = {
   njavDomain: "njav.org",
   javwowDomain: "javwow.com",
   avkuyDomain: "www2.avkuy.com",
+  jav18tvDomain: "18jav.tv",
 };
 
 export function useDomainSettings() {

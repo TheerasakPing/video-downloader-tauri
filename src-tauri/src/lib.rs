@@ -4,6 +4,7 @@ mod chrome_detector;
 mod downloader;
 mod hsck_parser;
 mod javwow_parser;
+mod jav18tv_parser;
 mod njav_parser;
 mod njavtv_parser;
 mod parser;
@@ -22,6 +23,7 @@ use chrome_detector::ChromeVideoDetector;
 use downloader::{check_ffmpeg, DownloadConfig, DownloadResult, DownloadState, VideoDownloader};
 use hsck_parser::HsckParser;
 use javwow_parser::JavwowParser;
+use jav18tv_parser::Jav18tvParser;
 use njav_parser::NjavParser;
 use njavtv_parser::NjavtvParser;
 use parser::RongyokParser;
@@ -545,6 +547,8 @@ pub struct DomainSettings {
     pub javwow_domain: String,
     #[serde(default = "DomainSettings::default_avkuy_domain")]
     pub avkuy_domain: String,
+    #[serde(default = "DomainSettings::default_jav18tv_domain")]
+    pub jav18tv_domain: String,
 }
 
 impl DomainSettings {
@@ -563,6 +567,9 @@ impl DomainSettings {
     fn default_avkuy_domain() -> String {
         "www2.avkuy.com".to_string()
     }
+    fn default_jav18tv_domain() -> String {
+        "18jav.tv".to_string()
+    }
 }
 
 impl Default for DomainSettings {
@@ -576,6 +583,7 @@ impl Default for DomainSettings {
             njav_domain: "njav.org".to_string(),
             javwow_domain: "javwow.com".to_string(),
             avkuy_domain: "www2.avkuy.com".to_string(),
+            jav18tv_domain: "18jav.tv".to_string(),
         }
     }
 }
@@ -669,6 +677,7 @@ struct AppState {
     titan_parser: TitanParser,
     hsck_parser: HsckParser,
     javwow_parser: JavwowParser,
+    jav18tv_parser: Jav18tvParser,
     njavtv_parser: NjavtvParser,
     njav_parser: NjavParser,
     chrome_detector: Mutex<ChromeVideoDetector>,
@@ -1039,6 +1048,113 @@ async fn fetch_series(url: String, app_handle: AppHandle, state: State<'_, AppSt
             cookies,
             source: "javwow".to_string(),
         }
+    } else if Jav18tvParser::is_jav18tv_url(&url, &settings.jav18tv_domain) {
+        // 18jav.tv: WebView for Cloudflare bypass + metadata extraction.
+        let _ = app_handle.emit("log-info", "Detected 18jav.tv - using WebView extractor...".to_string());
+        let jav18tv_info = state.jav18tv_parser.get_series_info(&url, &settings.jav18tv_domain).await?;
+        let mut detected_title: Option<String> = Some(jav18tv_info.title.clone()).filter(|t| !t.is_empty());
+        let mut detected_poster = jav18tv_info.poster_url.clone();
+        let mut cookies: Vec<(String, String)> = Vec::new();
+        let mut episode_urls: HashMap<i32, String> = HashMap::new();
+
+        // If we got a direct video URL from HTML parsing, use it
+        if let Some(ref video_url) = jav18tv_info.direct_video_url {
+            let _ = app_handle.emit("log-info", format!("Found 18jav direct video URL: {}", video_url));
+            episode_urls.insert(1, video_url.clone());
+        }
+
+        // If we got an embed URL, try to extract stream from it
+        if episode_urls.is_empty() {
+            if let Some(ref embed) = jav18tv_info.embed_url {
+                let _ = app_handle.emit("log-info", format!("Found 18jav embed URL: {}", embed));
+                if let Some((stream_url, player_poster)) =
+                    fetch_avkuy_stream_from_player_page(embed, &url, &cookies).await
+                {
+                    let _ = app_handle.emit("log-info", format!("Found 18jav stream via embed: {}", stream_url));
+                    episode_urls.insert(1, stream_url);
+                    if detected_poster.is_none() {
+                        detected_poster = player_poster;
+                    }
+                }
+            }
+        }
+
+        // If HTTP failed (Cloudflare), use WebView approach
+        if episode_urls.is_empty() {
+            let webview_result = fetch_via_webview(&app_handle, &url).await;
+            if detected_title.is_none() {
+                detected_title = webview_result.title.clone();
+            }
+            if detected_poster.is_none() {
+                detected_poster = webview_result.poster_url.clone();
+            }
+            cookies = webview_result.cookies.clone();
+
+            if let Some(video_url) = webview_result.video_url {
+                let _ = app_handle.emit("log-info", format!("Found 18jav video via WebView: {}", video_url));
+                episode_urls.insert(1, video_url);
+            }
+
+            // Try embed URL with WebView cookies
+            if episode_urls.is_empty() {
+                if let Some(ref eu) = webview_result.iframe_url {
+                    if !cookies.is_empty() {
+                        let _ = app_handle.emit("log-info", "Trying 18jav player HTML extraction (WebView cookies)...".to_string());
+                        if let Some((stream_url, player_poster)) =
+                            fetch_avkuy_stream_from_player_page(eu, &url, &cookies).await
+                        {
+                            episode_urls.insert(1, stream_url);
+                            if detected_poster.is_none() {
+                                detected_poster = player_poster;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Chrome detector as last resort
+        if episode_urls.is_empty() {
+            let _ = app_handle.emit("log-info", "Falling back to Chrome detector for 18jav...".to_string());
+            {
+                let mut detector = state.chrome_detector.safe_lock();
+                match detector.detect_video_url(&url, Some(&app_handle)) {
+                    Ok(Some(video_url)) => {
+                        let _ = app_handle.emit("log-info", format!("Found video URL: {}", video_url));
+                        episode_urls.insert(1, video_url);
+                    }
+                    Ok(None) => {
+                        let _ = app_handle.emit("log-info", "Chrome detector found no video on 18jav page".to_string());
+                    }
+                    Err(e) => {
+                        return Err(format!("Chrome detection failed: {}", e));
+                    }
+                }
+                if detected_title.is_none() {
+                    detected_title = detector.get_last_title().map(|s| s.to_string());
+                }
+                if detected_poster.is_none() {
+                    detected_poster = detector.get_last_poster_url().map(|s| s.to_string());
+                }
+                cookies = detector.get_last_cookies().to_vec();
+            }
+        }
+
+        if episode_urls.is_empty() {
+            return Err("Could not find video URL on 18jav.tv page. The video may be region-blocked or require login.".to_string());
+        }
+
+        UnifiedSeriesInfo {
+            series_id: 0,
+            title: detected_title.unwrap_or_else(|| derive_title_from_url(&url, "18JAV Video")),
+            total_episodes: 1,
+            poster_url: detected_poster,
+            episode_urls,
+            source_url: Some(url.clone()),
+            episode_keys: Default::default(),
+            cookies,
+            source: "jav18tv".to_string(),
+        }
     } else if settings
         .avkuy_domain
         .split(',')
@@ -1292,6 +1408,7 @@ async fn start_download(
             "njavtv" => "njavtv",
             "njav" => "njav",
             "javwow" => "javwow",
+            "jav18tv" => "jav18tv",
             "avkuy" => "avkuy",
             "titan" => "titan",
             "direct" => "direct",
@@ -1941,6 +2058,15 @@ async fn search_sites(
                 Err(_) => None,
             }
         }),
+        Box::pin(async {
+            match state.jav18tv_parser.search(&query, page, &settings.jav18tv_domain).await {
+                Ok(results) => {
+                    let has_more = results.len() >= 20;
+                    Some(SearchResponse { results, source: "jav18tv".into(), page, has_more })
+                }
+                Err(_) => None,
+            }
+        }),
     ];
 
     let responses: Vec<SearchResponse> = futures_util::future::join_all(futures)
@@ -1960,6 +2086,7 @@ fn get_browse_categories(state: State<'_, AppState>) -> Result<Vec<SiteCategory>
     categories.extend(state.titan_parser.list_categories("51cg1.com"));
     categories.extend(state.hsck_parser.list_categories("hsck123.com"));
     categories.extend(state.javwow_parser.list_categories("javwow.com"));
+    categories.extend(state.jav18tv_parser.list_categories("18jav.tv"));
     Ok(categories)
 }
 
@@ -1978,6 +2105,7 @@ async fn browse_category(
         "titan" => state.titan_parser.browse(&category, page, &settings.titan_domain).await?,
         "hsck" => state.hsck_parser.browse(&category, page, &settings.hsck_domain).await?,
         "javwow" => state.javwow_parser.browse(&category, page, &settings.javwow_domain).await?,
+        "jav18tv" => state.jav18tv_parser.browse(&category, page, &settings.jav18tv_domain).await?,
         _ => return Err(format!("Unknown source: {}", source)),
     };
     let has_more = results.len() >= 20;
@@ -2033,6 +2161,7 @@ pub fn run() {
             titan_parser: TitanParser::new(proxy_config.clone()),
             hsck_parser: HsckParser::new(proxy_config.clone()),
             javwow_parser: JavwowParser::new(proxy_config.clone()),
+            jav18tv_parser: Jav18tvParser::new(proxy_config.clone()),
             njavtv_parser: NjavtvParser::new(proxy_config.clone()),
             njav_parser: NjavParser::new(proxy_config.clone()),
             chrome_detector: Mutex::new(
