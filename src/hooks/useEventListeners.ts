@@ -1,33 +1,44 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { DownloadProgress } from '../types';
 
-interface DownloadProgress {
-  episode: number;
-  downloaded: number;
-  total: number;
-  speed: number;
-  percentage: number;
-}
-
-interface DownloadResult {
+export interface DownloadResult {
   episode: number;
   success: boolean;
   filePath?: string;
   error?: string;
 }
 
+export interface MergeProgress {
+  percentage: number;
+  currentTime: number;
+  totalDuration: number;
+}
+
+export interface DetectionProgress {
+  message: string;
+  progress: number;
+}
+
 interface UseEventListenersProps {
   onDownloadProgress: (progress: DownloadProgress) => void;
   onDownloadResult: (result: DownloadResult) => void;
   onMergeStarted: () => void;
-  onMergeProgress: (progress: { percentage: number; currentTime: number; totalDuration: number }) => void;
+  onMergeProgress: (progress: MergeProgress) => void;
   onMergeComplete: (file: string) => void;
   onMergeError: (error: string) => void;
   onLogInfo: (message: string) => void;
-  onDetectionProgress: (progress: { message: string; progress: number }) => void;
+  onDetectionProgress: (progress: DetectionProgress) => void;
 }
 
+/**
+ * Stable event listener hook. Uses refs internally so the Tauri listen/unlisten
+ * cycle runs exactly once, regardless of how often parent callbacks change.
+ */
 export function useEventListeners(props: UseEventListenersProps) {
+  const propsRef = useRef(props);
+  propsRef.current = props;
+
   useEffect(() => {
     const unsubscribers: (() => void)[] = [];
 
@@ -35,59 +46,53 @@ export function useEventListeners(props: UseEventListenersProps) {
       try {
         unsubscribers.push(
           await listen<DownloadProgress>('download-progress', (event) => {
-            props.onDownloadProgress(event.payload);
-          })
+            propsRef.current.onDownloadProgress(event.payload);
+          }),
         );
 
         unsubscribers.push(
           await listen<DownloadResult>('download-result', (event) => {
-            props.onDownloadResult(event.payload);
-          })
+            propsRef.current.onDownloadResult(event.payload);
+          }),
         );
 
         unsubscribers.push(
           await listen('merge-started', () => {
-            props.onMergeStarted();
-          })
+            propsRef.current.onMergeStarted();
+          }),
         );
 
         unsubscribers.push(
-          await listen<{ percentage: number; currentTime: number; totalDuration: number }>(
-            'merge-progress',
-            (event) => {
-              props.onMergeProgress(event.payload);
-            }
-          )
+          await listen<MergeProgress>('merge-progress', (event) => {
+            propsRef.current.onMergeProgress(event.payload);
+          }),
         );
 
         unsubscribers.push(
           await listen<string>('merge-complete', (event) => {
-            props.onMergeComplete(event.payload);
-          })
+            propsRef.current.onMergeComplete(event.payload);
+          }),
         );
 
         unsubscribers.push(
           await listen<string>('merge-error', (event) => {
-            props.onMergeError(event.payload);
-          })
+            propsRef.current.onMergeError(event.payload);
+          }),
         );
 
         unsubscribers.push(
           await listen<string>('log-info', (event) => {
-            props.onLogInfo(event.payload);
-          })
+            propsRef.current.onLogInfo(event.payload);
+          }),
         );
 
         unsubscribers.push(
-          await listen<{ message: string; progress: number }>(
-            'detection-progress',
-            (event) => {
-              props.onDetectionProgress(event.payload);
-            }
-          )
+          await listen<DetectionProgress>('detection-progress', (event) => {
+            propsRef.current.onDetectionProgress(event.payload);
+          }),
         );
-      } catch (error) {
-        console.error('Failed to setup event listeners:', error);
+      } catch (err) {
+        console.error('Failed to setup event listeners:', err);
       }
     };
 
@@ -96,5 +101,5 @@ export function useEventListeners(props: UseEventListenersProps) {
     return () => {
       unsubscribers.forEach((unsub) => unsub());
     };
-  }, [props]);
+  }, []);
 }
