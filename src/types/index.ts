@@ -57,6 +57,7 @@ export interface DomainSettings {
   njavDomain?: string;
   javwowDomain?: string;
   avkuyDomain?: string;
+  jav18tvDomain?: string;
 }
 
 // --- Library types ---
