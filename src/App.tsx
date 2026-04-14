@@ -121,6 +121,7 @@ function App() {
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [isAutoCapture, setIsAutoCapture] = useState(false);
   const [isBatchItemRunning, setIsBatchItemRunning] = useState(false);
+  const [currentBatchItem, setCurrentBatchItem] = useState<BatchItem | null>(null);
   const isBatchItemRunningRef = useRef(false);
 
   const [mergeState, setMergeState] = useState<{
@@ -494,12 +495,14 @@ function App() {
   );
 
   const handleStartDownload = useCallback(() => {
+
     if (!series || selectedEpisodes.size === 0) {
       error("Please select at least one episode");
       return;
     }
           isBatchItemRunningRef.current = false;
     setIsBatchItemRunning(false);
+          setCurrentBatchItem(null);
     setIsBatchProcessing(false);
     setIsBatchMode(false);
     runDownload(series, selectedEpisodes);
@@ -630,6 +633,7 @@ function App() {
 
       const processItem = async () => {
         isBatchItemRunningRef.current = true;
+        setCurrentBatchItem(item);
         // Use console.log to avoid infinite render loops
         console.log(`Processing batch item: ${item.info?.title}`);
         setIsBatchItemRunning(true);
@@ -676,6 +680,7 @@ function App() {
         } finally {
           isBatchItemRunningRef.current = false;
           setIsBatchItemRunning(false);
+          setCurrentBatchItem(null);
         }
       };
 
@@ -1293,7 +1298,7 @@ function App() {
 
   return (
     <div
-      className="min-h-screen text-white"
+      className="min-h-screen text-white flex flex-col"
       style={{
         background:
           "var(--bg-primary, linear-gradient(to bottom right, #0f172a, #1e293b, #0f172a))",
@@ -1480,6 +1485,51 @@ function App() {
                     </div>
                   </div>
                 </div>
+
+                {/* ===== CURRENT BATCH ITEM ===== */}
+                {currentBatchItem && downloadState.isDownloading && (
+                  <div className="flex items-center gap-3 bg-cyan-500/5 border border-cyan-500/20 rounded-xl p-2.5 shadow-[0_0_15px_rgba(34,211,238,0.08)]">
+                    {currentBatchItem.info?.posterUrl ? (
+                      <img
+                        src={currentBatchItem.info.posterUrl}
+                        alt={currentBatchItem.info.title}
+                        className="w-12 h-16 rounded-lg object-cover border border-slate-700/50 flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-12 h-16 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0">
+                        <ImageIcon size={16} className="text-slate-600" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-bold text-slate-200 truncate">
+                        {currentBatchItem.info?.title || 'Unknown'}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[10px] text-cyan-400 flex items-center gap-1">
+                          <Loader2 size={10} className="animate-spin" />
+                          EP {progress.episode}/{downloadState.totalSelected}
+                        </span>
+                        {progress.speed > 0 && (
+                          <span className="text-[10px] text-slate-500">
+                            {(progress.speed / 1024 / 1024).toFixed(1)} MB/s
+                          </span>
+                        )}
+                      </div>
+                      <div className="h-1 bg-slate-700/50 rounded-full overflow-hidden mt-1.5">
+                        <div
+                          className="h-full bg-gradient-to-r from-cyan-500 to-emerald-500 rounded-full transition-all duration-300"
+                          style={{ width: `${progress.percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                    {mergeState.isMerging && (
+                      <div className="text-[10px] text-fuchsia-400 flex items-center gap-1 flex-shrink-0">
+                        <Merge size={10} className="animate-spin" />
+                        Merging {mergeState.progress.toFixed(0)}%
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* ===== SMART QUEUE BAR ===== */}
                 <div className={`flex items-center justify-between px-3 py-2 rounded-lg border transition-all duration-200 ${
