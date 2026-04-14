@@ -36,7 +36,6 @@ import {
   HistoryPanel,
   SpeedGraph,
   FileBrowser,
-  DownloadQueue,
   Logo,
   UpdateDialog,
   MiniMode,
@@ -62,8 +61,8 @@ import { useI18n } from "./hooks/useI18n";
 import { useCustomTheme } from "./hooks/useCustomTheme";
 import { useToast } from "./hooks/useToast";
 import { SeriesInfo, DownloadState, DownloadProgress } from "./types";
-import { QueueItem } from "./components/DownloadQueue";
 
+import { QueueItem } from "./components/DownloadQueue";
 interface DownloadResult {
   episode: number;
   success: boolean;
@@ -1581,6 +1580,9 @@ function App() {
                   onSelectAll={selectAllEpisodes}
                   onDeselectAll={deselectAllEpisodes}
                   disabled={downloadState.isDownloading}
+                  downloadingEpisode={progress.episode}
+                  completedEpisodes={downloadState.completedEpisodes}
+                  failedEpisodes={downloadState.failedEpisodes}
                 />
 
                 {/* ===== QUALITY SELECTOR ===== */}
@@ -1652,18 +1654,6 @@ function App() {
                   </div>
                 )}
 
-                {/* ===== DOWNLOAD QUEUE ===== */}
-                {queue.length > 0 && (
-                  <ErrorBoundary>
-                    <DownloadQueue
-                      queue={queue}
-                      onMoveUp={() => {}}
-                      onMoveDown={() => {}}
-                      onRemove={(id) => setQueue((prev) => prev.filter((q) => q.id !== id))}
-                      onPause={() => {}}
-                    />
-                  </ErrorBoundary>
-                )}
 
                 {/* Spacer for sticky action bar */}
                 <div className="h-16" />
