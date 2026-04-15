@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1776045954850,
-  "projectRoot": "/Volumes/Data/workspace/git/video-downloader-tauri",
+  "lastScanned": 1776189964423,
+  "projectRoot": "/Volumes/Data/_workspace/_git/video-downloader-tauri",
   "techStack": {
     "languages": [
       {
@@ -71,7 +71,7 @@
     "namingStyle": null,
     "importStyle": null,
     "testPattern": null,
-    "fileOrganization": "type-based"
+    "fileOrganization": "feature-based"
   },
   "structure": {
     "isMonorepo": false,
@@ -92,10 +92,9 @@
     "dist": {
       "path": "dist",
       "purpose": "Distribution/build output",
-      "fileCount": 3,
-      "lastAccessed": 1776045954780,
+      "fileCount": 2,
+      "lastAccessed": 1776189964386,
       "keyFiles": [
-        "index.html",
         "tauri.svg",
         "vite.svg"
       ]
@@ -103,15 +102,18 @@
     "docs": {
       "path": "docs",
       "purpose": "Documentation",
-      "fileCount": 0,
-      "lastAccessed": 1776045954783,
-      "keyFiles": []
+      "fileCount": 2,
+      "lastAccessed": 1776189964387,
+      "keyFiles": [
+        "CLAUDE.md",
+        "SUPPORTED_WEBSITES.md"
+      ]
     },
     "playwright-report": {
       "path": "playwright-report",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1776045954801,
+      "lastAccessed": 1776189964411,
       "keyFiles": [
         "index.html"
       ]
@@ -120,7 +122,7 @@
       "path": "public",
       "purpose": "Public files",
       "fileCount": 2,
-      "lastAccessed": 1776045954802,
+      "lastAccessed": 1776189964418,
       "keyFiles": [
         "tauri.svg",
         "vite.svg"
@@ -130,7 +132,7 @@
       "path": "python_script",
       "purpose": null,
       "fileCount": 3,
-      "lastAccessed": 1776045954802,
+      "lastAccessed": 1776189964418,
       "keyFiles": [
         "batch_downloader.py",
         "hls_downloader.py",
@@ -141,7 +143,7 @@
       "path": "scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 3,
-      "lastAccessed": 1776045954805,
+      "lastAccessed": 1776189964418,
       "keyFiles": [
         "batch_downloader.py",
         "hls_downloader.py",
@@ -152,7 +154,7 @@
       "path": "skills",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1776045954807,
+      "lastAccessed": 1776189964418,
       "keyFiles": [
         "CLAUDE.md"
       ]
@@ -161,7 +163,7 @@
       "path": "src",
       "purpose": "Source code",
       "fileCount": 5,
-      "lastAccessed": 1776045954810,
+      "lastAccessed": 1776189964418,
       "keyFiles": [
         "App.tsx",
         "CLAUDE.md",
@@ -173,45 +175,45 @@
     "src-tauri": {
       "path": "src-tauri",
       "purpose": null,
-      "fileCount": 38,
-      "lastAccessed": 1776045954811,
+      "fileCount": 40,
+      "lastAccessed": 1776189964419,
       "keyFiles": [
         "CLAUDE.md",
         "Cargo.lock",
         "Cargo.toml",
-        "Entitlements.plist",
-        "backup_20260411_160039.json"
+        "Cargo.toml.bak",
+        "Entitlements.plist"
       ]
     },
     "test-results": {
       "path": "test-results",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1776045954821,
+      "lastAccessed": 1776189964420,
       "keyFiles": []
     },
     "thoughts": {
       "path": "thoughts",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1776045954821,
+      "lastAccessed": 1776189964420,
       "keyFiles": []
     },
     "dist/assets": {
       "path": "dist/assets",
       "purpose": "Static assets",
       "fileCount": 2,
-      "lastAccessed": 1776045954824,
+      "lastAccessed": 1776189964421,
       "keyFiles": [
-        "index-Dw1qU-8_.css",
-        "index-PqTVZMjG.js"
+        "index-D4ZGjjyE.css",
+        "index-DqS2yrNj.js"
       ]
     },
     "src/assets": {
       "path": "src/assets",
       "purpose": "Static assets",
       "fileCount": 1,
-      "lastAccessed": 1776045954838,
+      "lastAccessed": 1776189964421,
       "keyFiles": [
         "react.svg"
       ]
@@ -219,128 +221,25 @@
     "src/components": {
       "path": "src/components",
       "purpose": "UI components",
-      "fileCount": 38,
-      "lastAccessed": 1776045954842,
+      "fileCount": 40,
+      "lastAccessed": 1776189964422,
       "keyFiles": [
         "BackupPanel.tsx",
-        "BrowseCard.tsx",
-        "BrowseDetail.tsx"
+        "BatchQueueDrawer.tsx",
+        "BrowseCard.tsx"
       ]
     },
     "src/types": {
       "path": "src/types",
       "purpose": "Type definitions",
       "fileCount": 2,
-      "lastAccessed": 1776045954845,
+      "lastAccessed": 1776189964422,
       "keyFiles": [
         "CLAUDE.md",
         "index.ts"
       ]
     }
   },
-  "hotPaths": [
-    {
-      "path": "src/App.tsx",
-      "accessCount": 24,
-      "lastAccessed": 1776054151082,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/src/downloader.rs",
-      "accessCount": 23,
-      "lastAccessed": 1776054185266,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/src/lib.rs",
-      "accessCount": 15,
-      "lastAccessed": 1776052341060,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/Cargo.toml",
-      "accessCount": 3,
-      "lastAccessed": 1776049103523,
-      "type": "directory"
-    },
-    {
-      "path": "src-tauri/src/chrome_detector.rs",
-      "accessCount": 2,
-      "lastAccessed": 1776046001306,
-      "type": "directory"
-    },
-    {
-      "path": "src-tauri/src/javwow_parser.rs",
-      "accessCount": 2,
-      "lastAccessed": 1776047944863,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/tauri.conf.json",
-      "accessCount": 2,
-      "lastAccessed": 1776049104798,
-      "type": "file"
-    },
-    {
-      "path": "package.json",
-      "accessCount": 2,
-      "lastAccessed": 1776049107067,
-      "type": "file"
-    },
-    {
-      "path": "src",
-      "accessCount": 2,
-      "lastAccessed": 1776053525755,
-      "type": "directory"
-    },
-    {
-      "path": "avkuy_workflow.md",
-      "accessCount": 1,
-      "lastAccessed": 1776048168224,
-      "type": "file"
-    },
-    {
-      "path": "javwow_workflow.md",
-      "accessCount": 1,
-      "lastAccessed": 1776048390151,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri/src",
-      "accessCount": 1,
-      "lastAccessed": 1776052291282,
-      "type": "directory"
-    },
-    {
-      "path": "src-tauri/src/library.rs",
-      "accessCount": 1,
-      "lastAccessed": 1776054101341,
-      "type": "file"
-    },
-    {
-      "path": "src/features/library/LibraryWrapper.tsx",
-      "accessCount": 1,
-      "lastAccessed": 1776055835214,
-      "type": "file"
-    },
-    {
-      "path": "src/features/browse/BrowseWrapper.tsx",
-      "accessCount": 1,
-      "lastAccessed": 1776055835240,
-      "type": "file"
-    },
-    {
-      "path": "src/features/settings/SettingsWrapper.tsx",
-      "accessCount": 1,
-      "lastAccessed": 1776055835284,
-      "type": "file"
-    },
-    {
-      "path": "src/features/history/HistoryWrapper.tsx",
-      "accessCount": 1,
-      "lastAccessed": 1776055835396,
-      "type": "file"
-    }
-  ],
+  "hotPaths": [],
   "userDirectives": []
 }

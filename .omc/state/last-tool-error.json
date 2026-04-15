@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"rtk git log master..HEAD --oneline\",\"description\":\"Show commits on this branch not in master\"}",
-  "error": "Exit code 128\nfatal: ambiguous argument 'master..HEAD': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'",
-  "timestamp": "2026-04-13T04:49:56.149Z",
-  "retry_count": 1
-}
